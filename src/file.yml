@@ -1,0 +1,56 @@
+composition:
+  title: "il mondo dorme"
+
+audio:
+  default_sample: "sample.wav"
+  default_sample_duration: 5.0
+
+streams:
+  - stream_id: "texture1"
+    onset: 0.0
+    duration: 10.0
+    sample: "test.wav"
+    # === GRAIN PARAMETERS ===
+    grain:
+      duration: .03      # Grain Duration (10-50ms tipico)
+      envelope: half_sine # Grain Envelope/Window
+    # === DENSITY ===
+    density: 50           # Grain Rate/Density (grains/sec)
+    # === POINTER (sample reading position) ===
+    pointer:
+      start: 0.0          # start position in sample (seconds)
+      mode: linear        # traversal mode: linear, freeze, random
+      speedRead: 2    
+    # === PLAYBACK ===
+    playback:
+      pitchRatio: 1.0          # playback speed (transposition)
+      volume: -6          # volume in dB
+    # === SPATIAL ===
+    spatial:
+      pan: 0.5            # stereo position 0-1
+    # === DISTRIBUTION (opzionale v1) ===
+    distribution: 0.0     # 0=sync, 1=async (scatter amount)
+  - stream_id: "texture2"
+    onset: 20.0
+    duration: 10.0
+    sample: "test.wav"
+    # === GRAIN PARAMETERS ===
+    grain:
+      duration: .03      # Grain Duration (10-50ms tipico)
+      envelope: half_sine # Grain Envelope/Window
+    # === DENSITY ===
+    density: 50           # Grain Rate/Density (grains/sec)
+    # === POINTER (sample reading position) ===
+    pointer:
+      start: 0.0          # start position in sample (seconds)
+      mode: linear        # traversal mode: linear, freeze, random
+      speedRead: 1
+    # === PLAYBACK ===
+    playback:
+      pitchRatio: 2.0          # playback speed (transposition)
+      volume: -6          # volume in dB
+    # === SPATIAL ===
+    spatial:
+      pan: 0.5            # stereo position 0-1
+    # === DISTRIBUTION (opzionale v1) ===
+    distribution: 0.0     # 0=sync, 1=async (scatter amount)
