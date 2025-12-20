@@ -45,9 +45,8 @@ class Stream:
         # === CSOUND REFERENCES (assegnati dal Generator) ===
         self.sample_table_num = None
         self.envelope_table_num = None
-        # === CALCOLI ===
-        self.num_grains = int(self.duration / self.grain_duration)
         # === STATE ===
+        self._cumulative_read_time = 0.0  
         self.grains = []
         self.generated = False  
 
@@ -84,32 +83,41 @@ class Stream:
             return random.uniform(0, max_offset)
     
 
-    def _calculate_pointer(self, grain_index, current_time):
+    def _calculate_pointer(self, current_time):
         """
         Calcola la posizione di lettura nel sample per questo grano
-        
         Args:
             grain_index: indice del grano (per modalità sequenziali)
             current_time: tempo corrente nello stream (per modalità time-based)
-            
         Returns:
             float: posizione in secondi nel sample
         """
         if self.pointer_mode == 'freeze':
             return self.pointer_start
-       
         elif self.pointer_mode == 'linear':
-            # Avanza linearmente in base a quanto sample viene letto
-            # speedRead controlla la velocità di avanzamento del pointer
-            elapsed_time = current_time - self.onset
-            sample_read = elapsed_time * self.pointer_speed_read
-            return self.pointer_start + sample_read
-                
+            # Pointer che avanza uniformemente nel tempo
+            # speedRead controlla la velocità (1.0 = normale, 0.5 = metà, 2.0 = doppia)
+            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            return self.pointer_start + sample_position
+        elif self.pointer_mode == 'reverse':
+            # Pointer che va all'indietro
+            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            return self.pointer_start - sample_position    
+        elif self.pointer_mode == 'loop':
+            # Loop tra loop_start e loop_end
+            loop_start = self.pointer_params.get('loop_start', 0.0)
+            loop_end = self.pointer_params.get('loop_end', 1.0)
+            loop_duration = loop_end - loop_start
+            
+            # Calcola posizione e applica modulo per loop
+            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            looped_position = (sample_position % loop_duration)
+            return loop_start + looped_position
+    
         elif self.pointer_mode == 'random':
             # Pointer casuale (per granular clouds)
             # TODO: implementare con range definibile
             return self.pointer_start + random.uniform(0, 1.0)
-        
         else:
             raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
 
@@ -139,7 +147,7 @@ class Stream:
         grain_count = 0
         while current_onset < stream_end:
             # Calcola pointer position (dove leggere nel sample)
-            pointer_pos = self._calculate_pointer(grain_count, current_onset)
+            pointer_pos = self._calculate_pointer()
             # Crea il grano
             grain = Grain(
                 onset=current_onset,
@@ -155,6 +163,7 @@ class Stream:
             # Calcola quando parte il PROSSIMO grano
             inter_onset = self._calculate_inter_onset_time(grain_count)
             current_onset += inter_onset
+            self._cumulative_read_time += inter_onset
             grain_count += 1     
             # Safety check per async (evita loop infiniti)
             if grain_count > estimated_num_grains * 3:

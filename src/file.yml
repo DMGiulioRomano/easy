@@ -8,24 +8,23 @@ streams:
     sample: "test.wav"
     # === GRAIN ===
     grain:
-      duration: .03      # Grain Duration (10-50ms tipico)
-      envelope: half_sine # Grain Envelope/Window
+      duration: .03      
+      envelope: half_sine
     # === DENSITY ===
-    density: 50           # Grain Rate/Density (grains/sec)
+    density: 50         
+    distribution: 0
     # === POINTER (sample reading position) ===
     pointer:
-      start: 0.0          # start position in sample (seconds)
-      mode: linear        # traversal mode: linear, freeze, random
-      speedRead: 2    
+      start: 0.0        
+      mode: linear      
+      speed: 2    
     # === PLAYBACK ===
-    playback:
-      pitchRatio: 1.0          # playback speed (transposition)
-      volume: -6          # volume in dB
+    pitch:
+      shift_semitones: 0
     # === SPATIAL ===
-    spatial:
-      pan: 0.5            # stereo position 0-1
-    # === DISTRIBUTION (opzionale v1) ===
-    distribution: 0.0     # 0=sync, 1=async (scatter amount)
+    output:
+      pan: 0.5          
+      volume: -6        
     # -----------------------------------------------------------------
   - stream_id: "texture2"
     onset: 20.0
