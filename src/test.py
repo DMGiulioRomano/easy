@@ -24,11 +24,13 @@ class Stream:
         # === TIMING ===
         self.onset = params['onset']
         self.duration = params['duration']
-        # === DENSITY ===
-        self.density = params['density']  # grains/sec (Hz)
-        # === GRAIN ===
+        # === GRAIN PARAMETERS ===
         self.grain_duration = params['grain']['duration']
         self.grain_envelope = params['grain']['envelope']
+        # === DENSITY ===
+        self.density = params['density']  # grains/sec (Hz)
+        # === DISTRIBUTION (0=sync, 1=async) ===
+        self.distribution = params.get('distribution', 0.0)        
         # === POINTER ===
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer']['mode']
@@ -83,15 +85,18 @@ class Stream:
     
 
     def _calculate_pointer(self, grain_index, current_time):
-        """Calcola pointer position per grano i-esimo"""
+        """
+        Calcola la posizione di lettura nel sample per questo grano
+        
+        Args:
+            grain_index: indice del grano (per modalità sequenziali)
+            current_time: tempo corrente nello stream (per modalità time-based)
+            
+        Returns:
+            float: posizione in secondi nel sample
+        """
         if self.pointer_mode == 'freeze':
             return self.pointer_start
-
-        elif self.pointer_mode == 'linear':
-            # Avanza in base a quanto sample viene letto
-            sample_read_per_grain = self.grain_duration * self.pointer_speed_read
-            return self.pointer_start + grain_index * sample_read_per_grain
-        
        
         elif self.pointer_mode == 'linear':
             # Avanza linearmente in base a quanto sample viene letto
@@ -109,12 +114,32 @@ class Stream:
             raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
 
     def generate_grains(self):
-        """Genera la sequenza di grani (synchronous, sequenziale)"""
-        current_onset = self.onset  # punto di partenza dello stream
+        """
+        Genera grani basati su DENSITY, non su duration/grain_duration
         
-        for i in range(self.num_grains):
+        ALGORITMO:
+        1. Calcola quanti grani servono: duration × density
+        2. Per ogni grano:
+           a. Calcola inter-onset time (fisso o random)
+           b. Avanza current_onset
+           c. Calcola pointer position
+           d. Crea il grano
+        
+        Questo permette:
+        - Overlap dei grani (normale e desiderato!)
+        - Density variabile in futuro
+        - Grain duration variabile
+        - Async granulation
+        """
+        # Numero totale di grani basato su DENSITY
+        # (approssimativo per async, ma va bene)
+        estimated_num_grains = int(self.duration * self.density)
+        current_onset = self.onset  # punto di partenza dello stream
+        stream_end = self.onset + self.duration        
+        grain_count = 0
+        while current_onset < stream_end:
             # Calcola pointer position (dove leggere nel sample)
-            pointer_pos = self._calculate_pointer(i)
+            pointer_pos = self._calculate_pointer(grain_count, current_onset)
             # Crea il grano
             grain = Grain(
                 onset=current_onset,
@@ -127,8 +152,20 @@ class Stream:
                 envelope_table=self.envelope_table_num
             )
             self.grains.append(grain)
-            current_onset += self.grain_duration
+            # Calcola quando parte il PROSSIMO grano
+            inter_onset = self._calculate_inter_onset_time(grain_count)
+            current_onset += inter_onset
+            grain_count += 1     
+            # Safety check per async (evita loop infiniti)
+            if grain_count > estimated_num_grains * 3:
+                print(f"⚠️  Warning: {self.stream_id} generò troppi grani, stop at {grain_count}")
+                break
         self.generated = True
+        # Info debug
+        actual_density = len(self.grains) / self.duration
+        print(f"  → Stream '{self.stream_id}': {len(self.grains)} grains "
+              f"(target density: {self.density:.1f} g/s, "
+              f"actual: {actual_density:.1f} g/s)")
         return self.grains
 
 
@@ -179,19 +216,12 @@ class GranularGenerator:
         for stream_data in self.data['streams']:
             # Crea lo stream
             stream = Stream(stream_data)
-            
-            # Assegna i numeri delle ftable
-            sample_table = self.generate_ftable_for_sample(stream.sample_path)
-            envelope_table = self.generate_ftable_for_envelope(stream.grain_envelope)
-            
-            stream.sample_table_num = sample_table
-            stream.envelope_table_num = envelope_table
-            
+            # Assegna i numeri delle ftable            
+            stream.sample_table_num = self.generate_ftable_for_sample(stream.sample_path)
+            stream.envelope_table_num = self.generate_ftable_for_envelope(stream.grain_envelope)
             # Genera i grani
             stream.generate_grains()
-            
             self.streams.append(stream)
-        
         return self.streams
 
     def write_score_header(self, f):
@@ -224,8 +254,12 @@ class GranularGenerator:
         
         for stream in self.streams:
             f.write(f'; Stream: {stream.stream_id}\n')
-            f.write(f'; Grains: {len(stream.grains)}\n')
-            f.write(f'; Duration: {stream.duration}s\n\n')
+            f.write(f'; Density: {stream.density} grains/sec\n')
+            f.write(f'; Distribution: {stream.distribution} (0=sync, 1=async)\n')
+            f.write(f'; Grain duration: {stream.grain_duration*1000:.1f}ms\n')
+            f.write(f'; Total grains: {len(stream.grains)}\n')
+            f.write(f'; Stream duration: {stream.duration}s\n\n')
+            
             
             for grain in stream.grains:
                 f.write(grain.to_score_line())
@@ -237,7 +271,7 @@ class GranularGenerator:
         with open(output_path, 'w') as f:
             # Header
             f.write("; " + "="*77 + "\n")
-            f.write("; GRANULAR SYNTHESIS SCORE\n")
+            f.write("; GRANULAR SCORE\n")
             f.write(f"; Generated from: {self.yaml_path}\n")
             f.write("; " + "="*77 + "\n\n")
             
