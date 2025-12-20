@@ -17,4 +17,11 @@ csound:
 
 open:
 	open output/*.aif
-.PHONY=csound python
+
+sync:
+	git add .
+	git commit -m "."
+	git pull --quiet
+	git push
+
+.PHONY=csound python open synch

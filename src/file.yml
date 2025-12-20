@@ -1,16 +1,12 @@
 composition:
   title: "il mondo dorme"
 
-audio:
-  default_sample: "sample.wav"
-  default_sample_duration: 5.0
-
 streams:
   - stream_id: "texture1"
     onset: 0.0
     duration: 10.0
     sample: "test.wav"
-    # === GRAIN PARAMETERS ===
+    # === GRAIN ===
     grain:
       duration: .03      # Grain Duration (10-50ms tipico)
       envelope: half_sine # Grain Envelope/Window
@@ -30,6 +26,7 @@ streams:
       pan: 0.5            # stereo position 0-1
     # === DISTRIBUTION (opzionale v1) ===
     distribution: 0.0     # 0=sync, 1=async (scatter amount)
+    # -----------------------------------------------------------------
   - stream_id: "texture2"
     onset: 20.0
     duration: 10.0
@@ -54,3 +51,4 @@ streams:
       pan: 0.5            # stereo position 0-1
     # === DISTRIBUTION (opzionale v1) ===
     distribution: 0.0     # 0=sync, 1=async (scatter amount)
+    # -----------------------------------------------------------------

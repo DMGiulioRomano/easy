@@ -1,4 +1,5 @@
 import yaml
+import random
 
 class Grain:
     def __init__(self, onset, duration, pointer_pos, pitch_ratio, volume, pan, sample_table, envelope_table):
@@ -23,6 +24,8 @@ class Stream:
         # === TIMING ===
         self.onset = params['onset']
         self.duration = params['duration']
+        # === DENSITY ===
+        self.density = params['density']  # grains/sec (Hz)
         # === GRAIN ===
         self.grain_duration = params['grain']['duration']
         self.grain_envelope = params['grain']['envelope']
@@ -46,7 +49,40 @@ class Stream:
         self.grains = []
         self.generated = False  
 
-    def _calculate_pointer(self, grain_index):
+    def _calculate_inter_onset_time(self, iteration):
+        """
+        Calcola l'inter-onset time basato su density e distribution
+        
+        SYNCHRONOUS (distribution=0):
+            inter_onset = 1 / density (fisso)
+            
+        ASYNCHRONOUS (distribution>0):
+            inter_onset = random(0, 2 × avg_inter_onset)
+            (Truax 1994: "random value between zero and twice the average")
+        
+        Args:
+            iteration: numero iterazione (per seed random se necessario)
+            
+        Returns:
+            float: tempo in secondi fino al prossimo grano
+        """
+        avg_inter_onset = 1.0 / self.density
+        
+        if self.distribution == 0.0:
+            # SYNCHRONOUS: inter-onset fisso
+            return avg_inter_onset
+        
+        else:
+            # ASYNCHRONOUS: inter-onset randomizzato
+            # Range: [0, 2 × average] come da Truax
+            max_offset = self.distribution * (2.0 * avg_inter_onset)
+            
+            # Random uniforme tra 0 e max_offset
+            # (distribution=1.0 → full range, distribution=0.5 → mezzo range)
+            return random.uniform(0, max_offset)
+    
+
+    def _calculate_pointer(self, grain_index, current_time):
         """Calcola pointer position per grano i-esimo"""
         if self.pointer_mode == 'freeze':
             return self.pointer_start
@@ -56,7 +92,19 @@ class Stream:
             sample_read_per_grain = self.grain_duration * self.pointer_speed_read
             return self.pointer_start + grain_index * sample_read_per_grain
         
-
+       
+        elif self.pointer_mode == 'linear':
+            # Avanza linearmente in base a quanto sample viene letto
+            # speedRead controlla la velocità di avanzamento del pointer
+            elapsed_time = current_time - self.onset
+            sample_read = elapsed_time * self.pointer_speed_read
+            return self.pointer_start + sample_read
+                
+        elif self.pointer_mode == 'random':
+            # Pointer casuale (per granular clouds)
+            # TODO: implementare con range definibile
+            return self.pointer_start + random.uniform(0, 1.0)
+        
         else:
             raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
 
