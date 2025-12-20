@@ -34,17 +34,21 @@ class Stream:
         # === POINTER ===
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer']['mode']
-        self.pointer_speed_read = params['pointer'].get('speedRead', 1.0)  # ← NUOVO!        # === PLAYBACK ===
+        self.pointer_speed = params['pointer'].get('speed', 1.0)
         # === PLAYBACK ===
-        self.pitch_ratio = params['playback']['pitchRatio']  # ← RINOMINATO da speed
-        self.volume = params['playback']['volume']
-        # === SPATIAL ===
-        self.pan = params['spatial']['pan']
+        # Converti semitoni in pitch ratio: 2^(semitones/12)
+        shift_semitones = params['pitch'].get('shift_semitones', 0)
+        self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
+        
+        # === OUTPUT ===
+        self.volume = params['output']['volume']
+        self.pan = params['output']['pan']
         # === AUDIO ===
         self.sample_path = params['sample']
         # === CSOUND REFERENCES (assegnati dal Generator) ===
         self.sample_table_num = None
         self.envelope_table_num = None
+        self.estimated_num_grains = int(self.duration * self.density)
         # === STATE ===
         self._cumulative_read_time = 0.0  
         self.grains = []
@@ -83,7 +87,7 @@ class Stream:
             return random.uniform(0, max_offset)
     
 
-    def _calculate_pointer(self, current_time):
+    def _calculate_pointer(self):
         """
         Calcola la posizione di lettura nel sample per questo grano
         Args:
@@ -97,11 +101,11 @@ class Stream:
         elif self.pointer_mode == 'linear':
             # Pointer che avanza uniformemente nel tempo
             # speedRead controlla la velocità (1.0 = normale, 0.5 = metà, 2.0 = doppia)
-            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            sample_position = self._cumulative_read_time * self.pointer_speed
             return self.pointer_start + sample_position
         elif self.pointer_mode == 'reverse':
             # Pointer che va all'indietro
-            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            sample_position = self._cumulative_read_time * self.pointer_speed
             return self.pointer_start - sample_position    
         elif self.pointer_mode == 'loop':
             # Loop tra loop_start e loop_end
@@ -110,7 +114,7 @@ class Stream:
             loop_duration = loop_end - loop_start
             
             # Calcola posizione e applica modulo per loop
-            sample_position = self._cumulative_read_time * self.pointer_speed_read
+            sample_position = self._cumulative_read_time * self.pointer_speed
             looped_position = (sample_position % loop_duration)
             return loop_start + looped_position
     
@@ -141,7 +145,6 @@ class Stream:
         """
         # Numero totale di grani basato su DENSITY
         # (approssimativo per async, ma va bene)
-        estimated_num_grains = int(self.duration * self.density)
         current_onset = self.onset  # punto di partenza dello stream
         stream_end = self.onset + self.duration        
         grain_count = 0
@@ -166,7 +169,7 @@ class Stream:
             self._cumulative_read_time += inter_onset
             grain_count += 1     
             # Safety check per async (evita loop infiniti)
-            if grain_count > estimated_num_grains * 3:
+            if grain_count > self.estimated_num_grains * 3:
                 print(f"⚠️  Warning: {self.stream_id} generò troppi grani, stop at {grain_count}")
                 break
         self.generated = True
