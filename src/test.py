@@ -1,6 +1,56 @@
 import yaml
 import random
 
+# Aggiungi questa classe in test.py
+
+class Testina:
+    """
+    Testina di lettura semplice (tape recorder head)
+    Legge un file audio in modo lineare senza granulazione
+    """
+    def __init__(self, params):
+        # === IDENTITÀ ===
+        self.testina_id = params['testina_id']
+        
+        # === TIMING ===
+        self.onset = params['onset']
+        self.duration = params['duration']
+        
+        # === PLAYBACK ===
+        self.sample_path = params['sample']
+        self.start_position = params.get('start_position', 0.0)  # secondi
+        self.speed = params.get('speed', 1.0)  # 1.0 = normale
+        
+        # === LOOP (opzionale) ===
+        self.loop = params.get('loop', False)
+        self.loop_start = params.get('loop_start', 0.0)
+        self.loop_end = params.get('loop_end', None)  # None = fine file
+                
+        # === OUTPUT ===
+        self.volume = params.get('volume', 0.0)  # dB
+        self.pan = params.get('pan', 0.5)  # 0=L, 0.5=C, 1=R
+        
+        # === CSOUND REFERENCE ===
+        self.sample_table_num = None  # verrà assegnato dal Generator
+    
+    def to_score_line(self):
+        """Genera la linea di score per Csound"""
+        # i "TapeRecorder" onset duration start speed pitch volume pan loop sample_table
+        loop_flag = 1 if self.loop else 0
+
+        loop_start_val = self.loop_start if self.loop_start is not None else -1
+        loop_end_val = self.loop_end if self.loop_end is not None else -1
+
+        return (f'i "TapeRecorder" {self.onset:.6f} {self.duration:.6f} '
+                f'{self.start_position:.6f} {self.speed:.6f} '
+                f'{self.volume:.2f} {self.pan:.3f} '
+                f'{loop_flag} {loop_start_val:.6f} {loop_end_val:.6f} '
+                f'{self.sample_table_num}\n')
+    
+    def __repr__(self):
+        return (f"Testina(id={self.testina_id}, onset={self.onset}, "
+                f"dur={self.duration}, speed={self.speed})")
+    
 class Grain:
     def __init__(self, onset, duration, pointer_pos, pitch_ratio, volume, pan, sample_table, envelope_table):
         self.onset = onset         
@@ -35,11 +85,11 @@ class Stream:
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer']['mode']
         self.pointer_speed = params['pointer'].get('speed', 1.0)
-        # === PLAYBACK ===
+        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  # ← AGGIUNTO
+        self.pointer_random_range = params['pointer'].get('random_range', 1.0)  # ← AGGIUNTO (opzionale)        # === PLAYBACK ===
         # Converti semitoni in pitch ratio: 2^(semitones/12)
         shift_semitones = params['pitch'].get('shift_semitones', 0)
         self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
-        
         # === OUTPUT ===
         self.volume = params['output']['volume']
         self.pan = params['output']['pan']
@@ -97,34 +147,39 @@ class Stream:
             float: posizione in secondi nel sample
         """
         if self.pointer_mode == 'freeze':
-            return self.pointer_start
+            base_pos = self.pointer_start
+            
         elif self.pointer_mode == 'linear':
-            # Pointer che avanza uniformemente nel tempo
-            # speedRead controlla la velocità (1.0 = normale, 0.5 = metà, 2.0 = doppia)
             sample_position = self._cumulative_read_time * self.pointer_speed
-            return self.pointer_start + sample_position
+            base_pos = self.pointer_start + sample_position
+            
         elif self.pointer_mode == 'reverse':
-            # Pointer che va all'indietro
             sample_position = self._cumulative_read_time * self.pointer_speed
-            return self.pointer_start - sample_position    
+            base_pos = self.pointer_start - sample_position
+            
         elif self.pointer_mode == 'loop':
-            # Loop tra loop_start e loop_end
             loop_start = self.pointer_params.get('loop_start', 0.0)
             loop_end = self.pointer_params.get('loop_end', 1.0)
             loop_duration = loop_end - loop_start
             
-            # Calcola posizione e applica modulo per loop
             sample_position = self._cumulative_read_time * self.pointer_speed
             looped_position = (sample_position % loop_duration)
-            return loop_start + looped_position
-    
+            base_pos = loop_start + looped_position
+            
         elif self.pointer_mode == 'random':
-            # Pointer casuale (per granular clouds)
-            # TODO: implementare con range definibile
-            return self.pointer_start + random.uniform(0, 1.0)
+            # Random: posizione completamente casuale nel range
+            return self.pointer_start + random.uniform(0, self.pointer_random_range)
+            
         else:
             raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
-
+        
+        # APPLICA JITTER alla posizione base (per tutti i mode tranne random)
+        if self.pointer_jitter > 0.0:
+            jitter_deviation = random.uniform(-self.pointer_jitter, self.pointer_jitter)
+            return base_pos + jitter_deviation
+        else:
+            return base_pos
+        
     def generate_grains(self):
         """
         Genera grani basati su DENSITY, non su duration/grain_duration
@@ -181,12 +236,16 @@ class Stream:
         return self.grains
 
 
+# =============================================================================
+# GENERATOR (gestisce sia Stream che Testina)
+# =============================================================================
 
-class GranularGenerator:
+class Generator:
     def __init__(self, yaml_path):
         self.yaml_path = yaml_path
         self.data = None
-        self.streams = []
+        self.streams = []      # Stream granulari
+        self.testine = []      # Testine tape recorder
         self.ftables = {}  # {table_num: (type, path/params)}
         self.next_table_num = 1
 
@@ -220,21 +279,34 @@ class GranularGenerator:
         self.ftables[table_num] = ('envelope', envelope_type)
         return table_num
     
-    def create_streams(self):
+    def create_elements(self):
         """Crea gli oggetti Stream dai dati YAML"""
         if not self.data:
             raise ValueError("Devi chiamare load_yaml() prima!")
+
+        # Crea STREAMS (granular synthesis)
+        if 'streams' in self.data:
+            print(f"Creazione di {len(self.data['streams'])} streams granulari...")
+            for stream_data in self.data['streams']:
+                # Crea lo stream
+                stream = Stream(stream_data)
+                # Assegna i numeri delle ftable            
+                stream.sample_table_num = self.generate_ftable_for_sample(stream.sample_path)
+                stream.envelope_table_num = self.generate_ftable_for_envelope(stream.grain_envelope)
+                # Genera i grani
+                stream.generate_grains()
+                self.streams.append(stream)
+
+        # Crea TESTINE (tape recorder)
+        if 'testine' in self.data:
+            print(f"Creazione di {len(self.data['testine'])} testine tape recorder...")
+            for testina_data in self.data['testine']:
+                testina = Testina(testina_data)
+                testina.sample_table_num = self.generate_ftable_for_sample(testina.sample_path)
+                self.testine.append(testina)
+                print(f"  → Testina '{testina.testina_id}': {testina}")
         
-        for stream_data in self.data['streams']:
-            # Crea lo stream
-            stream = Stream(stream_data)
-            # Assegna i numeri delle ftable            
-            stream.sample_table_num = self.generate_ftable_for_sample(stream.sample_path)
-            stream.envelope_table_num = self.generate_ftable_for_envelope(stream.grain_envelope)
-            # Genera i grani
-            stream.generate_grains()
-            self.streams.append(stream)
-        return self.streams
+        return self.streams, self.testine
 
     def write_score_header(self, f):
         """Scrive header con ftables"""
@@ -260,37 +332,47 @@ class GranularGenerator:
 
     def write_score_events(self, f):
         """Scrive gli eventi dei grani"""
-        f.write("; " + "="*77 + "\n")
-        f.write("; GRAIN EVENTS\n")
-        f.write("; " + "="*77 + "\n\n")
+        # GRANULAR EVENTS
+        if self.streams:
+            f.write("; " + "="*77 + "\n")
+            f.write("; GRANULAR STREAMS\n")
+            f.write("; " + "="*77 + "\n\n")
+            
+            for stream in self.streams:
+                f.write(f'; Stream: {stream.stream_id}\n')
+                f.write(f'; Density: {stream.density} g/s, Distribution: {stream.distribution}\n')
+                f.write(f'; Grain duration: {stream.grain_duration*1000:.1f}ms\n')
+                f.write(f'; Total grains: {len(stream.grains)}\n\n')
+                
+                for grain in stream.grains:
+                    f.write(grain.to_score_line())
+                f.write('\n')
         
-        for stream in self.streams:
-            f.write(f'; Stream: {stream.stream_id}\n')
-            f.write(f'; Density: {stream.density} grains/sec\n')
-            f.write(f'; Distribution: {stream.distribution} (0=sync, 1=async)\n')
-            f.write(f'; Grain duration: {stream.grain_duration*1000:.1f}ms\n')
-            f.write(f'; Total grains: {len(stream.grains)}\n')
-            f.write(f'; Stream duration: {stream.duration}s\n\n')
+        # TAPE RECORDER EVENTS
+        if self.testine:
+            f.write("; " + "="*77 + "\n")
+            f.write("; TAPE RECORDER TRACKS\n")
+            f.write("; " + "="*77 + "\n\n")
             
-            
-            for grain in stream.grains:
-                f.write(grain.to_score_line())
-            
-            f.write('\n')
+            for testina in self.testine:
+                f.write(f'; Testina: {testina.testina_id}\n')
+                f.write(f'; Sample: {testina.sample_path}\n')
+                f.write(f'; Speed: {testina.speed}x (resampling)\n')
+                f.write(f'; Duration: {testina.duration}s\n\n')
+                f.write(testina.to_score_line())
+                f.write('\n')
 
     def generate_score_file(self, output_path='output.sco'):
         """Genera il file .sco completo"""
         with open(output_path, 'w') as f:
             # Header
             f.write("; " + "="*77 + "\n")
-            f.write("; GRANULAR SCORE\n")
+            f.write("; CSOUND SCORE\n")
             f.write(f"; Generated from: {self.yaml_path}\n")
             f.write("; " + "="*77 + "\n\n")
             
             # Function tables
             self.write_score_header(f)
-            
-            # Grain events
             self.write_score_events(f)
             
             # End marker
@@ -320,7 +402,7 @@ def main():
     
     try:
         # Crea il generatore
-        generator = GranularGenerator(yaml_file)
+        generator = Generator(yaml_file)
         
         # Carica YAML
         print(f"Caricamento {yaml_file}...")
@@ -328,7 +410,7 @@ def main():
         
         # Crea gli stream e genera i grani
         print("Generazione streams...")
-        generator.create_streams()
+        generator.create_elements()
         
         # Genera il file score
         print(f"Scrittura score...")
