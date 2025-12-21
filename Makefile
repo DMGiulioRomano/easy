@@ -7,12 +7,15 @@ YML_FILES := $(wildcard $(INCDIR)/*.yml)
 SCO_FILES := $(patsubst $(INCDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
+FILE?=file
 TEST?=false
 .SECONDARY: $(SCO_FILES)
 
 
 ifeq ($(TEST), true)
 all: $(AIF_FILES)
+else
+all: $(SFDIR)/$(FILE).aif
 endif
 
 $(GENDIR)/%.sco: $(INCDIR)/%.yml | $(GENDIR)
