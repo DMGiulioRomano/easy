@@ -8,7 +8,7 @@ SCO_FILES := $(patsubst $(INCDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
 FILE?=file1
-TEST?=false
+TEST?=true
 .SECONDARY: $(SCO_FILES)
 
 

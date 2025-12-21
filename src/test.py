@@ -104,7 +104,7 @@ class Stream:
         self.grains = []
         self.generated = False  
 
-    def _calculate_inter_onset_time(self, iteration):
+    def _calculate_inter_onset_time(self):
         """
         Calcola l'inter-onset time basato su density e distribution
         
@@ -219,7 +219,7 @@ class Stream:
             )
             self.grains.append(grain)
             # Calcola quando parte il PROSSIMO grano
-            inter_onset = self._calculate_inter_onset_time(grain_count)
+            inter_onset = self._calculate_inter_onset_time()
             current_onset += inter_onset
             self._cumulative_read_time += inter_onset
             grain_count += 1     
