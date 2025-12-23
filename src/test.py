@@ -78,7 +78,12 @@ class Stream:
         self.grain_duration = params['grain']['duration']
         self.grain_envelope = params['grain']['envelope']
         # === DENSITY ===
-        self.density = params['density']  # grains/sec (Hz)
+        if 'overlap_factor' in params['grain']:
+            overlap_factor = params['grain']['overlap_factor']
+            self.density = overlap_factor / self.grain_duration
+        else:
+            self.density = params['density']
+
         # === DISTRIBUTION (0=sync, 1=async) ===
         self.distribution = params.get('distribution', 0.0)        
         # === POINTER ===

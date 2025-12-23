@@ -1,0 +1,88 @@
+composition:
+  title: "il mondo dorme"
+
+streams:
+  - stream_id: "texture1"
+    onset: 0.0
+    duration: 5.0
+    sample: "test.wav"
+    grain:
+      duration: .03      
+      envelope: half_sine
+      overlap_factor: 2.0
+    density: 3         
+    distribution: 0
+    pointer:
+      start: 4.0       
+      mode: linear      
+      speed: .5
+      jitter: 0.002
+    pitch:
+      shift_semitones: 0
+    output:
+      pan: 0.5          
+      volume: -6        
+    # -----------------------------------------------------------------
+  - stream_id: "texture1"
+    onset: 5.0
+    duration: 5.0
+    sample: "test.wav"
+    grain:
+      duration: .03      
+      envelope: half_sine
+      overlap_factor: 4.0
+    density: 3         
+    distribution: 0
+    pointer:
+      start: 4.0       
+      mode: linear      
+      speed: .5  
+      jitter: 0.001
+    pitch:
+      shift_semitones: 0
+    output:
+      pan: 0.5          
+      volume: -6        
+    # -----------------------------------------------------------------
+  - stream_id: "texture1"
+    onset: 10.0
+    duration: 5.0
+    sample: "test.wav"
+    grain:
+      duration: .03      
+      envelope: half_sine
+      overlap_factor: 2.0
+    density: 3         
+    distribution: 0
+    pointer:
+      start: 4.0       
+      mode: linear      
+      speed: .5
+      jitter: 0.001
+    pitch:
+      shift_semitones: 0
+    output:
+      pan: 0.5          
+      volume: -6        
+    # -----------------------------------------------------------------
+  - stream_id: "texture1"
+    onset: 15.0
+    duration: 5.0
+    sample: "test.wav"
+    grain:
+      duration: .03      
+      envelope: half_sine
+      overlap_factor: 4.0
+    density: 3         
+    distribution: 0
+    pointer:
+      start: 4.0       
+      mode: linear      
+      speed: .25 
+      jitter: 0.001
+    pitch:
+      shift_semitones: 0
+    output:
+      pan: 0.5          
+      volume: -6        
+    # -----------------------------------------------------------------

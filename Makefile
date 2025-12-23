@@ -1,14 +1,20 @@
 PWD_DIR := $(shell pwd)
 INCDIR:=src
-SSDIR:=refs
+SSDIR?=refs
 SFDIR:=output
 GENDIR := $(INCDIR)/generated
 YML_FILES := $(wildcard $(INCDIR)/*.yml)
 SCO_FILES := $(patsubst $(INCDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
+SKIP?=0.0
+SKIP_:=$(subst .,_,$(SKIP))
+DURATA?=30.0
+DURATA_:=$(subst .,_,$(DURATA))
+INPUT?=001
+
 FILE?=file1
-TEST?=true
+TEST?=false
 .SECONDARY: $(SCO_FILES)
 
 
@@ -44,7 +50,11 @@ sync:
 	git pull --quiet
 	git push
 
+$(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
+	sox $(SSDIR)/$(INPUT).wav $@ trim $(SKIP) $(DURATA)
+	mv $@ $(SSDIR)/$@ && open $(SSDIR)/$@
+
 clean:
-	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco
+	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav
 
 .PHONY: open sync test clean
