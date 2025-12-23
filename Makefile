@@ -1,10 +1,11 @@
-PWD_DIR := $(shell pwd)
+PWD_DIR:=$(shell pwd)
 INCDIR:=src
 SSDIR?=refs
 SFDIR:=output
-GENDIR := $(INCDIR)/generated
-YML_FILES := $(wildcard $(INCDIR)/*.yml)
-SCO_FILES := $(patsubst $(INCDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
+GENDIR:=$(INCDIR)/generated
+YMLDIR:=$(INCDIR)/configs
+YML_FILES := $(wildcard $(YMLDIR)/*.yml)
+SCO_FILES := $(patsubst $(YMLDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
 SKIP?=0.0
@@ -24,7 +25,7 @@ else
 all: $(SFDIR)/$(FILE).aif
 endif
 
-$(GENDIR)/%.sco: $(INCDIR)/%.yml | $(GENDIR)
+$(GENDIR)/%.sco: $(YMLDIR)/%.yml | $(GENDIR)
 	python3.11 $(INCDIR)/test.py $< $@
 
 $(GENDIR):
