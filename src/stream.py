@@ -24,8 +24,8 @@ class Stream:
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer']['mode']
         self.pointer_speed = params['pointer'].get('speed', 1.0)
-        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  # ← AGGIUNTO
-        self.pointer_random_range = params['pointer'].get('random_range', 1.0)  # ← AGGIUNTO (opzionale)        # === PLAYBACK ===
+        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
+        self.pointer_random_range = params['pointer'].get('random_range', 1.0)
         # Converti semitoni in pitch ratio: 2^(semitones/12)
         shift_semitones = params['pitch'].get('shift_semitones', 0)
         self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
@@ -94,7 +94,8 @@ class Stream:
             
         elif self.pointer_mode == 'reverse':
             sample_position = self._cumulative_read_time * self.pointer_speed
-            base_pos = self.pointer_start - sample_position
+            base_pos = self.pointer_start + sample_position
+            self.pitch_ratio = self.pitch_ratio*(-1)
             
         elif self.pointer_mode == 'loop':
             loop_start = self.pointer_params.get('loop_start', 0.0)

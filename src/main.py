@@ -3,6 +3,16 @@ from generator import Generator
 # MAIN
 # =============================================================================
 
+# =============================================================================
+# COSTANTI E LIMITI DI SICUREZZA
+# =============================================================================
+
+MAX_GRAINS_PER_SECOND = 2000  # Limite assoluto di density
+MIN_INTER_ONSET = 0.0001      # Minimo 0.1ms tra grani
+MIN_GRAIN_DURATION = 0.001    # Minimo 1ms di durata grano
+MAX_GRAIN_DURATION = 10.0     # Massimo 10s di durata grano
+
+
 def main():
     import sys
     
