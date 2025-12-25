@@ -2,10 +2,10 @@ composition:
   title: "il mondo dorme"
 
 testine:
-  - testina_id: "008-1_778-_560.wav"
+  - testina_id: "016.wav"
     onset: 0.0
     duration: 10.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     start_position: 0.0
     speed: 1.0
     volume: -6           # dB
@@ -15,7 +15,7 @@ testine:
   - testina_id: "drums_slow"
     onset: 5.0
     duration: 8.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     start_position: 2.5   # inizia da 2.5s nel file
     speed: 0.75           # rallenta del 25%
     volume: -3
@@ -25,7 +25,7 @@ testine:
   - testina_id: "voice_loop"
     onset: 10.0
     duration: 20.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     start_position: 0.0
     speed: 0.5            # metà velocità
     volume: -12
@@ -35,7 +35,7 @@ testine:
   - testina_id: "voice_loop"
     onset: 20.0
     duration: 20.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     start_position: 0.0
     speed: 0.1          # metà velocità
     volume: -12

@@ -1,6 +1,7 @@
 PWD_DIR:=$(shell pwd)
 INCDIR:=src
 SSDIR?=refs
+LOGDIR:=logs
 SFDIR:=output
 GENDIR:=$(INCDIR)/generated
 YMLDIR:=$(INCDIR)/configs
@@ -15,7 +16,7 @@ DURATA_:=$(subst .,_,$(DURATA))
 INPUT?=001
 
 FILE?=file1
-TEST?=false
+TEST?=true
 .SECONDARY: $(SCO_FILES)
 
 
@@ -26,20 +27,24 @@ all: $(SFDIR)/$(FILE).aif
 endif
 
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml | $(GENDIR)
-	python3.11 $(INCDIR)/test.py $< $@
+	python3.11 $(INCDIR)/main.py $< $@
 
 $(GENDIR):
 	mkdir -p $@
 
-$(SFDIR)/%.aif: $(GENDIR)/%.sco | $(SFDIR)
+$(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 	csound \
 	--env:INCDIR+=$(PWD_DIR)/$(INCDIR) \
 	--env:SSDIR+=$(PWD_DIR)/$(SSDIR) \
 	--env:SFDIR=$(PWD_DIR)/$(SFDIR) \
 	$(INCDIR)/main.orc $< \
+	--logfile=$(LOGDIR)/$*.log \
 	-o $@
 
 $(SFDIR):
+	mkdir -p $@
+
+$(LOGDIR):
 	mkdir -p $@
 
 open:
@@ -56,6 +61,6 @@ $(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
 	mv $@ $(SSDIR)/$@ && open $(SSDIR)/$@
 
 clean:
-	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav
+	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav logs/*.log
 
 .PHONY: open sync test clean

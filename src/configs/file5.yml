@@ -5,13 +5,14 @@ streams:
   - stream_id: "texture1"
     onset: 0.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 3         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -24,13 +25,14 @@ streams:
   - stream_id: "texture1"
     onset: 2
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 5         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -43,13 +45,14 @@ streams:
   - stream_id: "texture1"
     onset: 4.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 7         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -62,13 +65,14 @@ streams:
   - stream_id: "texture1"
     onset: 6.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 10         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -81,13 +85,14 @@ streams:
   - stream_id: "texture1"
     onset: 8.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 15        
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -100,13 +105,14 @@ streams:
   - stream_id: "texture1"
     onset: 10.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 20         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -119,13 +125,14 @@ streams:
   - stream_id: "texture1"
     onset: 12.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 30         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -138,13 +145,14 @@ streams:
   - stream_id: "texture1"
     onset: 14.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 40         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -157,13 +165,14 @@ streams:
   - stream_id: "texture1"
     onset: 16.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 50         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -176,13 +185,14 @@ streams:
   - stream_id: "texture1"
     onset: 18.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 75         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -195,13 +205,14 @@ streams:
   - stream_id: "texture1"
     onset: 20.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 100         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -214,13 +225,14 @@ streams:
   - stream_id: "texture1"
     onset: 22.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 250         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -233,13 +245,14 @@ streams:
   - stream_id: "texture1"
     onset: 24.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 500         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    
@@ -252,13 +265,14 @@ streams:
   - stream_id: "texture1"
     onset: 26.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
     density: 1000         
     distribution: 1
     pointer:
+      jitter: 0
       start: 0.0        
       mode: linear      
       speed: .5    

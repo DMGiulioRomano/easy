@@ -5,7 +5,7 @@ streams:
   - stream_id: "texture1"
     onset: 0.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -25,7 +25,7 @@ streams:
   - stream_id: "texture1"
     onset: 2
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -45,7 +45,7 @@ streams:
   - stream_id: "texture1"
     onset: 4.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -65,7 +65,7 @@ streams:
   - stream_id: "texture1"
     onset: 6.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -85,7 +85,7 @@ streams:
   - stream_id: "texture1"
     onset: 8.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -105,7 +105,7 @@ streams:
   - stream_id: "texture1"
     onset: 10.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -125,7 +125,7 @@ streams:
   - stream_id: "texture1"
     onset: 12.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -145,7 +145,7 @@ streams:
   - stream_id: "texture1"
     onset: 14.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -165,7 +165,7 @@ streams:
   - stream_id: "texture1"
     onset: 16.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -185,7 +185,7 @@ streams:
   - stream_id: "texture1"
     onset: 18.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -205,7 +205,7 @@ streams:
   - stream_id: "texture1"
     onset: 20.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -225,7 +225,7 @@ streams:
   - stream_id: "texture1"
     onset: 22.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -245,7 +245,7 @@ streams:
   - stream_id: "texture1"
     onset: 24.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -265,7 +265,7 @@ streams:
   - stream_id: "texture1"
     onset: 26.0
     duration: 2.0
-    sample: "008-1_778-_560.wav"
+    sample: "016.wav"
     grain:
       duration: .03      
       envelope: half_sine
