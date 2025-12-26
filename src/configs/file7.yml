@@ -148,7 +148,7 @@ streams:
     distribution: 0
     pointer:
       start: 4.0       
-      mode: reverse      
+      mode: linear      
       speed: 1    
     pitch:
       shift_semitones: 0

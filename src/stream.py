@@ -23,7 +23,7 @@ class Stream:
         self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
         # === POINTER ===
         self.pointer_start = params['pointer']['start']
-        self.pointer_mode = params['pointer']['mode']
+        self.pointer_mode = params['pointer'].get('mode', 'linear')
         if self.pointer_mode == 'loop':
             # normalizzati tra 0 e 1.
             self.loopstart = params['pointer'].get('loopstart', 0.0)
@@ -141,28 +141,15 @@ class Stream:
         else:
             # Numero fisso: semplice moltiplicazione (veloce!)
             sample_position = elapsed_time * self.pointer_speed
-
-        if self.pointer_mode == 'freeze':
-            base_pos = self.pointer_start
             
-        elif self.pointer_mode == 'linear':
-            base_pos = self.pointer_start + sample_position
-            
-        elif self.pointer_mode == 'reverse':
+        if self.pointer_mode == 'linear':
             start = self.pointer_start if grain_count == 0 else 0
-            base_pos = (start - sample_position) % self.sampleDurSec
-            
-        elif self.pointer_mode == 'loop':            
-            looped_position = (sample_position % self.loopdur)
-            base_pos = self.loopstart + looped_position
+            base_pos = (start + sample_position) % self.sampleDurSec
 
         # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
         elif self.pointer_mode == 'random':
             # Random: posizione completamente casuale nel range
             return self.pointer_start + random.uniform(0, self.pointer_random_range)*self.sampleDurSec
-            
-        else:
-            raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
         
         # APPLICA JITTER alla posizione base (per tutti i mode tranne random)
         if self.pointer_jitter > 0.0:
