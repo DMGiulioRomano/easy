@@ -13,16 +13,17 @@ streams:
     density: 10        
     distribution: 0
     pointer:
-      jitter: 0
+      jitter: 0.01
       start: 0.0        
       mode: linear
       speed:
-        type: step
+        type: cubic
         points:
           - [0, 1.0]   
-          - [5, 0.0]   
+          - [5, 0.5]   
           - [10, 0.0]
-          - [20, 1.0] 
+          - [20, 1.0]
+          - [30, .03]
     pitch:
       shift_semitones: 0
     output:

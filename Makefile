@@ -16,15 +16,22 @@ DURATA?=30.0
 DURATA_:=$(subst .,_,$(DURATA))
 INPUT?=001
 
+AUTOKILL?= true
+AUTOPEN?= true
 FILE?=file1
 TEST?=true
 .SECONDARY: $(SCO_FILES)
 
+ifeq ($(AUTOKILL),true)
+  ALL_PRE = rx-stop
+else
+  ALL_PRE =
+endif
 
 ifeq ($(TEST), true)
-all: $(AIF_FILES)
+all: $(ALL_PRE) $(AIF_FILES)
 else
-all: $(SFDIR)/$(FILE).aif
+all: $(ALL_PRE) $(SFDIR)/$(FILE).aif
 endif
 
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
@@ -41,6 +48,10 @@ $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 	$(INCDIR)/main.orc $< \
 	--logfile=$(LOGDIR)/$*.log \
 	-o $@
+	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
+		open "$@"; \
+	fi
+
 
 $(SFDIR):
 	mkdir -p $@
@@ -61,7 +72,20 @@ $(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
 	sox $(SSDIR)/$(INPUT).wav $@ trim $(SKIP) $(DURATA)
 	mv $@ $(SSDIR)/$@ && open $(SSDIR)/$@
 
+
+.PHONY: rx-stop
+
+rx-stop:
+	@if [ "$$(uname)" = "Darwin" ] && \
+	   [ -d "/Applications/iZotope RX 11 Audio Editor.app" ] && \
+	   pgrep -f "iZotope RX 11" >/dev/null; then \
+		echo "RX 11 attivo: AUTOKILL=true, chiusura in corso"; \
+		osascript -e 'tell application "iZotope RX 11 Audio Editor" to quit' || true; \
+	else \
+		echo "make: Nothing to be done for 'all'..."; \
+	fi
+
 clean:
 	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav logs/*.log
 
-.PHONY: open sync test clean
+.PHONY: open sync test clean rx-stop
