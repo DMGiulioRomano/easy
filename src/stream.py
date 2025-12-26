@@ -1,6 +1,7 @@
 import random
-from grain import Grain
 import soundfile as sf
+from grain import Grain
+from envelope import Envelope
 PATHSAMPLES='./refs/'
 
 def get_sample_duration(filepath):
@@ -27,7 +28,21 @@ class Stream:
             # normalizzati tra 0 e 1.
             self.loopstart = params['pointer'].get('loopstart', 0.0)
             self.loopdur = params['pointer'].get('loopdur', 1.0)
-        self.pointer_speed = params['pointer'].get('speed', 1.0)
+        # pointer_speed può essere un numero fisso o un Envelope
+        speed_param = params['pointer'].get('speed', 1.0)
+
+        if isinstance(speed_param, (int, float)):
+            # Numero singolo → usa direttamente (efficiente!)
+            self.pointer_speed = speed_param
+        elif isinstance(speed_param, dict):
+            # Dict con 'type' e 'points' → crea Envelope
+            self.pointer_speed = Envelope(speed_param)
+        elif isinstance(speed_param, list):
+            # Lista di breakpoints → Envelope lineare
+            self.pointer_speed = Envelope(speed_param)
+        else:
+            raise ValueError(f"pointer.speed formato non valido: {speed_param}")
+
         self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
         # === GRAIN PARAMETERS ===
@@ -118,7 +133,15 @@ class Stream:
             float: posizione in secondi nel sample sorgente
         """        
         elapsed_time = current_onset - self.onset
-        sample_position = elapsed_time * self.pointer_speed
+
+        # Calcola la distanza percorsa nel sample
+        if isinstance(self.pointer_speed, Envelope):
+            # Envelope: integra la velocità nel tempo
+            sample_position = self.pointer_speed.integrate(0, elapsed_time)
+        else:
+            # Numero fisso: semplice moltiplicazione (veloce!)
+            sample_position = elapsed_time * self.pointer_speed
+
         if self.pointer_mode == 'freeze':
             base_pos = self.pointer_start
             
@@ -126,12 +149,10 @@ class Stream:
             base_pos = self.pointer_start + sample_position
             
         elif self.pointer_mode == 'reverse':
-            sample_position = elapsed_time * self.pointer_speed
             start = self.pointer_start if grain_count == 0 else 0
             base_pos = (start - sample_position) % self.sampleDurSec
             
         elif self.pointer_mode == 'loop':            
-            sample_position = elapsed_time * self.pointer_speed
             looped_position = (sample_position % self.loopdur)
             base_pos = self.loopstart + looped_position
 

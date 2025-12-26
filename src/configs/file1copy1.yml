@@ -8,15 +8,21 @@ streams:
     sample: "016.wav"
     grain:
       duration: .01      
-      overlap_factor: 2
+      overlap_factor: 1
       #reverse: false
     density: 10        
     distribution: 0
     pointer:
-      jitter: 0.001
+      jitter: 0
       start: 0.0        
       mode: linear
-      speed: 0.03
+      speed:
+        type: step
+        points:
+          - [0, 1.0]   
+          - [5, 0.0]   
+          - [10, 0.0]
+          - [20, 1.0] 
     pitch:
       shift_semitones: 0
     output:
