@@ -114,7 +114,8 @@ class Stream:
             sample_position = self._cumulative_read_time * self.pointer_speed
             looped_position = (sample_position % loop_duration)
             base_pos = loop_start + looped_position
-            
+
+        # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
         elif self.pointer_mode == 'random':
             # Random: posizione completamente casuale nel range
             return self.pointer_start + random.uniform(0, self.pointer_random_range)
