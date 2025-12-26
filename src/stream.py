@@ -29,6 +29,16 @@ class Stream:
         # Converti semitoni in pitch ratio: 2^(semitones/12)
         shift_semitones = params['pitch'].get('shift_semitones', 0)
         self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
+        # Default grain.reverse dipende da pointer.mode
+        if 'reverse' in params['grain']:
+            # Utente ha specificato esplicitamente → usa quello
+            self.grain_reverse = params['grain']['reverse']
+        else:
+            # AUTO-DEDUZIONE dal pointer mode
+            if self.pointer_mode == 'reverse':
+                self.grain_reverse = True   # reverse→reverse
+            else:
+                self.grain_reverse = False  # linear/freeze/loop/random→forward       
         # === OUTPUT ===
         self.volume = params['output']['volume']
         self.pan = params['output']['pan']
@@ -94,8 +104,7 @@ class Stream:
             
         elif self.pointer_mode == 'reverse':
             sample_position = self._cumulative_read_time * self.pointer_speed
-            base_pos = self.pointer_start + sample_position
-            self.pitch_ratio = self.pitch_ratio*(-1)
+            base_pos = self.pointer_start - sample_position
             
         elif self.pointer_mode == 'loop':
             loop_start = self.pointer_params.get('loop_start', 0.0)
@@ -155,7 +164,8 @@ class Stream:
                 volume=self.volume,
                 pan=self.pan,
                 sample_table=self.sample_table_num,
-                envelope_table=self.envelope_table_num
+                envelope_table=self.envelope_table_num,
+                grain_reverse=self.grain_reverse
             )
             self.grains.append(grain)
             # Calcola quando parte il PROSSIMO grano

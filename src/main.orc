@@ -13,12 +13,14 @@ instr Grain
     ; p5 = iSpeed     : velocità di playback (1=normale, 2=doppio, 0.5=metà)
     ; p6 = iVolume    : volume in dB (0=originale, -6=metà, -inf=silenzio)
     ; p7 = iPan       : posizione stereo (0=left, 0.5=center, 1=right)
+    ; p10 = iGrainReverse : 1=backward, 0=forward  ← AGGIUNTO
     iStart  = p4
     iSpeed  = p5
     iVolume = p6
     iPan    = p7
     iSampleTable = p8
     iEnvTable    = p9
+    iGrainReverse = p10  
     ;-------------------------------------------------------------------------
     ; CALCOLI INIT-TIME
     ;-------------------------------------------------------------------------
@@ -30,6 +32,12 @@ instr Grain
     ; freq = speed / sample_length
     iFreq = iSpeed / iSampleLen
     ; Converti volume da dB a ampiezza lineare
+    ; ═══════════════════════════════════════════════════════════════════
+    ; GRAIN REVERSE: se flag=1, inverte direzione lettura campioni
+    ; ═══════════════════════════════════════════════════════════════════
+    if iGrainReverse == 1 then
+        iFreq = 0-iFreq  ; frequenza NEGATIVA → lettura BACKWARD
+    endif
     iAmp = ampdb(iVolume)
     ;-------------------------------------------------------------------------
     ; AUDIO PROCESSING
