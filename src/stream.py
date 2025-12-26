@@ -14,28 +14,32 @@ class Stream:
         # === TIMING ===
         self.onset = params['onset']
         self.duration = params['duration']
+        self.timeScale = params.get('time_scale', 1.0)  # per il futuro per rallentare - velocizzare la cloud.     
+        # === DISTRIBUTION (0=sync, 1=async) ===
+        self.distribution = params.get('distribution', 0.0)        
+        # === PITCH ===
+        shift_semitones = params['pitch'].get('shift_semitones', 0)
+        self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
+        # === POINTER ===
+        self.pointer_start = params['pointer']['start']
+        self.pointer_mode = params['pointer']['mode']
+        if self.pointer_mode == 'loop':
+            # normalizzati tra 0 e 1.
+            self.loopstart = params['pointer'].get('loopstart', 0.0)
+            self.loopdur = params['pointer'].get('loopdur', 1.0)
+        self.pointer_speed = params['pointer'].get('speed', 1.0)
+        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
+        self.pointer_random_range = params['pointer'].get('random_range', 1.0)
         # === GRAIN PARAMETERS ===
         self.grain_duration = params['grain']['duration']
-        self.grain_envelope = params['grain']['envelope']
+        self.grain_envelope = params['grain'].get('envelope','hanning')
         # === DENSITY ===
         if 'overlap_factor' in params['grain']:
             overlap_factor = params['grain']['overlap_factor']
             self.density = overlap_factor / self.grain_duration
         else:
             self.density = params['density']
-
-        # === DISTRIBUTION (0=sync, 1=async) ===
-        self.distribution = params.get('distribution', 0.0)        
-        # === POINTER ===
-        self.pointer_start = params['pointer']['start']
-        self.pointer_mode = params['pointer']['mode']
-        self.pointer_speed = params['pointer'].get('speed', 1.0)
-        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
-        self.pointer_random_range = params['pointer'].get('random_range', 1.0)
-        # Converti semitoni in pitch ratio: 2^(semitones/12)
-        shift_semitones = params['pitch'].get('shift_semitones', 0)
-        self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
-        # Default grain.reverse dipende da pointer.mode
+            # Default grain.reverse dipende da pointer.mode
         if 'reverse' in params['grain']:
             # Utente ha specificato esplicitamente → usa quello
             self.grain_reverse = params['grain']['reverse']
@@ -93,34 +97,43 @@ class Stream:
             return random.uniform(0, max_offset)
     
 
-    def _calculate_pointer(self):
+    def _calculate_pointer(self, grain_count, current_onset):
         """
-        Calcola la posizione di lettura nel sample per questo grano
+        Calcola la posizione di lettura nel sample per questo grano.
+        
+        Prima usavo un tempo cumulativo basato su inter_onset ma così la posizione del sample è influenzata dalla densità dei grani. 
+        Usa il TEMPO REALE trascorso dall'inizio dello stream. 
+        Questo garantisce la separazione
+        micro/macro di Truax (1994): la posizione nel sample (livello macro)
+        è indipendente dalla density dei grani (livello micro).
+        
+        Formula base (mode linear):
+            elapsed_time = current_onset - self.onset
+            pointer_position = pointer_start + (elapsed_time × pointer_speed)
+        
         Args:
-            grain_index: indice del grano (per modalità sequenziali)
-            current_time: tempo corrente nello stream (per modalità time-based)
+            current_onset: tempo assoluto in secondi di quando parte questo grano
+            
         Returns:
-            float: posizione in secondi nel sample
-        """
+            float: posizione in secondi nel sample sorgente
+        """        
+        elapsed_time = current_onset - self.onset
+        sample_position = elapsed_time * self.pointer_speed
         if self.pointer_mode == 'freeze':
             base_pos = self.pointer_start
             
         elif self.pointer_mode == 'linear':
-            sample_position = self._cumulative_read_time * self.pointer_speed
             base_pos = self.pointer_start + sample_position
             
         elif self.pointer_mode == 'reverse':
-            sample_position = self._cumulative_read_time * self.pointer_speed
-            base_pos = (self.sampleDurSec - self.pointer_start - sample_position) % self.sampleDurSec
+            sample_position = elapsed_time * self.pointer_speed
+            start = self.pointer_start if grain_count == 0 else 0
+            base_pos = (start - sample_position) % self.sampleDurSec
             
-        elif self.pointer_mode == 'loop':
-            loop_start = self.pointer_params.get('loop_start', 0.0)
-            loop_end = self.pointer_params.get('loop_end', 1.0)
-            loop_duration = loop_end - loop_start
-            
-            sample_position = self._cumulative_read_time * self.pointer_speed
-            looped_position = (sample_position % loop_duration)
-            base_pos = loop_start + looped_position
+        elif self.pointer_mode == 'loop':            
+            sample_position = elapsed_time * self.pointer_speed
+            looped_position = (sample_position % self.loopdur)
+            base_pos = self.loopstart + looped_position
 
         # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
         elif self.pointer_mode == 'random':
@@ -155,14 +168,12 @@ class Stream:
         - Grain duration variabile
         - Async granulation
         """
-        # Numero totale di grani basato su DENSITY
-        # (approssimativo per async, ma va bene)
-        current_onset = self.onset  # punto di partenza dello stream
+        current_onset = self.onset  
         stream_end = self.onset + self.duration        
         grain_count = 0
         while current_onset < stream_end:
             # Calcola pointer position (dove leggere nel sample)
-            pointer_pos = self._calculate_pointer()
+            pointer_pos = self._calculate_pointer(grain_count, current_onset)
             # Crea il grano
             grain = Grain(
                 onset=current_onset,
@@ -179,7 +190,6 @@ class Stream:
             # Calcola quando parte il PROSSIMO grano
             inter_onset = self._calculate_inter_onset_time()
             current_onset += inter_onset
-            self._cumulative_read_time += inter_onset
             grain_count += 1     
             # Safety check per async (evita loop infiniti)
         self.generated = True

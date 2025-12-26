@@ -5,6 +5,7 @@ LOGDIR:=logs
 SFDIR:=output
 GENDIR:=$(INCDIR)/generated
 YMLDIR:=$(INCDIR)/configs
+PYTHON_SOURCES := $(wildcard $(INCDIR)/*.py)
 YML_FILES := $(wildcard $(YMLDIR)/*.yml)
 SCO_FILES := $(patsubst $(YMLDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
@@ -26,7 +27,7 @@ else
 all: $(SFDIR)/$(FILE).aif
 endif
 
-$(GENDIR)/%.sco: $(YMLDIR)/%.yml | $(GENDIR)
+$(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
 	python3.11 $(INCDIR)/main.py $< $@
 
 $(GENDIR):
