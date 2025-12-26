@@ -118,18 +118,55 @@ class Generator:
             if ftype == 'sample':
                 f.write(f'; Sample: {param}\n')
                 f.write(f'f {num} 0 0 1 "{param}" 0 0 1\n\n')
-            
             elif ftype == 'envelope':
                 f.write(f'; Envelope: {param}\n')
-                # Mappare envelope_type -> GEN routine
-                if param == 'hanning':
+                # GEN20 windows
+                if param == 'hamming':
+                    f.write(f'f {num} 0 1024 20 1 1\n\n')
+                elif param == 'hanning':
                     f.write(f'f {num} 0 1024 20 2 1\n\n')
+                elif param == 'bartlett' or param == 'triangle':
+                    f.write(f'f {num} 0 1024 20 3 1\n\n')
+                elif param == 'blackman':
+                    f.write(f'f {num} 0 1024 20 4 1\n\n')
+                elif param == 'blackman_harris':
+                    f.write(f'f {num} 0 1024 20 5 1\n\n')
+                elif param == 'gaussian':
+                    # opt=3 è un buon default (più stretto = valori più alti)
+                    f.write(f'f {num} 0 1024 20 6 1 3\n\n')
+                elif param == 'kaiser':
+                    # opt=6 è un buon compromesso
+                    f.write(f'f {num} 0 1024 20 7 1 6\n\n')
+                elif param == 'rectangle':
+                    f.write(f'f {num} 0 1024 20 8 1\n\n')
+                elif param == 'sinc':
+                    f.write(f'f {num} 0 1024 20 9 1 1\n\n')
+                # GEN09 per half_sine (non è in GEN20)
                 elif param == 'half_sine':
                     f.write(f'f {num} 0 1024 9 0.5 1 0\n\n')
+                # === GEN16 per curve asimmetriche (expodec/exporise) ===
+                elif param == 'expodec':
+                    # 1 → 0, decay esponenziale (concavo)
+                    f.write(f'f {num} 0 1024 16 1 1024 4 0\n\n')
+                elif param == 'expodec_strong':
+                    # decay più aggressivo
+                    f.write(f'f {num} 0 1024 16 1 1024 10 0\n\n')
+                elif param == 'exporise':
+                    # 0 → 1, rise esponenziale (convesso)
+                    f.write(f'f {num} 0 1024 16 0 1024 -4 1\n\n')
+                elif param == 'exporise_strong':
+                    # rise più aggressivo
+                    f.write(f'f {num} 0 1024 16 0 1024 -10 1\n\n')
+                elif param == 'rexpodec':
+                    # "reverse expodec" - decay lento poi veloce (convesso)
+                    f.write(f'f {num} 0 1024 16 1 1024 -4 0\n\n')
+                elif param == 'rexporise':
+                    # "reverse exporise" - rise veloce poi lento (concavo)
+                    f.write(f'f {num} 0 1024 16 0 1024 4 1\n\n')
+                # Default: hanning
                 else:
-                    # Default: hanning
                     f.write(f'f {num} 0 1024 20 2 1\n\n')
-
+                    
     def write_score_events(self, f):
         """Scrive gli eventi dei grani"""
         # GRANULAR EVENTS

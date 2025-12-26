@@ -7,18 +7,19 @@ streams:
     duration: (9*60+12)
     sample: "016.wav"
     grain:
-      duration: .1      
-      envelope: hanning
-      overlap_factor: 1
-    #density: 10        
-    distribution: 0
+      duration: .01      
+      envelope: triangle
+      overlap_factor: 2
+      #reverse: false
+    density: 10        
+    distribution: 0.2
     pointer:
-      jitter: 0
+      jitter: 0.0
       start: 0.0        
       mode: reverse
       speed: 0.03
     pitch:
-      shift_semitones: 0
+      shift_semitones: -12
     output:
       pan: 0.5          
       volume: -6        

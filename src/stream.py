@@ -1,5 +1,11 @@
 import random
 from grain import Grain
+import soundfile as sf
+PATHSAMPLES='./refs/'
+
+def get_sample_duration(filepath):
+    info = sf.info(PATHSAMPLES + filepath)
+    return info.duration  # secondi come float
 
 class Stream:
     def __init__(self, params):
@@ -44,6 +50,7 @@ class Stream:
         self.pan = params['output']['pan']
         # === AUDIO ===
         self.sample_path = params['sample']
+        self.sampleDurSec = get_sample_duration(self.sample_path)
         # === CSOUND REFERENCES (assegnati dal Generator) ===
         self.sample_table_num = None
         self.envelope_table_num = None
@@ -104,7 +111,7 @@ class Stream:
             
         elif self.pointer_mode == 'reverse':
             sample_position = self._cumulative_read_time * self.pointer_speed
-            base_pos = self.pointer_start - sample_position
+            base_pos = (self.sampleDurSec - self.pointer_start - sample_position) % self.sampleDurSec
             
         elif self.pointer_mode == 'loop':
             loop_start = self.pointer_params.get('loop_start', 0.0)
@@ -118,7 +125,7 @@ class Stream:
         # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
         elif self.pointer_mode == 'random':
             # Random: posizione completamente casuale nel range
-            return self.pointer_start + random.uniform(0, self.pointer_random_range)
+            return self.pointer_start + random.uniform(0, self.pointer_random_range)*self.sampleDurSec
             
         else:
             raise NotImplementedError(f"Mode {self.pointer_mode} not implemented")
@@ -175,14 +182,6 @@ class Stream:
             self._cumulative_read_time += inter_onset
             grain_count += 1     
             # Safety check per async (evita loop infiniti)
-            if grain_count > self.estimated_num_grains * 3:
-                print(f"⚠️  Warning: {self.stream_id} generò troppi grani, stop at {grain_count}")
-                break
         self.generated = True
-        # Info debug
-        actual_density = len(self.grains) / self.duration
-        print(f"  → Stream '{self.stream_id}': {len(self.grains)} grains "
-              f"(target density: {self.density:.1f} g/s, "
-              f"actual: {actual_density:.1f} g/s)")
         return self.grains
 
