@@ -174,7 +174,7 @@ class Stream:
     def _calculate_pointer(self, grain_count, elapsed_time):
         """
         Calcola la posizione di lettura nel sample per questo grano.
-        
+
         Usa il TEMPO REALE trascorso dall'inizio dello stream. 
         Questo garantisce la separazione micro/macro di Truax (1994): la posizione nel sample (livello macro) è indipendente dalla density dei grani (livello micro).
         
@@ -236,27 +236,15 @@ class Stream:
             # PITCH_RATIO (con envelope support + safety)
             if self.pitch_semitones_envelope is not None:
                 # Envelope di semitoni → valuta e converti a ratio
-                semitones = self._safe_evaluate(
-                    self.pitch_semitones_envelope, 
-                    elapsed_time,
-                    -36, 36)  # ±3 ottave in semitoni
+                semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time,-36, 36)  # ±3 ottave in semitoni
                 pitch_ratio = pow(2.0, semitones / 12.0)
             else:
                 # Numero fisso o envelope di ratio
-                pitch_ratio = self._safe_evaluate(
-                    self.pitch_ratio,
-                    elapsed_time,
-                    0.125, 8.0)  # ±3 ottave come ratio
+                pitch_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time,0.125, 8.0)  # ±3 ottave come ratio
             # VOLUME (con envelope support + safety)
-            volume = self._safe_evaluate(
-                self.volume,
-                elapsed_time,
-                -120, 12)  # dB range: da quasi silenzio a +12dB
+            volume = self._safe_evaluate(self.volume,elapsed_time,-120, 12)  # dB range: da quasi silenzio a +12dB
             # PAN (con envelope support + safety)
-            pan = self._safe_evaluate(
-                self.pan,
-                elapsed_time,
-                0.0, 1.0)  # stereo field: 0=left, 1=right
+            pan = self._safe_evaluate(self.pan,elapsed_time,0.0, 1.0)  # stereo field: 0=left, 1=right
 
             # CREA IL GRANO
             grain = Grain(
