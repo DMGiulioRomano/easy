@@ -19,8 +19,28 @@ class Stream:
         # === DISTRIBUTION (0=sync, 1=async) ===
         self.distribution = params.get('distribution', 0.0)        
         # === PITCH ===
-        shift_semitones = params['pitch'].get('shift_semitones', 0)
-        self.pitch_ratio = pow(2.0, shift_semitones / 12.0)
+        # 1. shift_semitones: valore o envelope di semitoni
+        # 2. ratio: valore o envelope di pitch_ratio direttamente
+        if 'shift_semitones' in params['pitch']:
+            shift_param = params['pitch']['shift_semitones']
+            
+            if isinstance(shift_param, (int, float)):
+                # Numero singolo → converti subito a ratio
+                self.pitch_ratio = pow(2.0, shift_param / 12.0)
+                self.pitch_semitones_envelope = None
+            else:
+                # Envelope di semitoni → salva envelope, conversione per-grano
+                self.pitch_semitones_envelope = self._parse_envelope_param(
+                    shift_param, "pitch.shift_semitones"
+                )
+                self.pitch_ratio = None  # marker: usa envelope
+        else:
+            # Modalità ratio diretta (opzionale, più avanzata)
+            self.pitch_ratio = self._parse_envelope_param(
+                params['pitch'].get('ratio', 1.0), "pitch.ratio"
+            )
+            self.pitch_semitones_envelope = None
+        
         # === POINTER ===
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer'].get('mode', 'linear')
@@ -29,20 +49,9 @@ class Stream:
             self.loopstart = params['pointer'].get('loopstart', 0.0)
             self.loopdur = params['pointer'].get('loopdur', 1.0)
         # pointer_speed può essere un numero fisso o un Envelope
-        speed_param = params['pointer'].get('speed', 1.0)
-
-        if isinstance(speed_param, (int, float)):
-            # Numero singolo → usa direttamente (efficiente!)
-            self.pointer_speed = speed_param
-        elif isinstance(speed_param, dict):
-            # Dict con 'type' e 'points' → crea Envelope
-            self.pointer_speed = Envelope(speed_param)
-        elif isinstance(speed_param, list):
-            # Lista di breakpoints → Envelope lineare
-            self.pointer_speed = Envelope(speed_param)
-        else:
-            raise ValueError(f"pointer.speed formato non valido: {speed_param}")
-
+        self.pointer_speed = self._parse_envelope_param(
+            params['pointer'].get('speed', 1.0), "pointer.speed"
+        )
         self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
         # === GRAIN PARAMETERS ===
@@ -54,31 +63,81 @@ class Stream:
             self.density = overlap_factor / self.grain_duration
         else:
             self.density = params['density']
-            # Default grain.reverse dipende da pointer.mode
+        # Da rivedere!!!!!! pointer_mode non è mai piu reverse !!!
+        # === GRAIN REVERSE ===
         if 'reverse' in params['grain']:
-            # Utente ha specificato esplicitamente → usa quello
             self.grain_reverse = params['grain']['reverse']
         else:
-            # AUTO-DEDUZIONE dal pointer mode
             if self.pointer_mode == 'reverse':
                 self.grain_reverse = True   # reverse→reverse
             else:
-                self.grain_reverse = False  # linear/freeze/loop/random→forward       
+                self.grain_reverse = False
         # === OUTPUT ===
-        self.volume = params['output']['volume']
-        self.pan = params['output']['pan']
+        self.volume = self._parse_envelope_param(
+            params['output']['volume'], "output.volume")
+        self.pan = self._parse_envelope_param(
+            params['output']['pan'], "output.pan")
         # === AUDIO ===
         self.sample_path = params['sample']
         self.sampleDurSec = get_sample_duration(self.sample_path)
         # === CSOUND REFERENCES (assegnati dal Generator) ===
         self.sample_table_num = None
         self.envelope_table_num = None
-        self.estimated_num_grains = int(self.duration * self.density)
         # === STATE ===
         self._cumulative_read_time = 0.0  
         self.grains = []
         self.generated = False  
 
+    def _parse_envelope_param(self, param, param_name="parameter"):
+        """
+        Helper per parsare parametri che possono essere numeri o Envelope
+        
+        Args:
+            param: numero singolo, lista di breakpoints, o dict con type/points
+            param_name: nome del parametro (per messaggi errore informativi)
+        
+        Returns:
+            numero o Envelope
+        
+        Examples:
+            >>> self._parse_envelope_param(50, "density")
+            50
+            >>> self._parse_envelope_param([[0, 20], [2, 100]], "density")
+            Envelope(type=linear, points=[[0, 20], [2, 100]])
+            >>> self._parse_envelope_param({'type': 'cubic', 'points': [...]}, "volume")
+            Envelope(type=cubic, ...)
+        """
+        if isinstance(param, (int, float)):
+            # Numero singolo → usa direttamente (efficiente!)
+            return param
+        elif isinstance(param, dict):
+            # Dict con 'type' e 'points' → crea Envelope
+            return Envelope(param)
+        elif isinstance(param, list):
+            # Lista di breakpoints → Envelope lineare
+            return Envelope(param)
+        else:
+            raise ValueError(f"{param_name} formato non valido: {param}")
+
+    def _safe_evaluate(self, param, time, min_val, max_val):
+        """
+        Valuta un parametro (fisso o Envelope) con safety bounds
+        
+        Args:
+            param: numero o Envelope
+            time: tempo relativo all'onset dello stream (elapsed_time)
+            min_val: valore minimo ammissibile
+            max_val: valore massimo ammissibile
+        
+        Returns:
+            float: valore clippato nei bounds
+        """
+        if isinstance(param, Envelope):
+            value = param.evaluate(time)
+        else:
+            value = param
+        return max(min_val, min(max_val, value))
+    
     def _calculate_inter_onset_time(self):
         """
         Calcola l'inter-onset time basato su density e distribution
@@ -112,28 +171,20 @@ class Stream:
             return random.uniform(0, max_offset)
     
 
-    def _calculate_pointer(self, grain_count, current_onset):
+    def _calculate_pointer(self, grain_count, elapsed_time):
         """
         Calcola la posizione di lettura nel sample per questo grano.
         
-        Prima usavo un tempo cumulativo basato su inter_onset ma così la posizione del sample è influenzata dalla densità dei grani. 
         Usa il TEMPO REALE trascorso dall'inizio dello stream. 
-        Questo garantisce la separazione
-        micro/macro di Truax (1994): la posizione nel sample (livello macro)
-        è indipendente dalla density dei grani (livello micro).
-        
-        Formula base (mode linear):
-            elapsed_time = current_onset - self.onset
-            pointer_position = pointer_start + (elapsed_time × pointer_speed)
+        Questo garantisce la separazione micro/macro di Truax (1994): la posizione nel sample (livello macro) è indipendente dalla density dei grani (livello micro).
         
         Args:
-            current_onset: tempo assoluto in secondi di quando parte questo grano
+            grain_count: numero progressivo del grano (0 = primo)
+            elapsed_time: secondi trascorsi dall'onset dello stream
             
         Returns:
             float: posizione in secondi nel sample sorgente
         """        
-        elapsed_time = current_onset - self.onset
-
         # Calcola la distanza percorsa nel sample
         if isinstance(self.pointer_speed, Envelope):
             # Envelope: integra la velocità nel tempo
@@ -151,7 +202,6 @@ class Stream:
             # Random: posizione completamente casuale nel range
             return self.pointer_start + random.uniform(0, self.pointer_random_range)*self.sampleDurSec
         
-        # APPLICA JITTER alla posizione base (per tutti i mode tranne random)
         if self.pointer_jitter > 0.0:
             jitter_deviation = random.uniform(-self.pointer_jitter, self.pointer_jitter)
             return base_pos + jitter_deviation
@@ -180,16 +230,42 @@ class Stream:
         stream_end = self.onset + self.duration        
         grain_count = 0
         while current_onset < stream_end:
+            elapsed_time = current_onset - self.onset
             # Calcola pointer position (dove leggere nel sample)
             pointer_pos = self._calculate_pointer(grain_count, current_onset)
-            # Crea il grano
+            # PITCH_RATIO (con envelope support + safety)
+            if self.pitch_semitones_envelope is not None:
+                # Envelope di semitoni → valuta e converti a ratio
+                semitones = self._safe_evaluate(
+                    self.pitch_semitones_envelope, 
+                    elapsed_time,
+                    -36, 36)  # ±3 ottave in semitoni
+                pitch_ratio = pow(2.0, semitones / 12.0)
+            else:
+                # Numero fisso o envelope di ratio
+                pitch_ratio = self._safe_evaluate(
+                    self.pitch_ratio,
+                    elapsed_time,
+                    0.125, 8.0)  # ±3 ottave come ratio
+            # VOLUME (con envelope support + safety)
+            volume = self._safe_evaluate(
+                self.volume,
+                elapsed_time,
+                -120, 12)  # dB range: da quasi silenzio a +12dB
+            # PAN (con envelope support + safety)
+            pan = self._safe_evaluate(
+                self.pan,
+                elapsed_time,
+                0.0, 1.0)  # stereo field: 0=left, 1=right
+
+            # CREA IL GRANO
             grain = Grain(
                 onset=current_onset,
                 duration=self.grain_duration,
                 pointer_pos=pointer_pos,
-                pitch_ratio=self.pitch_ratio,
-                volume=self.volume,
-                pan=self.pan,
+                pitch_ratio=pitch_ratio,
+                volume=volume,
+                pan=pan,
                 sample_table=self.sample_table_num,
                 envelope_table=self.envelope_table_num,
                 grain_reverse=self.grain_reverse
@@ -203,3 +279,6 @@ class Stream:
         self.generated = True
         return self.grains
 
+    def __repr__(self):
+        return (f"Stream(id={self.stream_id}, onset={self.onset}, "
+                f"dur={self.duration}, grains={len(self.grains)})")

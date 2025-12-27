@@ -7,7 +7,7 @@ streams:
     duration: 1580
     sample: "016.wav"
     grain:
-      duration: .01      
+      duration: .02      
       overlap_factor: 1
       #linear: false
     density: 10        
