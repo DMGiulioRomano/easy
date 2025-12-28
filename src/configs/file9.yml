@@ -9,16 +9,11 @@ streams:
     grain:
       duration: .03      
       envelope: half_sine
-      overlap_factor: 2.0
-    density: 3         
-    distribution: 0
     pointer:
-      start: 4.0       
-      mode: linear      
+      start: 0.5       
+      mode: linear     
       speed: .5
-      jitter: 0.002
-    pitch:
-      shift_semitones: 0
+      jitter: 0.001
     output:
       pan: 0.5          
       volume: -6        
@@ -28,13 +23,12 @@ streams:
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: .03      
+      duration: [[0,.03],[4,.33]]      
       envelope: half_sine
-      overlap_factor: 4.0
     density: 3         
     distribution: 0
     pointer:
-      start: 4.0       
+      start: 0.5      
       mode: linear      
       speed: .5  
       jitter: 0.001
@@ -49,13 +43,14 @@ streams:
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: .03      
+      duration: 
+        type: cubic
+        points: [[0,.03],[4,.33]]      
       envelope: half_sine
-      overlap_factor: 2.0
     density: 3         
     distribution: 0
     pointer:
-      start: 4.0       
+      start: .5       
       mode: linear      
       speed: .5
       jitter: 0.001
@@ -72,7 +67,6 @@ streams:
     grain:
       duration: .03      
       envelope: half_sine
-      overlap_factor: 4.0
     density: 3         
     distribution: 0
     pointer:

@@ -16,8 +16,8 @@ DURATA?=30.0
 DURATA_:=$(subst .,_,$(DURATA))
 INPUT?=001
 
-AUTOKILL?= true
-AUTOPEN?= true
+AUTOKILL?=true
+AUTOPEN?=true
 FILE?=file1
 TEST?=true
 .SECONDARY: $(SCO_FILES)

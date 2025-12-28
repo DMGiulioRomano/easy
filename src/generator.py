@@ -49,13 +49,15 @@ class Generator:
             return obj
 
     def _format_param_for_comment(self, param, multiplier=1, unit=''):
-        """Formatta un parametro per i commenti SCO (gestisce Envelope)"""
-        if isinstance(param, Envelope):
+        """Formatta un parametro per i commenti SCO (gestisce Envelope e None)"""
+        if param is None:
+            return "N/A"
+        elif isinstance(param, Envelope):
             return "dynamic (envelope)"
         else:
             value = param * multiplier
             return f"{value:.1f}{unit}"
-                
+                        
     def load_yaml(self):
         """Carica e parsa il file YAML"""
         with open(self.yaml_path, 'r') as f:

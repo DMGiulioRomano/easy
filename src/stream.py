@@ -54,15 +54,35 @@ class Stream:
         )
         self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
+
+
+
         # === GRAIN PARAMETERS ===
         self.grain_duration = self._parse_envelope_param(params['grain']['duration'], "grain.duration")
         self.grain_envelope = params['grain'].get('envelope','hanning')
-        # === DENSITY ===
-        if 'overlap_factor' in params['grain']:
-            overlap_factor = params['grain']['overlap_factor']
-            self.density = overlap_factor / self.grain_duration
+
+        # === DENSITY / FILL_FACTOR ===
+        # Due modalità mutuamente esclusive:
+        # 1. fill_factor: density calcolata dinamicamente = fill_factor / grain_dur
+        # 2. density: valore diretto (fisso o envelope)
+        
+        if 'fill_factor' in params:
+            # Modalità FILL_FACTOR esplicita
+            self.fill_factor = self._parse_envelope_param(
+                params['fill_factor'], "fill_factor"
+            )
+            self.density = None
+        elif 'density' in params:
+            # Modalità DENSITY diretta
+            self.fill_factor = None
+            self.density = self._parse_envelope_param(
+                params['density'], "density"
+            )
         else:
-            self.density = params['density']
+            # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
+            self.fill_factor = 2.0
+            self.density = None
+
         # Da rivedere!!!!!! pointer_mode non è mai piu reverse !!!
         # === GRAIN REVERSE ===
         if 'reverse' in params['grain']:
@@ -73,10 +93,8 @@ class Stream:
             else:
                 self.grain_reverse = False
         # === OUTPUT ===
-        self.volume = self._parse_envelope_param(
-            params['output']['volume'], "output.volume")
-        self.pan = self._parse_envelope_param(
-            params['output']['pan'], "output.pan")
+        self.volume = self._parse_envelope_param(params['output']['volume'], "output.volume")
+        self.pan = self._parse_envelope_param(params['output']['pan'], "output.pan")
         # === AUDIO ===
         self.sample_path = params['sample']
         self.sampleDurSec = get_sample_duration(self.sample_path)
@@ -137,10 +155,17 @@ class Stream:
         else:
             value = param
         return max(min_val, min(max_val, value))
-    
-    def _calculate_inter_onset_time(self):
+
+    def _calculate_inter_onset_time(self, elapsed_time, current_grain_dur):
         """
-        Calcola l'inter-onset time basato su density e distribution
+        Calcola l'inter-onset time basato su density/fill_factor e distribution
+        
+        Se fill_factor è definito:
+            density_effettiva = fill_factor / current_grain_dur
+            (la density si adatta dinamicamente alla durata del grano)
+        
+        Se density è definita direttamente:
+            density_effettiva = density (fissa o da envelope)
         
         SYNCHRONOUS (distribution=0):
             inter_onset = 1 / density (fisso)
@@ -150,26 +175,41 @@ class Stream:
             (Truax 1994: "random value between zero and twice the average")
         
         Args:
-            iteration: numero iterazione (per seed random se necessario)
+            elapsed_time: tempo trascorso dall'onset dello stream
+            current_grain_dur: durata del grano corrente (già valutata)
             
         Returns:
             float: tempo in secondi fino al prossimo grano
         """
-        avg_inter_onset = 1.0 / self.density
+        # Calcola density effettiva
+        if self.fill_factor is not None:
+            # Modalità FILL_FACTOR: density = fill_factor / grain_duration
+            ff = self._safe_evaluate(self.fill_factor, elapsed_time, min_val=0.1, max_val=50.0)
+            effective_density = ff / current_grain_dur
+        else:
+            # Modalità DENSITY diretta
+            effective_density = self._safe_evaluate(
+                self.density, elapsed_time,
+                min_val=0.1, max_val=4000.0  # density bounds
+            )
+        
+        # Safety: clamp density per evitare problemi
+        effective_density = max(0.1, min(4000.0, effective_density))
+        
+        avg_inter_onset = 1.0 / effective_density
         
         if self.distribution == 0.0:
             # SYNCHRONOUS: inter-onset fisso
             return avg_inter_onset
-        
         else:
-            # ASYNCHRONOUS: inter-onset randomizzato
-            # Range: [0, 2 × average] come da Truax
-            max_offset = self.distribution * (2.0 * avg_inter_onset)
-            
-            # Random uniforme tra 0 e max_offset
-            # (distribution=1.0 → full range, distribution=0.5 → mezzo range)
-            return random.uniform(0, max_offset)
-    
+            # INTERPOLAZIONE sync → async
+            # Preserva la media, aumenta la varianza con distribution
+            sync_value = avg_inter_onset
+            async_value = random.uniform(0, 2.0 * avg_inter_onset)
+            return (1.0 - self.distribution) * sync_value + self.distribution * async_value    
+
+
+
 
     def _calculate_pointer(self, grain_count, elapsed_time):
         """
@@ -233,7 +273,7 @@ class Stream:
             elapsed_time = current_onset - self.onset
             grain_dur = self._safe_evaluate(self.grain_duration,elapsed_time,min_val=0.001,max_val=10.0)
             # Calcola pointer position (dove leggere nel sample)
-            pointer_pos = self._calculate_pointer(grain_count, current_onset)
+            pointer_pos = self._calculate_pointer(grain_count, elapsed_time)
             # PITCH_RATIO (con envelope support + safety)
             if self.pitch_semitones_envelope is not None:
                 # Envelope di semitoni → valuta e converti a ratio
@@ -261,7 +301,7 @@ class Stream:
             )
             self.grains.append(grain)
             # Calcola quando parte il PROSSIMO grano
-            inter_onset = self._calculate_inter_onset_time()
+            inter_onset = self._calculate_inter_onset_time(elapsed_time, grain_dur)
             current_onset += inter_onset
             grain_count += 1     
             # Safety check per async (evita loop infiniti)
@@ -269,5 +309,6 @@ class Stream:
         return self.grains
 
     def __repr__(self):
+        mode = "fill_factor" if self.fill_factor is not None else "density"
         return (f"Stream(id={self.stream_id}, onset={self.onset}, "
-                f"dur={self.duration}, grains={len(self.grains)})")
+                f"dur={self.duration}, mode={mode}, grains={len(self.grains)})")
