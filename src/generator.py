@@ -4,7 +4,7 @@
 import yaml
 from stream import Stream
 from testina import Testina
-
+from envelope import Envelope
 class Generator:
     def __init__(self, yaml_path):
         self.yaml_path = yaml_path
@@ -47,7 +47,15 @@ class Generator:
                 return evaluated
         else:
             return obj
-        
+
+    def _format_param_for_comment(self, param, multiplier=1, unit=''):
+        """Formatta un parametro per i commenti SCO (gestisce Envelope)"""
+        if isinstance(param, Envelope):
+            return "dynamic (envelope)"
+        else:
+            value = param * multiplier
+            return f"{value:.1f}{unit}"
+                
     def load_yaml(self):
         """Carica e parsa il file YAML"""
         with open(self.yaml_path, 'r') as f:
@@ -177,8 +185,11 @@ class Generator:
             
             for stream in self.streams:
                 f.write(f'; Stream: {stream.stream_id}\n')
-                f.write(f'; Density: {stream.density} g/s, Distribution: {stream.distribution}\n')
-                f.write(f'; Grain duration: {stream.grain_duration*1000:.1f}ms\n')
+                # Grain duration: gestisce sia numeri che Envelope
+                f.write(f'; Grain duration: {self._format_param_for_comment(stream.grain_duration, 1000, "ms")}\n')
+                f.write(f'; Density: {self._format_param_for_comment(stream.density, 1, " g/s")} \n')
+                f.write(f'; Distribution: {self._format_param_for_comment(stream.distribution, 1, "")} \n')
+
                 f.write(f'; Total grains: {len(stream.grains)}\n\n')
                 
                 for grain in stream.grains:

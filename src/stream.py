@@ -18,12 +18,12 @@ class Stream:
         self.timeScale = params.get('time_scale', 1.0)  # per il futuro per rallentare - velocizzare la cloud.     
         # === DISTRIBUTION (0=sync, 1=async) ===
         self.distribution = params.get('distribution', 0.0)        
+
         # === PITCH ===
-        # 1. shift_semitones: valore o envelope di semitoni
-        # 2. ratio: valore o envelope di pitch_ratio direttamente
-        if 'shift_semitones' in params['pitch']:
-            shift_param = params['pitch']['shift_semitones']
-            
+        # Gestisce: assente, vuoto, null, shift_semitones, ratio
+        pitch_params = params.get('pitch', {}) or {}  # None → {}
+        if 'shift_semitones' in pitch_params:
+            shift_param = pitch_params['shift_semitones']
             if isinstance(shift_param, (int, float)):
                 # Numero singolo → converti subito a ratio
                 self.pitch_ratio = pow(2.0, shift_param / 12.0)
@@ -35,12 +35,12 @@ class Stream:
                 )
                 self.pitch_ratio = None  # marker: usa envelope
         else:
-            # Modalità ratio diretta (opzionale, più avanzata)
+            # Modalità ratio diretta, oppure default a 1.0 (nessun pitch shift)
             self.pitch_ratio = self._parse_envelope_param(
-                params['pitch'].get('ratio', 1.0), "pitch.ratio"
+                pitch_params.get('ratio', 1.0), "pitch.ratio"
             )
             self.pitch_semitones_envelope = None
-        
+                    
         # === POINTER ===
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer'].get('mode', 'linear')
@@ -55,7 +55,7 @@ class Stream:
         self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
         # === GRAIN PARAMETERS ===
-        self.grain_duration = params['grain']['duration']
+        self.grain_duration = self._parse_envelope_param(params['grain']['duration'], "grain.duration")
         self.grain_envelope = params['grain'].get('envelope','hanning')
         # === DENSITY ===
         if 'overlap_factor' in params['grain']:
@@ -231,6 +231,7 @@ class Stream:
         grain_count = 0
         while current_onset < stream_end:
             elapsed_time = current_onset - self.onset
+            grain_dur = self._safe_evaluate(self.grain_duration,elapsed_time,min_val=0.001,max_val=10.0)
             # Calcola pointer position (dove leggere nel sample)
             pointer_pos = self._calculate_pointer(grain_count, current_onset)
             # PITCH_RATIO (con envelope support + safety)
@@ -249,7 +250,7 @@ class Stream:
             # CREA IL GRANO
             grain = Grain(
                 onset=current_onset,
-                duration=self.grain_duration,
+                duration=grain_dur,
                 pointer_pos=pointer_pos,
                 pitch_ratio=pitch_ratio,
                 volume=volume,

@@ -33,6 +33,7 @@ streams:
     volume: [[0, -6], [4, -40]]  # fade out lineare
     pan: 0.5
 
+
 # =============================================================================
 # ESEMPIO 2: Pan sweep (spatial motion)
 # =============================================================================
@@ -261,24 +262,17 @@ streams:
 # Normale stream senza envelope (backward compatible)
 - stream_id: "normal_fixed"
   onset: 35.0
-  duration: 2.0
+  duration: 10.0
   sample: "016.wav"
-  
   grain:
-    duration: 0.05
-    envelope: hanning
-  
+    duration: [[0,0.05],[3,.15],[6,0.07]]
+    envelope: hanning  
   density: 50
   distribution: 0.3
-  
   pointer:
     start: 0.0
     mode: linear
     speed: 1.0
-  
-  pitch:
-    shift_semitones: 7  # numero fisso (quinta giusta)
-  
   output:
-    volume: -12  # numero fisso
-    pan: 0.5     # numero fisso
+    volume: -24  # numero fisso
+    pan: 0.5     
