@@ -15,7 +15,7 @@ class Stream:
         # === TIMING ===
         self.onset = params['onset']
         self.duration = params['duration']
-        self.timeScale = params.get('time_scale', 1.0)  # per il futuro per rallentare - velocizzare la cloud.     
+        self.timeScale = params.get('time_scale', 1.0)
         # === DISTRIBUTION (0=sync, 1=async) ===
         self.distribution = params.get('distribution', 0.0)        
 
@@ -30,15 +30,11 @@ class Stream:
                 self.pitch_semitones_envelope = None
             else:
                 # Envelope di semitoni → salva envelope, conversione per-grano
-                self.pitch_semitones_envelope = self._parse_envelope_param(
-                    shift_param, "pitch.shift_semitones"
-                )
+                self.pitch_semitones_envelope = self._parse_envelope_param(shift_param, "pitch.shift_semitones")
                 self.pitch_ratio = None  # marker: usa envelope
         else:
             # Modalità ratio diretta, oppure default a 1.0 (nessun pitch shift)
-            self.pitch_ratio = self._parse_envelope_param(
-                pitch_params.get('ratio', 1.0), "pitch.ratio"
-            )
+            self.pitch_ratio = self._parse_envelope_param(pitch_params.get('ratio', 1.0), "pitch.ratio")
             self.pitch_semitones_envelope = None
                     
         # === POINTER ===
@@ -49,13 +45,9 @@ class Stream:
             self.loopstart = params['pointer'].get('loopstart', 0.0)
             self.loopdur = params['pointer'].get('loopdur', 1.0)
         # pointer_speed può essere un numero fisso o un Envelope
-        self.pointer_speed = self._parse_envelope_param(
-            params['pointer'].get('speed', 1.0), "pointer.speed"
-        )
+        self.pointer_speed = self._parse_envelope_param(params['pointer'].get('speed', 1.0), "pointer.speed")
         self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
-
-
 
         # === GRAIN PARAMETERS ===
         self.grain_duration = self._parse_envelope_param(params['grain']['duration'], "grain.duration")
@@ -65,36 +57,28 @@ class Stream:
         # Due modalità mutuamente esclusive:
         # 1. fill_factor: density calcolata dinamicamente = fill_factor / grain_dur
         # 2. density: valore diretto (fisso o envelope)
-        
         if 'fill_factor' in params:
             # Modalità FILL_FACTOR esplicita
-            self.fill_factor = self._parse_envelope_param(
-                params['fill_factor'], "fill_factor"
-            )
+            self.fill_factor = self._parse_envelope_param(params['fill_factor'], "fill_factor")
             self.density = None
         elif 'density' in params:
             # Modalità DENSITY diretta
             self.fill_factor = None
-            self.density = self._parse_envelope_param(
-                params['density'], "density"
-            )
+            self.density = self._parse_envelope_param(params['density'], "density")
         else:
             # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
             self.fill_factor = 2.0
             self.density = None
 
-        # Da rivedere!!!!!! pointer_mode non è mai piu reverse !!!
         # === GRAIN REVERSE ===
         if 'reverse' in params['grain']:
-            self.grain_reverse = params['grain']['reverse']
+            self.grain_reverse_mode = params['grain']['reverse']  # True o False
         else:
-            if self.pointer_mode == 'reverse':
-                self.grain_reverse = True   # reverse→reverse
-            else:
-                self.grain_reverse = False
+            self.grain_reverse_mode = 'auto'  # segui pointer_speed
+
         # === OUTPUT ===
-        self.volume = self._parse_envelope_param(params['output']['volume'], "output.volume")
-        self.pan = self._parse_envelope_param(params['output']['pan'], "output.pan")
+        self.volume = self._parse_envelope_param(params['output'].get('volume', -6.0), "output.volume")
+        self.pan = self._parse_envelope_param(params['output'].get('pan', 1.0), "output.pan")
         # === AUDIO ===
         self.sample_path = params['sample']
         self.sampleDurSec = get_sample_duration(self.sample_path)
@@ -282,6 +266,16 @@ class Stream:
             else:
                 # Numero fisso o envelope di ratio
                 pitch_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time,0.125, 8.0)  # ±3 ottave come ratio
+            if self.grain_reverse_mode == 'auto':
+                # Calcola la velocità effettiva a questo tempo
+                if isinstance(self.pointer_speed, Envelope):
+                    current_speed = self.pointer_speed.evaluate(elapsed_time)
+                else:
+                    current_speed = self.pointer_speed
+                grain_reverse = (current_speed < 0)
+            else:
+                # Usa il valore esplicito (True o False)
+                grain_reverse = self.grain_reverse_mode
             # VOLUME (con envelope support + safety)
             volume = self._safe_evaluate(self.volume,elapsed_time,-120, 12)  # dB range: da quasi silenzio a +12dB
             # PAN (con envelope support + safety)
@@ -297,7 +291,7 @@ class Stream:
                 pan=pan,
                 sample_table=self.sample_table_num,
                 envelope_table=self.envelope_table_num,
-                grain_reverse=self.grain_reverse
+                grain_reverse=grain_reverse
             )
             self.grains.append(grain)
             # Calcola quando parte il PROSSIMO grano

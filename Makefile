@@ -18,7 +18,7 @@ INPUT?=001
 
 AUTOKILL?=true
 AUTOPEN?=true
-FILE?=file1
+FILE?=test
 TEST?=true
 .SECONDARY: $(SCO_FILES)
 
@@ -81,6 +81,7 @@ rx-stop:
 	   pgrep -f "iZotope RX 11" >/dev/null; then \
 		echo "RX 11 attivo: AUTOKILL=true, chiusura in corso"; \
 		osascript -e 'tell application "iZotope RX 11 Audio Editor" to quit' || true; \
+		sleep 1; \
 	else \
 		echo "make: Nothing to be done for 'all'..."; \
 	fi

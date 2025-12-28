@@ -12,7 +12,7 @@ streams:
     pointer:
       start: 0.5       
       mode: linear     
-      speed: .5
+      speed: 1
       jitter: 0.001
     output:
       pan: 0.5          
@@ -23,14 +23,14 @@ streams:
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: [[0,.03],[4,.33]]      
+      duration: [[0,.02],[4,.4]]      
       envelope: half_sine
-    density: 3         
+    density: 5        
     distribution: 0
     pointer:
       start: 0.5      
       mode: linear      
-      speed: .5  
+      speed: 1  
       jitter: 0.001
     pitch:
       shift_semitones: 0
@@ -53,26 +53,6 @@ streams:
       start: .5       
       mode: linear      
       speed: .5
-      jitter: 0.001
-    pitch:
-      shift_semitones: 0
-    output:
-      pan: 0.5          
-      volume: -6        
-    # -----------------------------------------------------------------
-  - stream_id: "texture1"
-    onset: 15.0
-    duration: 5.0
-    sample: "016.wav"
-    grain:
-      duration: .03      
-      envelope: half_sine
-    density: 3         
-    distribution: 0
-    pointer:
-      start: 4.0       
-      mode: linear      
-      speed: .25 
       jitter: 0.001
     pitch:
       shift_semitones: 0

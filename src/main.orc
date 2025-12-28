@@ -17,10 +17,11 @@ instr Grain
     iStart  = p4
     iSpeed  = p5
     iVolume = p6
-    iPan    = p7
+    idegree    = p7
     iSampleTable = p8
     iEnvTable    = p9
-    iGrainReverse = p10  
+    iGrainReverse = p10
+    irad = (idegree * $PI)/180.0
     ;-------------------------------------------------------------------------
     ; CALCOLI INIT-TIME
     ;-------------------------------------------------------------------------
@@ -47,9 +48,10 @@ instr Grain
     ; Leggi il sample con la velocità specificata
     aSound = poscil3:a(aEnv, iFreq, iSampleTable, iStartNorm)
     ; Calcola panning (constant power)
-    aLeft  = aSound * sqrt(1 - iPan)
-    aRight = aSound * sqrt(iPan)
-    ; Output stereo
+    aMid = cos(irad)
+    aSide = sin(irad)
+    aL = (aMid + aSide) / sqrt(2)
+    aR = (aMid - aSide) / sqrt(2)
     outs aLeft, aRight
 endin
 ;=============================================================================
@@ -125,3 +127,5 @@ instr TapeRecorder
     ; Output stereo
     outs aLeft, aRight
 endin
+
+ 
