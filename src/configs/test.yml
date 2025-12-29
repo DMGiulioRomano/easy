@@ -16,7 +16,7 @@ streams:
       jitter: 0.001
     output:
       pan: 0.5          
-      volume: -6        
+      volume: -6       
     # -----------------------------------------------------------------
   - stream_id: "texture1"
     onset: 5.0

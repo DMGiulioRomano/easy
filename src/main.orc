@@ -21,7 +21,7 @@ instr Grain
     iSampleTable = p8
     iEnvTable    = p9
     iGrainReverse = p10
-    irad = (idegree * $PI)/180.0
+    irad = (idegree * $M_PI)/180.0
     ;-------------------------------------------------------------------------
     ; CALCOLI INIT-TIME
     ;-------------------------------------------------------------------------
@@ -48,10 +48,10 @@ instr Grain
     ; Leggi il sample con la velocità specificata
     aSound = poscil3:a(aEnv, iFreq, iSampleTable, iStartNorm)
     ; Calcola panning (constant power)
-    aMid = cos(irad)
-    aSide = sin(irad)
-    aL = (aMid + aSide) / sqrt(2)
-    aR = (aMid - aSide) / sqrt(2)
+    aMid = aSound*cos(irad)
+    aSide = aSound*sin(irad)
+    aLeft = (aMid + aSide) / sqrt(2)
+    aRight = (aMid - aSide) / sqrt(2)
     outs aLeft, aRight
 endin
 ;=============================================================================

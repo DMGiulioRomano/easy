@@ -10,19 +10,50 @@ def get_sample_duration(filepath):
 
 class Stream:
     def __init__(self, params):
-        # === IDENTITÀ ===
+        """
+        Inizializza uno stream granulare.
+        
+        La funzione è ora divisa in metodi specifici per area funzionale,
+        migliorando leggibilità, testabilità e manutenibilità.
+        """
+        # === IDENTITÀ & TIMING (sempre necessari, brevi) ===
         self.stream_id = params['stream_id']
-        # === TIMING ===
         self.onset = params['onset']
         self.duration = params['duration']
         self.timeScale = params.get('time_scale', 1.0)
-        # === DISTRIBUTION (0=sync, 1=async) ===
-        self.distribution = params.get('distribution', 0.0)        
+        
+        # === PARAMETRI COMPLESSI (metodi dedicati) ===
+        self._init_distribution(params)
+        self._init_pitch_params(params)
+        self._init_pointer_params(params)
+        self._init_grain_params(params)
+        self._init_density_params(params)
+        self._init_grain_reverse(params)
+        self._init_output_params(params)
+        
+        # === AUDIO & STATE (setup finale) ===
+        self._init_audio(params)
+        self._init_csound_references()
+        self._init_state()
 
-        # === PITCH ===
-        # Gestisce: assente, vuoto, null, shift_semitones, ratio
+    def _init_distribution(self, params):
+        """
+        Inizializza il parametro distribution (0=sync, 1=async).
+        """
+        self.distribution = params.get('distribution', 0.0)
+
+    def _init_pitch_params(self, params):
+        """
+        Gestisce i parametri di pitch con due modalità:
+        1. shift_semitones: trasposizione in semitoni (convertita a ratio)
+        2. ratio: trasposizione diretta come ratio (default 1.0)
+        
+        Entrambe supportano numeri fissi o Envelope.
+        """
         pitch_params = params.get('pitch', {}) or {}  # None → {}
+        
         if 'shift_semitones' in pitch_params:
+            # Modalità SEMITONI
             shift_param = pitch_params['shift_semitones']
             if isinstance(shift_param, (int, float)):
                 # Numero singolo → converti subito a ratio
@@ -30,65 +61,134 @@ class Stream:
                 self.pitch_semitones_envelope = None
             else:
                 # Envelope di semitoni → salva envelope, conversione per-grano
-                self.pitch_semitones_envelope = self._parse_envelope_param(shift_param, "pitch.shift_semitones")
+                self.pitch_semitones_envelope = self._parse_envelope_param(
+                    shift_param, "pitch.shift_semitones"
+                )
                 self.pitch_ratio = None  # marker: usa envelope
         else:
-            # Modalità ratio diretta, oppure default a 1.0 (nessun pitch shift)
-            self.pitch_ratio = self._parse_envelope_param(pitch_params.get('ratio', 1.0), "pitch.ratio")
+            # Modalità RATIO diretta (o default a 1.0)
+            self.pitch_ratio = self._parse_envelope_param(
+                pitch_params.get('ratio', 1.0), "pitch.ratio"
+            )
             self.pitch_semitones_envelope = None
-                    
-        # === POINTER ===
+
+
+    def _init_pointer_params(self, params):
+        """
+        Gestisce tutti i parametri del pointer (posizionamento nel sample).
+        
+        Parametri:
+        - start: posizione iniziale
+        - mode: linear, loop, random
+        - speed: velocità di lettura (supporta Envelope)
+        - jitter: deviazione casuale dalla posizione
+        - random_range: range per mode='random'
+        - loopstart, loopdur: per mode='loop'
+        """
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer'].get('mode', 'linear')
+        # Parametri specifici per mode='loop'
         if self.pointer_mode == 'loop':
-            # normalizzati tra 0 e 1.
             self.loopstart = params['pointer'].get('loopstart', 0.0)
             self.loopdur = params['pointer'].get('loopdur', 1.0)
-        # pointer_speed può essere un numero fisso o un Envelope
-        self.pointer_speed = self._parse_envelope_param(params['pointer'].get('speed', 1.0), "pointer.speed")
-        self.pointer_jitter = params['pointer'].get('jitter', 0.0)  
+        # Speed può essere numero fisso o Envelope
+        self.pointer_speed = self._parse_envelope_param(
+            params['pointer'].get('speed', 1.0), "pointer.speed"
+        )
+        self.pointer_jitter = params['pointer'].get('jitter', 0.0)
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
 
-        # === GRAIN PARAMETERS ===
-        self.grain_duration = self._parse_envelope_param(params['grain']['duration'], "grain.duration")
-        self.grain_envelope = params['grain'].get('envelope','hanning')
+    def _init_grain_params(self, params):
+        """
+        Gestisce i parametri base dei singoli grani.
+        
+        Parametri:
+        - duration: durata del grano (supporta Envelope)
+        - envelope: tipo di inviluppo (hanning, hamming, etc.)
+        """
+        self.grain_duration = self._parse_envelope_param(
+            params['grain']['duration'], "grain.duration"
+        )
+        self.grain_envelope = params['grain'].get('envelope', 'hanning')
 
-        # === DENSITY / FILL_FACTOR ===
-        # Due modalità mutuamente esclusive:
-        # 1. fill_factor: density calcolata dinamicamente = fill_factor / grain_dur
-        # 2. density: valore diretto (fisso o envelope)
+    def _init_density_params(self, params):
+        """
+        Gestisce density con due modalità mutuamente esclusive:
+        
+        1. FILL_FACTOR (preferito): density = fill_factor / grain_duration
+           - La density si adatta automaticamente alla durata del grano
+           - Default: 2.0 (Roads: "covered/packed texture")
+        
+        2. DENSITY diretta: valore fisso o Envelope
+           - Controllo esplicito della density
+        """
         if 'fill_factor' in params:
             # Modalità FILL_FACTOR esplicita
-            self.fill_factor = self._parse_envelope_param(params['fill_factor'], "fill_factor")
+            self.fill_factor = self._parse_envelope_param(
+                params['fill_factor'], "fill_factor"
+            )
             self.density = None
         elif 'density' in params:
             # Modalità DENSITY diretta
             self.fill_factor = None
-            self.density = self._parse_envelope_param(params['density'], "density")
+            self.density = self._parse_envelope_param(
+                params['density'], "density"
+            )
         else:
             # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
             self.fill_factor = 2.0
             self.density = None
 
-        # === GRAIN REVERSE ===
+    def _init_grain_reverse(self, params):
+        """
+        Gestisce la direzione di lettura dei grani.
+        
+        Modalità:
+        - 'auto': segue il segno di pointer_speed (negativo = reverse)
+        - True/False: valore esplicito
+        """
         if 'reverse' in params['grain']:
             self.grain_reverse_mode = params['grain']['reverse']  # True o False
         else:
             self.grain_reverse_mode = 'auto'  # segui pointer_speed
 
-        # === OUTPUT ===
-        self.volume = self._parse_envelope_param(params['output'].get('volume', -6.0), "output.volume")
-        self.pan = self._parse_envelope_param(params['output'].get('pan', 1.0), "output.pan")
-        # === AUDIO ===
+    def _init_output_params(self, params):
+        """
+        Gestisce i parametri di output audio.
+        
+        Parametri:
+        - volume: livello in dB (supporta Envelope)
+        - pan: posizione stereo 0-1 (supporta Envelope)
+        """
+        self.volume = self._parse_envelope_param(
+            params['output'].get('volume', -6.0), "output.volume"
+        )
+        self.pan = self._parse_envelope_param(
+            params['output'].get('pan', 1.0), "output.pan"
+        )
+
+    def _init_audio(self, params):
+        """
+        Gestisce il file audio sorgente.
+        """
         self.sample_path = params['sample']
         self.sampleDurSec = get_sample_duration(self.sample_path)
-        # === CSOUND REFERENCES (assegnati dal Generator) ===
+
+    def _init_csound_references(self):
+        """
+        Inizializza i riferimenti alle ftable Csound.
+        Questi saranno assegnati dal Generator.
+        """
         self.sample_table_num = None
         self.envelope_table_num = None
-        # === STATE ===
-        self._cumulative_read_time = 0.0  
+
+    def _init_state(self):
+        """
+        Inizializza lo stato interno dello stream.
+        """
+        self._cumulative_read_time = 0.0
         self.grains = []
-        self.generated = False  
+        self.generated = False
 
     def _parse_envelope_param(self, param, param_name="parameter"):
         """

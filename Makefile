@@ -34,6 +34,12 @@ else
 all: $(ALL_PRE) $(SFDIR)/$(FILE).aif
 endif
 
+test-python: $(GENDIR)/$(FILE).sco
+	@echo "✓ Test Python passed: $(FILE).sco generated"
+
+test-csound: $(SFDIR)/$(FILE).aif
+	@echo "✓ Test Csound passed: $(FILE).aif rendered"
+
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
 	python3.11 $(INCDIR)/main.py $< $@
 
@@ -89,4 +95,4 @@ rx-stop:
 clean:
 	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav logs/*.log
 
-.PHONY: open sync test clean rx-stop
+.PHONY: open sync test clean rx-stop test-python test-csound
