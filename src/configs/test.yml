@@ -7,56 +7,45 @@ streams:
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: .03      
+      duration: 
+        type: cubic
+        points: [[0,.03],[2,.08],[5,.01]]      
       envelope: half_sine
+    density: 
+      type: cubic
+      points: [[0,50],[1,5],[2,7],[5,50]]        
     pointer:
-      start: 0.5       
-      mode: linear     
+      start: 11.5      
       speed: 1
-      jitter: 0.001
-    output:
-      pan: 0.5          
-      volume: -6       
+    pitch:
+      shift_semitones: 0
     # -----------------------------------------------------------------
   - stream_id: "texture1"
     onset: 5.0
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: [[0,.02],[4,.4]]      
+      duration: .03      
       envelope: half_sine
-    density: 5        
-    distribution: 0
     pointer:
-      start: 0.5      
-      mode: linear      
-      speed: 1  
-      jitter: 0.001
-    pitch:
-      shift_semitones: 0
-    output:
-      pan: 0.5          
-      volume: -6        
+      start: 0.5       
+      speed: 1
+      loop:
+        start: 0.5
+        end: 1
+    pan:
+      type: cubic
+      points: [[0,360],[5,-360]]  
     # -----------------------------------------------------------------
   - stream_id: "texture1"
     onset: 10.0
     duration: 5.0
     sample: "016.wav"
     grain:
-      duration: 
-        type: cubic
-        points: [[0,.03],[4,.33]]      
-      envelope: half_sine
-    density: 3         
+      duration: .02  
+    fill_factor: 2       
     distribution: 0
     pointer:
-      start: .5       
-      mode: linear      
-      speed: .5
-      jitter: 0.001
-    pitch:
-      shift_semitones: 0
-    output:
-      pan: 0.5          
-      volume: -6        
+      start: 0.5      
+      speed: [[0,1],[0.5,1],[1.3,0.7],[2.4,1.2],[5,0.02]]  
     # -----------------------------------------------------------------

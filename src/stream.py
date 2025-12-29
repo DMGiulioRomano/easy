@@ -4,6 +4,23 @@ from grain import Grain
 from envelope import Envelope
 PATHSAMPLES='./refs/'
 
+STREAM_MIN_FILLFACTOR=0.001
+STREAM_MAX_FILLFACTOR=50
+STREAM_MIN_DENSITY=0.1
+STREAM_MAX_DENSITY=4000
+STREAM_MIN_GRAIN_DURATION=0.001
+STREAM_MAX_GRAIN_DURATION=10.0
+STREAM_MIN_SEMITONES=-36
+STREAM_MAX_SEMITONES=36
+STREAM_MIN_PITCH_RATIO=0.125
+STREAM_MAX_PITCH_RATIO=8.0
+STREAM_MIN_VOLUME=-120
+STREAM_MAX_VOLUME=12
+STREAM_MIN_PANDEGREE=-360*10
+STREAM_MAX_PANDEGREE=360*10
+#STREAM_MIN_LOOPSTART=0.0
+#STREAM_MAX_PANDEGREE=360*10
+
 def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
     return info.duration  # secondi come float
@@ -21,6 +38,7 @@ class Stream:
         self.onset = params['onset']
         self.duration = params['duration']
         self.timeScale = params.get('time_scale', 1.0)
+        self._init_audio(params)
         
         # === PARAMETRI COMPLESSI (metodi dedicati) ===
         self._init_distribution(params)
@@ -32,7 +50,6 @@ class Stream:
         self._init_output_params(params)
         
         # === AUDIO & STATE (setup finale) ===
-        self._init_audio(params)
         self._init_csound_references()
         self._init_state()
 
@@ -50,7 +67,7 @@ class Stream:
         
         Entrambe supportano numeri fissi o Envelope.
         """
-        pitch_params = params.get('pitch', {}) or {}  # None → {}
+        pitch_params = params.get('pitch', {})
         
         if 'shift_semitones' in pitch_params:
             # Modalità SEMITONI
@@ -87,10 +104,17 @@ class Stream:
         """
         self.pointer_start = params['pointer']['start']
         self.pointer_mode = params['pointer'].get('mode', 'linear')
+        self.pointer_loop = params['pointer'].get('loop', {})
         # Parametri specifici per mode='loop'
-        if self.pointer_mode == 'loop':
-            self.loopstart = params['pointer'].get('loopstart', 0.0)
-            self.loopdur = params['pointer'].get('loopdur', 1.0)
+
+        if self.pointer_loop:
+            self.loopstart = self.pointer_loop.get('start', 0.0)
+            if 'end' in self.pointer_loop:
+                self.loopend = self.pointer_loop.get('end', self.duration)
+            else:
+                loopdur = self.pointer_loop.get('dur', 1.0)
+                self.loopend = self.loopstart + loopdur
+
         # Speed può essere numero fisso o Envelope
         self.pointer_speed = self._parse_envelope_param(
             params['pointer'].get('speed', 1.0), "pointer.speed"
@@ -161,10 +185,10 @@ class Stream:
         - pan: posizione stereo 0-1 (supporta Envelope)
         """
         self.volume = self._parse_envelope_param(
-            params['output'].get('volume', -6.0), "output.volume"
+            params.get('volume', -6.0), "output.volume"
         )
         self.pan = self._parse_envelope_param(
-            params['output'].get('pan', 1.0), "output.pan"
+            params.get('pan', 0.0), "pan"
         )
 
     def _init_audio(self, params):
@@ -268,13 +292,13 @@ class Stream:
         # Calcola density effettiva
         if self.fill_factor is not None:
             # Modalità FILL_FACTOR: density = fill_factor / grain_duration
-            ff = self._safe_evaluate(self.fill_factor, elapsed_time, min_val=0.1, max_val=50.0)
+            ff = self._safe_evaluate(self.fill_factor, elapsed_time, STREAM_MIN_FILLFACTOR,STREAM_MAX_FILLFACTOR)
             effective_density = ff / current_grain_dur
         else:
             # Modalità DENSITY diretta
             effective_density = self._safe_evaluate(
                 self.density, elapsed_time,
-                min_val=0.1, max_val=4000.0  # density bounds
+                STREAM_MIN_DENSITY, STREAM_MAX_DENSITY
             )
         
         # Safety: clamp density per evitare problemi
@@ -355,17 +379,17 @@ class Stream:
         grain_count = 0
         while current_onset < stream_end:
             elapsed_time = current_onset - self.onset
-            grain_dur = self._safe_evaluate(self.grain_duration,elapsed_time,min_val=0.001,max_val=10.0)
+            grain_dur = self._safe_evaluate(self.grain_duration,elapsed_time, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION)
             # Calcola pointer position (dove leggere nel sample)
             pointer_pos = self._calculate_pointer(grain_count, elapsed_time)
             # PITCH_RATIO (con envelope support + safety)
             if self.pitch_semitones_envelope is not None:
                 # Envelope di semitoni → valuta e converti a ratio
-                semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time,-36, 36)  # ±3 ottave in semitoni
+                semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
                 pitch_ratio = pow(2.0, semitones / 12.0)
             else:
                 # Numero fisso o envelope di ratio
-                pitch_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time,0.125, 8.0)  # ±3 ottave come ratio
+                pitch_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
             if self.grain_reverse_mode == 'auto':
                 # Calcola la velocità effettiva a questo tempo
                 if isinstance(self.pointer_speed, Envelope):
@@ -377,9 +401,9 @@ class Stream:
                 # Usa il valore esplicito (True o False)
                 grain_reverse = self.grain_reverse_mode
             # VOLUME (con envelope support + safety)
-            volume = self._safe_evaluate(self.volume,elapsed_time,-120, 12)  # dB range: da quasi silenzio a +12dB
+            volume = self._safe_evaluate(self.volume,elapsed_time, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME)
             # PAN (con envelope support + safety)
-            pan = self._safe_evaluate(self.pan,elapsed_time,0.0, 1.0)  # stereo field: 0=left, 1=right
+            pan = self._safe_evaluate(self.pan,elapsed_time, STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE)
 
             # CREA IL GRANO
             grain = Grain(
