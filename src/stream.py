@@ -93,7 +93,6 @@ class Stream:
             )
             self.pitch_semitones_envelope = None
 
-
     def _init_pointer_params(self, params):
         """
         Gestisce tutti i parametri del pointer (posizionamento nel sample).
@@ -103,9 +102,9 @@ class Stream:
         - speed: velocità di scansione (supporta Envelope)
         - jitter: micro-variazione bipolare (0.001-0.01 sec tipico)
         - offset_range: macro-variazione bipolare (0-1, normalizzato su durata sample)
-        - loop_start: inizio loop (opzionale, secondi)
-        - loop_end: fine loop (opzionale, secondi) - esclusivo
-        - loop_dur: alternativa a loop_end (opzionale, secondi)
+        - loop_start: inizio loop (opzionale, secondi) - FISSO
+        - loop_end: fine loop (opzionale, secondi) - FISSO (mutualmente esclusivo con loop_dur)
+        - loop_dur: durata loop (opzionale) - SUPPORTA ENVELOPE
         """ 
         pointer = params.get('pointer', {})
         
@@ -115,25 +114,54 @@ class Stream:
         self.pointer_jitter = self._parse_envelope_param(pointer.get('jitter', 0.0), "pointer.jitter")        
         self.pointer_offset_range = self._parse_envelope_param(pointer.get('offset_range', 0.0), "pointer.offset_range")
 
-        # === LOOP CONFIGURATION ===
+        # === LOOP STATE (Phase Accumulator) ===
         self._in_loop = False
-        self._loop_anchor = 0.0
+        self._loop_phase = 0.0           # Fase nel loop (0.0 - 1.0)
+        self._last_linear_pos = None     # Per calcolare delta movimento
+        
         raw_start = pointer.get('loop_start')
         raw_end = pointer.get('loop_end')
         raw_dur = pointer.get('loop_dur')
 
         if raw_start is not None:
-            # Loop mode: locale > globale (loop_unit o absolute o normalized)
             loop_mode = pointer.get('loop_unit') or self.time_mode
             scale = self.sampleDurSec if loop_mode == 'normalized' else 1.0
+            
+            # loop_start è SEMPRE fisso
             self.loop_start = raw_start * scale
-            self.loop_end = (raw_end * scale if raw_end is not None else
-                self.loop_start + raw_dur * scale if raw_dur is not None else self.sampleDurSec)
+            
+            if raw_end is not None:
+                # Modalità loop_end FISSO (legacy)
+                self.loop_end = raw_end * scale
+                self.loop_dur = None
+            elif raw_dur is not None:
+                # Modalità loop_dur (può essere Envelope!)
+                self.loop_end = None
+                
+                if isinstance(raw_dur, (int, float)):
+                    self.loop_dur = raw_dur * scale
+                else:
+                    # È un envelope/lista - scala i valori Y se normalized
+                    if loop_mode == 'normalized':
+                        if isinstance(raw_dur, dict):
+                            scaled_points = [[x, y * scale] for x, y in raw_dur['points']]
+                            raw_dur = {'type': raw_dur.get('type', 'linear'), 'points': scaled_points}
+                        elif isinstance(raw_dur, list):
+                            raw_dur = [[x, y * scale] for x, y in raw_dur]
+                    
+                    self.loop_dur = self._parse_envelope_param(raw_dur, "pointer.loop_dur")
+            else:
+                # Solo loop_start → loop fino a fine sample
+                self.loop_end = self.sampleDurSec
+                self.loop_dur = None
+                
             self.has_loop = True
         else:
-            self.loop_start = self.loop_end = None
+            self.loop_start = None
+            self.loop_end = None
+            self.loop_dur = None
             self.has_loop = False
-            
+
     def _init_grain_params(self, params):
         """
         Gestisce i parametri base dei singoli grani.
@@ -355,10 +383,9 @@ class Stream:
         """
         Calcola la posizione di lettura nel sample per questo grano.
         
-        Modello unificato (Truax 1994):
-        - Posizione base = start + movimento da speed
-        - Jitter = micro-variazione bipolare (millisecondi)
-        - Offset range = macro-variazione bipolare (proporzione del sample)
+        Usa Phase Accumulator per loop con durata dinamica (envelope).
+        La fase si accumula incrementalmente, evitando salti quando
+        loop_length cambia.
         
         Args:
             grain_count: numero progressivo del grano
@@ -367,36 +394,64 @@ class Stream:
         Returns:
             float: posizione in secondi nel sample sorgente
         """
-        # 1. Calcola la distanza percorsa nel sample (da speed)
+        # 1. Calcola movimento lineare (da speed)
         if isinstance(self.pointer_speed, Envelope):
             sample_position = self.pointer_speed.integrate(0, elapsed_time)
         else:
             sample_position = elapsed_time * self.pointer_speed
 
-        # 2. Posizione grezza con wrap sul buffer
-        raw_pos = (self.pointer_start + sample_position) % self.sampleDurSec
         linear_pos = self.pointer_start + sample_position
 
         if self.has_loop:
-            loop_length = self.loop_end - self.loop_start
-
-            # Check entrata nel loop (una sola volta)
-            if not self._in_loop:
-                # Usa posizione wrappata sul buffer per il check di entrata
-                check_pos = linear_pos % self.sampleDurSec
-                if self.loop_start <= check_pos < self.loop_end:
-                    self._in_loop = True
-                    # Salva il "punto di ancoraggio" per calcoli futuri
-                    self._loop_anchor = linear_pos - (check_pos - self.loop_start)
-
-            if self._in_loop:
-                # DENTRO IL LOOP: wrap SOLO sul loop, ignora sampleDurSec
-                distance_from_anchor = linear_pos - self._loop_anchor
-                base_pos = self.loop_start + (distance_from_anchor % loop_length)
-                context_length = loop_length
-                wrap_fn = self._wrap_to_loop
+            # === CALCOLA LOOP BOUNDS CORRENTI ===
+            current_loop_start = self.loop_start
+            
+            if self.loop_dur is not None:
+                # loop_dur dinamico (può essere Envelope)
+                current_loop_dur = self._safe_evaluate(
+                    self.loop_dur, elapsed_time, 
+                    0.001, self.sampleDurSec
+                )
             else:
-                # PRIMA del loop: wrap sul buffer intero
+                # loop_end fisso (legacy)
+                current_loop_dur = self.loop_end - self.loop_start
+                
+            current_loop_end = min(current_loop_start + current_loop_dur, self.sampleDurSec)
+            loop_length = max(current_loop_end - current_loop_start, 0.001)
+
+            # === PHASE ACCUMULATOR ===
+            if not self._in_loop:
+                # Check entrata nel loop
+                check_pos = linear_pos % self.sampleDurSec
+                if current_loop_start <= check_pos < current_loop_end:
+                    self._in_loop = True
+                    # Inizializza fase: posizione relativa nel loop (0-1)
+                    self._loop_phase = (check_pos - current_loop_start) / loop_length
+                    self._last_linear_pos = linear_pos
+            
+            if self._in_loop:
+                # Calcola delta movimento dall'ultimo grano
+                if self._last_linear_pos is not None:
+                    delta_pos = linear_pos - self._last_linear_pos
+                    # Converti in incremento di fase (normalizzato su loop corrente)
+                    delta_phase = delta_pos / loop_length
+                    self._loop_phase += delta_phase
+                    
+                    # Wrap fase (gestisce anche speed negativi e multi-giri)
+                    self._loop_phase = self._loop_phase % 1.0
+                
+                self._last_linear_pos = linear_pos
+                
+                # Converti fase in posizione assoluta
+                base_pos = current_loop_start + self._loop_phase * loop_length
+                context_length = loop_length
+                
+                # Wrap function per deviazioni stocastiche
+                def wrap_fn(pos):
+                    rel = pos - current_loop_start
+                    return current_loop_start + (rel % loop_length)
+            else:
+                # Prima del loop: wrap sul buffer intero
                 base_pos = linear_pos % self.sampleDurSec
                 context_length = self.sampleDurSec
                 wrap_fn = lambda p: p % self.sampleDurSec
@@ -420,12 +475,6 @@ class Stream:
         # 5. Posizione finale con wrap
         final_pos = base_pos + jitter_deviation + offset_deviation
         return wrap_fn(final_pos)
-
-
-    def _wrap_to_loop(self, pos):
-        loop_length = self.loop_end - self.loop_start
-        pos_relative = pos - self.loop_start
-        return self.loop_start + (pos_relative % loop_length)
 
     def generate_grains(self):
         """

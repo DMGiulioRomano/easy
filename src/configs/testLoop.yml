@@ -7,14 +7,19 @@ streams:
     duration: 10
     time_mode: normalized
     sample: "016-39_8-2_2.wav"
+    fill_factor: [[0,2],[0.3,1.5],[.7,.8],[1,1]]
+    distribution: [[0,0],[.3,.3],[.7,1],[1,1]]
     grain:
-      duration: 0.05
+      duration: [[0,0.05],[.4,.08],[1,.001]]
       envelope: triangle
-    pointer:     
-      speed: 
-        type: cubic
-        points: [[0,1],[.25,2],[.5,4],[.7,8],[1,-1]]
+    pointer:  
+      start: 1
+      speed: 1
+      jitter: 0.001
+      offset_range: 1
       loop_unit: normalized
       loop_start: 0
-      loop_end: 0.454545
+      loop_dur:      
+        type: cubic
+        points: [[0, 1], [1, .01]]
     # -----------------------------------------------------------------
