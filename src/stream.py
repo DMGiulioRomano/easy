@@ -40,6 +40,8 @@ class Stream:
         self.onset = params['onset']
         self.duration = params['duration']
         self.timeScale = params.get('time_scale', 1.0)
+        self.time_mode = params.get('time_mode', 'absolute')
+
         self._init_audio(params)
         
         # === PARAMETRI COMPLESSI (metodi dedicati) ===
@@ -109,26 +111,26 @@ class Stream:
         
         # Posizione iniziale
         self.pointer_start = pointer.get('start', 0.0)
-        # Speed (supporta Envelope)
         self.pointer_speed = self._parse_envelope_param(pointer.get('speed', 1.0), "pointer.speed")
-        # Jitter: micro-variazione (supporta Envelope)
         self.pointer_jitter = self._parse_envelope_param(pointer.get('jitter', 0.0), "pointer.jitter")        
-        # Offset range: macro-variazione (supporta Envelope)
         self.pointer_offset_range = self._parse_envelope_param(pointer.get('offset_range', 0.0), "pointer.offset_range")
-        self._in_loop = False
-        self.loop_start = pointer.get('loop_start')
-        self.loop_end = pointer.get('loop_end')
-        loop_dur = pointer.get('loop_dur')
 
-        # Determina se il loop è attivo e calcola i bounds
-        if self.loop_start is not None:
-            if self.loop_end is None:
-                if loop_dur is not None:
-                    self.loop_end = self.loop_start + loop_dur
-                else:
-                    self.loop_end = self.sampleDurSec
+        # === LOOP CONFIGURATION ===
+        self._in_loop = False
+        raw_start = pointer.get('loop_start')
+        raw_end = pointer.get('loop_end')
+        raw_dur = pointer.get('loop_dur')
+
+        if raw_start is not None:
+            # Loop mode: locale > globale (loop_unit o absolute o normalized)
+            loop_mode = pointer.get('loop_unit') or self.time_mode
+            scale = self.sampleDurSec if loop_mode == 'normalized' else 1.0
+            self.loop_start = raw_start * scale
+            self.loop_end = (raw_end * scale if raw_end is not None else
+                self.loop_start + raw_dur * scale if raw_dur is not None else self.sampleDurSec)
             self.has_loop = True
         else:
+            self.loop_start = self.loop_end = None
             self.has_loop = False
             
     def _init_grain_params(self, params):
@@ -246,13 +248,34 @@ class Stream:
             # Numero singolo → usa direttamente (efficiente!)
             return param
         elif isinstance(param, dict):
-            # Dict con 'type' e 'points' → crea Envelope
+            # Determina se normalizzare: locale > globale
+            local_mode = param.get('time_unit')  # None, 'normalized', 'absolute'
+            should_normalize = (
+                local_mode == 'normalized' or 
+                (local_mode is None and self.time_mode == 'normalized')
+            )
+            
+            if should_normalize:
+                scaled_points = [
+                    [x * self.duration, y] 
+                    for x, y in param['points']
+                ]
+                return Envelope({
+                    'type': param.get('type', 'linear'),
+                    'points': scaled_points
+                })
             return Envelope(param)
+        
         elif isinstance(param, list):
-            # Lista di breakpoints → Envelope lineare
+            # Lista semplice: rispetta time_mode globale
+            if self.time_mode == 'normalized':
+                scaled_points = [[x * self.duration, y] for x, y in param]
+                return Envelope(scaled_points)
             return Envelope(param)
+        
         else:
             raise ValueError(f"{param_name} formato non valido: {param}")
+
 
     def _safe_evaluate(self, param, time, min_val, max_val):
         """
@@ -327,9 +350,6 @@ class Stream:
             async_value = random.uniform(0, 2.0 * avg_inter_onset)
             return (1.0 - distribution) * sync_value + distribution * async_value    
 
-
-
-
     def _calculate_pointer(self, grain_count, elapsed_time):
         """
         Calcola la posizione di lettura nel sample per questo grano.
@@ -384,6 +404,7 @@ class Stream:
         loop_length = self.loop_end - self.loop_start
         pos_relative = pos - self.loop_start
         return self.loop_start + (pos_relative % loop_length)
+
     def generate_grains(self):
         """
         Genera grani basati su DENSITY, non su duration/grain_duration
