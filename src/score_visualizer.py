@@ -72,6 +72,7 @@ class ScoreVisualizer:
                 'pointer_speed': (-4.0, 4.0),
                 'fill_factor': (0.1, 20),
                 'distribution': (0, 1),
+                'pitch_semitones': (-36, 36),  # range in envelope_ranges
             },
             # Colori per ogni tipo di envelope
             'envelope_colors': {
@@ -83,6 +84,7 @@ class ScoreVisualizer:
                 'pointer_speed': '#a65628',   # marrone
                 'fill_factor': '#f781bf',     # rosa
                 'distribution': '#999999',    # grigio
+                'pitch_semitones': '#9467bd',  # colore viola chiaro in envelope_colors
             },
             'envelope_panel_ratio': 0.3,      # 30% altezza per envelope
         }
@@ -578,6 +580,7 @@ class ScoreVisualizer:
         envelopes = {}
         
         # Lista dei parametri da controllare
+        # (nome_visualizzazione, nome_attributo)
         params_to_check = [
             ('volume', 'volume'),
             ('grain_duration', 'grain_duration'),
@@ -586,6 +589,7 @@ class ScoreVisualizer:
             ('fill_factor', 'fill_factor'),
             ('pointer_speed', 'pointer_speed'),
             ('pitch_ratio', 'pitch_ratio'),
+            ('pitch_semitones', 'pitch_semitones_envelope'),  # nome diverso!
             ('distribution', 'distribution'),
         ]
         
@@ -599,6 +603,8 @@ class ScoreVisualizer:
         
         return envelopes
     
+
+
     def _normalize_envelope_value(self, param_name, value):
         """
         Normalizza un valore di envelope a 0-1 usando i range fissi.
@@ -706,6 +712,7 @@ class ScoreVisualizer:
             'grain_duration': 'ms',
             'pan': '°',
             'pitch_ratio': 'x',
+            'pitch_semitones': 'st',  # semitoni
             'density': 'g/s',
             'pointer_speed': 'x',
             'fill_factor': '',
@@ -758,7 +765,6 @@ class ScoreVisualizer:
                 bbox=dict(boxstyle='round,pad=0.15', facecolor='white', 
                          alpha=0.7, edgecolor='none')
             )
-    
 
     def _draw_envelope_legend(self, ax, envelope_types):
         """
