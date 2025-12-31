@@ -101,24 +101,36 @@ class Stream:
         - speed: velocità di scansione (supporta Envelope)
         - jitter: micro-variazione bipolare (0.001-0.01 sec tipico)
         - offset_range: macro-variazione bipolare (0-1, normalizzato su durata sample)
-        - loop: {start, end/dur} per loop opzionale
+        - loop_start: inizio loop (opzionale, secondi)
+        - loop_end: fine loop (opzionale, secondi) - esclusivo
+        - loop_dur: alternativa a loop_end (opzionale, secondi)
         """ 
-        self.pointer_start = params['pointer'].get('start',0.0)
-        self.pointer_loop = params['pointer'].get('loop', {})
-        # Parametri specifici per mode='loop'
+        pointer = params.get('pointer', {})
+        
+        # Posizione iniziale
+        self.pointer_start = pointer.get('start', 0.0)
+        # Speed (supporta Envelope)
+        self.pointer_speed = self._parse_envelope_param(pointer.get('speed', 1.0), "pointer.speed")
+        # Jitter: micro-variazione (supporta Envelope)
+        self.pointer_jitter = self._parse_envelope_param(pointer.get('jitter', 0.0), "pointer.jitter")        
+        # Offset range: macro-variazione (supporta Envelope)
+        self.pointer_offset_range = self._parse_envelope_param(pointer.get('offset_range', 0.0), "pointer.offset_range")
+        self._in_loop = False
+        self.loop_start = pointer.get('loop_start')
+        self.loop_end = pointer.get('loop_end')
+        loop_dur = pointer.get('loop_dur')
 
-        if self.pointer_loop:
-            self.loopstart = self.pointer_loop.get('start', 0.0)
-            if 'end' in self.pointer_loop:
-                self.loopend = self.pointer_loop.get('end', self.duration)
-            else:
-                loopdur = self.pointer_loop.get('dur', 1.0)
-                self.loopend = self.loopstart + loopdur
-
-        # Speed può essere numero fisso o Envelope
-        self.pointer_speed = self._parse_envelope_param(params['pointer'].get('speed', 1.0), "pointer.speed")
-        self.pointer_jitter = self._parse_envelope_param(params['pointer'].get('jitter', 0.0), "pointer.jitter")
-        self.pointer_offset_range = self._parse_envelope_param(params['pointer'].get('offset_range', 0.0), "pointer.offset_range")
+        # Determina se il loop è attivo e calcola i bounds
+        if self.loop_start is not None:
+            if self.loop_end is None:
+                if loop_dur is not None:
+                    self.loop_end = self.loop_start + loop_dur
+                else:
+                    self.loop_end = self.sampleDurSec
+            self.has_loop = True
+        else:
+            self.has_loop = False
+            
     def _init_grain_params(self, params):
         """
         Gestisce i parametri base dei singoli grani.
@@ -340,18 +352,38 @@ class Stream:
         else:
             sample_position = elapsed_time * self.pointer_speed
 
-        # 2. Posizione base
-        base_pos = self.pointer_start + sample_position
-        # 3. Jitter: micro-variazione (scala millisecondi, bipolare ±)
+        # 2. Posizione grezza con wrap sul buffer
+        raw_pos = (self.pointer_start + sample_position) % self.sampleDurSec
+
+        # 3. Check entrata nel loop: [loop_start, loop_end)
+        if self.has_loop and not self._in_loop:
+            if self.loop_start <= raw_pos < self.loop_end:
+                self._in_loop = True
+    
+        # 4. Determina contesto (loop attivo vs buffer intero)
+        if self.has_loop and self._in_loop:
+            base_pos = self._wrap_to_loop(raw_pos)
+            context_length = self.loop_end - self.loop_start
+            wrap_fn = self._wrap_to_loop
+        else:
+            base_pos = raw_pos
+            context_length = self.sampleDurSec
+            wrap_fn = lambda p: p % self.sampleDurSec
+
+        # 5. Jitter (micro) e Offset range (macro)
         jitter_amount = self._safe_evaluate(self.pointer_jitter, elapsed_time,STREAM_MIN_JITTER, STREAM_MAX_JITTER)
-        jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
-        # 4. Offset range: macro-variazione (0-1 normalizzato, bipolare ±)
         offset_range = self._safe_evaluate(self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE)
-        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * self.sampleDurSec    
-        # 5. Wrap sul buffer
-        final_pos = (base_pos + jitter_deviation + offset_deviation) % self.sampleDurSec
-        return final_pos
-        
+        # 6. calcolo delle deviazioni stocastiche
+        jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
+        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * context_length    
+        # 7. Posizione finale con deviazioni e wrap
+        final_pos = (base_pos + jitter_deviation + offset_deviation)
+        return wrap_fn(final_pos)
+    
+    def _wrap_to_loop(self, pos):
+        loop_length = self.loop_end - self.loop_start
+        pos_relative = pos - self.loop_start
+        return self.loop_start + (pos_relative % loop_length)
     def generate_grains(self):
         """
         Genera grani basati su DENSITY, non su duration/grain_duration

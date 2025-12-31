@@ -1,0 +1,16 @@
+composition:
+  title: "il mondo dorme"
+
+streams:
+  - stream_id: "texture1"
+    onset: 0.0
+    duration: 25.0
+    sample: "016-39_8-2_2.wav"
+    grain:
+      duration: 0.05
+      envelope: triangle
+    pointer:     
+      speed: 1
+      loop_start: 1.75
+      loop_end: 2.2
+    # -----------------------------------------------------------------

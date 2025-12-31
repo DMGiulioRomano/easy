@@ -18,8 +18,8 @@ INPUT?=001
 
 AUTOKILL?=true
 AUTOPEN?=true
-FILE?=test
-TEST?=true
+FILE?=testLoop
+TEST?=false
 .SECONDARY: $(SCO_FILES)
 
 ifeq ($(AUTOKILL),true)
