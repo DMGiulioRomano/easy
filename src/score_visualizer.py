@@ -69,7 +69,7 @@ class ScoreVisualizer:
                 'pan': (-180, 180),           # gradi (ciclico)
                 'pitch_ratio': (0.125, 8.0),
                 'density': (1, 200),          # grani/sec
-                'pointer_speed': (-4.0, 4.0),
+                'pointer_speed': (-4.0, 16.0),
                 'fill_factor': (0.1, 20),
                 'distribution': (0, 1),
                 'pitch_semitones': (-36, 36),  # range in envelope_ranges

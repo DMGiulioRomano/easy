@@ -117,6 +117,7 @@ class Stream:
 
         # === LOOP CONFIGURATION ===
         self._in_loop = False
+        self._loop_anchor = 0.0
         raw_start = pointer.get('loop_start')
         raw_end = pointer.get('loop_end')
         raw_dur = pointer.get('loop_dur')
@@ -374,32 +375,53 @@ class Stream:
 
         # 2. Posizione grezza con wrap sul buffer
         raw_pos = (self.pointer_start + sample_position) % self.sampleDurSec
+        linear_pos = self.pointer_start + sample_position
 
-        # 3. Check entrata nel loop: [loop_start, loop_end)
-        if self.has_loop and not self._in_loop:
-            if self.loop_start <= raw_pos < self.loop_end:
-                self._in_loop = True
-    
-        # 4. Determina contesto (loop attivo vs buffer intero)
-        if self.has_loop and self._in_loop:
-            base_pos = self._wrap_to_loop(raw_pos)
-            context_length = self.loop_end - self.loop_start
-            wrap_fn = self._wrap_to_loop
+        if self.has_loop:
+            loop_length = self.loop_end - self.loop_start
+
+            # Check entrata nel loop (una sola volta)
+            if not self._in_loop:
+                # Usa posizione wrappata sul buffer per il check di entrata
+                check_pos = linear_pos % self.sampleDurSec
+                if self.loop_start <= check_pos < self.loop_end:
+                    self._in_loop = True
+                    # Salva il "punto di ancoraggio" per calcoli futuri
+                    self._loop_anchor = linear_pos - (check_pos - self.loop_start)
+
+            if self._in_loop:
+                # DENTRO IL LOOP: wrap SOLO sul loop, ignora sampleDurSec
+                distance_from_anchor = linear_pos - self._loop_anchor
+                base_pos = self.loop_start + (distance_from_anchor % loop_length)
+                context_length = loop_length
+                wrap_fn = self._wrap_to_loop
+            else:
+                # PRIMA del loop: wrap sul buffer intero
+                base_pos = linear_pos % self.sampleDurSec
+                context_length = self.sampleDurSec
+                wrap_fn = lambda p: p % self.sampleDurSec
         else:
-            base_pos = raw_pos
+            # Nessun loop: wrap semplice sul buffer
+            base_pos = linear_pos % self.sampleDurSec
             context_length = self.sampleDurSec
             wrap_fn = lambda p: p % self.sampleDurSec
 
-        # 5. Jitter (micro) e Offset range (macro)
-        jitter_amount = self._safe_evaluate(self.pointer_jitter, elapsed_time,STREAM_MIN_JITTER, STREAM_MAX_JITTER)
-        offset_range = self._safe_evaluate(self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE)
-        # 6. calcolo delle deviazioni stocastiche
+        # 4. Deviazioni stocastiche
+        jitter_amount = self._safe_evaluate(
+            self.pointer_jitter, elapsed_time, STREAM_MIN_JITTER, STREAM_MAX_JITTER
+        )
+        offset_range = self._safe_evaluate(
+            self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE
+        )
+        
         jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
-        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * context_length    
-        # 7. Posizione finale con deviazioni e wrap
-        final_pos = (base_pos + jitter_deviation + offset_deviation)
+        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * context_length
+        
+        # 5. Posizione finale con wrap
+        final_pos = base_pos + jitter_deviation + offset_deviation
         return wrap_fn(final_pos)
-    
+
+
     def _wrap_to_loop(self, pos):
         loop_length = self.loop_end - self.loop_start
         pos_relative = pos - self.loop_start

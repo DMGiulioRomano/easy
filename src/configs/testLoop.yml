@@ -4,7 +4,7 @@ composition:
 streams:
   - stream_id: "texture1"
     onset: 0.0
-    duration: 25.0
+    duration: 10
     time_mode: normalized
     sample: "016-39_8-2_2.wav"
     grain:
@@ -12,8 +12,9 @@ streams:
       envelope: triangle
     pointer:     
       speed: 
-        type: step
-        points: [[0,1],[0.5,2],[1.0,-1]]
-      loop_start: 0.1
-      loop_end: 0.7
+        type: cubic
+        points: [[0,1],[.25,2],[.5,4],[.7,8],[1,-1]]
+      loop_unit: normalized
+      loop_start: 0
+      loop_end: 0.454545
     # -----------------------------------------------------------------
