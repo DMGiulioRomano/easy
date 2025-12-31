@@ -18,8 +18,8 @@ STREAM_MIN_VOLUME=-120
 STREAM_MAX_VOLUME=12
 STREAM_MIN_PANDEGREE=-360*10
 STREAM_MAX_PANDEGREE=360*10
-#STREAM_MIN_LOOPSTART=0.0
-#STREAM_MAX_PANDEGREE=360*10
+STREAM_MIN_JITTER=0.0001
+STREAM_MAX_JITTER=0.01
 
 def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
@@ -57,7 +57,7 @@ class Stream:
         """
         Inizializza il parametro distribution (0=sync, 1=async).
         """
-        self.distribution = params.get('distribution', 0.0)
+        self.distribution = self._parse_envelope_param(params.get('distribution', 0.0), 'distribution')
 
     def _init_pitch_params(self, params):
         """
@@ -102,7 +102,7 @@ class Stream:
         - random_range: range per mode='random'
         - loopstart, loopdur: per mode='loop'
         """
-        self.pointer_start = params['pointer']['start']
+        self.pointer_start = params['pointer'].get('start',0.0)
         self.pointer_mode = params['pointer'].get('mode', 'linear')
         self.pointer_loop = params['pointer'].get('loop', {})
         # Parametri specifici per mode='loop'
@@ -119,7 +119,9 @@ class Stream:
         self.pointer_speed = self._parse_envelope_param(
             params['pointer'].get('speed', 1.0), "pointer.speed"
         )
-        self.pointer_jitter = params['pointer'].get('jitter', 0.0)
+        self.pointer_jitter = self._parse_envelope_param(
+            params['pointer'].get('jitter', 0.0), "pointer.jitter"
+        )
         self.pointer_random_range = params['pointer'].get('random_range', 1.0)
 
     def _init_grain_params(self, params):
@@ -306,7 +308,9 @@ class Stream:
         
         avg_inter_onset = 1.0 / effective_density
         
-        if self.distribution == 0.0:
+        distribution = self._safe_evaluate(self.distribution, elapsed_time,0.0, 1.0)
+
+        if distribution == 0.0:
             # SYNCHRONOUS: inter-onset fisso
             return avg_inter_onset
         else:
@@ -314,7 +318,7 @@ class Stream:
             # Preserva la media, aumenta la varianza con distribution
             sync_value = avg_inter_onset
             async_value = random.uniform(0, 2.0 * avg_inter_onset)
-            return (1.0 - self.distribution) * sync_value + self.distribution * async_value    
+            return (1.0 - distribution) * sync_value + distribution * async_value    
 
 
 
@@ -342,19 +346,18 @@ class Stream:
             sample_position = elapsed_time * self.pointer_speed
             
         if self.pointer_mode == 'linear':
-            start = self.pointer_start if grain_count == 0 else 0
-            base_pos = (start + sample_position) % self.sampleDurSec
-
+            # Valuta jitter (supporta Envelope)
+            jitter_amount = self._safe_evaluate(self.pointer_jitter, elapsed_time,0.0, 10.0)
+            if jitter_amount > 0.0:
+                jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
+            else:
+                jitter_deviation = 0.0
+            base_pos = (self.pointer_start + sample_position + jitter_deviation) % self.sampleDurSec
+            return base_pos
         # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
         elif self.pointer_mode == 'random':
             # Random: posizione completamente casuale nel range
             return self.pointer_start + random.uniform(0, self.pointer_random_range)*self.sampleDurSec
-        
-        if self.pointer_jitter > 0.0:
-            jitter_deviation = random.uniform(-self.pointer_jitter, self.pointer_jitter)
-            return base_pos + jitter_deviation
-        else:
-            return base_pos
         
     def generate_grains(self):
         """

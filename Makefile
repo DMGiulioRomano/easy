@@ -41,7 +41,7 @@ test-csound: $(SFDIR)/$(FILE).aif
 	@echo "✓ Test Csound passed: $(FILE).aif rendered"
 
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
-	python3.11 $(INCDIR)/main.py $< $@
+	python3.11 $(INCDIR)/main.py $< $@ --visualize
 
 $(GENDIR):
 	mkdir -p $@

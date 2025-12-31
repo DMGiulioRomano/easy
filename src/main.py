@@ -1,4 +1,5 @@
 from generator import Generator
+from score_visualizer import ScoreVisualizer
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -22,6 +23,7 @@ def main():
     
     yaml_file = sys.argv[1]
     output_file = sys.argv[2] if len(sys.argv) > 2 else 'output.sco'
+    do_visualize = '--visualize' in sys.argv or '-v' in sys.argv
     
     try:
         # Crea il generatore
@@ -40,7 +42,19 @@ def main():
         generator.generate_score_file(output_file)
         
         print("\n✓ Generazione completata!")
-        
+
+        if do_visualize:
+            print("\nGenerazione partitura grafica...")
+            
+            # Crea il nome del PDF dal nome dello score
+            pdf_file = output_file.rsplit('.', 1)[0] + '_score.pdf'
+            
+            viz = ScoreVisualizer(generator, config={
+                'page_duration': 30.0,
+                'pitch_range': (0.5, 2.0),
+            })
+            viz.export_pdf(pdf_file)
+
     except FileNotFoundError:
         print(f"✗ Errore: file '{yaml_file}' non trovato")
         sys.exit(1)

@@ -4,26 +4,27 @@ composition:
 streams:
   - stream_id: "texture1"
     onset: 0.0
-    duration: 5.0
-    sample: "016.wav"
+    duration: 25.0
+    sample: "016-39_8-2_2.wav"
     grain:
       duration: 
         type: cubic
-        points: [[0,.03],[2,.08],[5,.01]]      
-      envelope: half_sine
+        points: [[0,.03],[2,.08],[20,.03]]      
+      envelope: triangle
     density: 
       type: cubic
-      points: [[0,50],[1,5],[2,7],[5,50]]        
-    pointer:
-      start: 11.5      
-      speed: 1
+      points: [[0,50],[5,5],[10,20],[15,50],[20,13],[25,50]] 
+    distribution: [[0,0],[17,0],[20,1]]       
+    pointer:     
+      speed: [[0,.01],[10,0.2],[15,.01],[20,0.000]]
+      jitter: [[0,0],[10,0.001],[22,1]]
     pitch:
-      shift_semitones: 0
+      shift_semitones: [[0,4],[5,0],[12,-10],[18,7],[18.2,-7],[25,12]]
     # -----------------------------------------------------------------
   - stream_id: "texture1"
-    onset: 5.0
+    onset: 25.0
     duration: 5.0
-    sample: "016.wav"
+    sample: "016-39_8-2_2.wav"
     grain:
       duration: .03      
       envelope: half_sine
@@ -38,9 +39,9 @@ streams:
       points: [[0,360],[5,-360]]  
     # -----------------------------------------------------------------
   - stream_id: "texture1"
-    onset: 10.0
+    onset: 30.0
     duration: 5.0
-    sample: "016.wav"
+    sample: "016-39_8-2_2.wav"
     grain:
       duration: .02  
     fill_factor: 2       
