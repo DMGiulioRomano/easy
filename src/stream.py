@@ -18,8 +18,10 @@ STREAM_MIN_VOLUME=-120
 STREAM_MAX_VOLUME=12
 STREAM_MIN_PANDEGREE=-360*10
 STREAM_MAX_PANDEGREE=360*10
-STREAM_MIN_JITTER=0.0001
-STREAM_MAX_JITTER=0.01
+STREAM_MIN_JITTER=0.00001
+STREAM_MAX_JITTER=10.0
+STREAM_MIN_OFFSET_RANGE=0.0
+STREAM_MAX_OFFSET_RANGE=1.0
 
 def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
@@ -95,15 +97,13 @@ class Stream:
         Gestisce tutti i parametri del pointer (posizionamento nel sample).
         
         Parametri:
-        - start: posizione iniziale
-        - mode: linear, loop, random
-        - speed: velocità di lettura (supporta Envelope)
-        - jitter: deviazione casuale dalla posizione
-        - random_range: range per mode='random'
-        - loopstart, loopdur: per mode='loop'
-        """
+        - start: posizione iniziale (secondi)
+        - speed: velocità di scansione (supporta Envelope)
+        - jitter: micro-variazione bipolare (0.001-0.01 sec tipico)
+        - offset_range: macro-variazione bipolare (0-1, normalizzato su durata sample)
+        - loop: {start, end/dur} per loop opzionale
+        """ 
         self.pointer_start = params['pointer'].get('start',0.0)
-        self.pointer_mode = params['pointer'].get('mode', 'linear')
         self.pointer_loop = params['pointer'].get('loop', {})
         # Parametri specifici per mode='loop'
 
@@ -116,14 +116,9 @@ class Stream:
                 self.loopend = self.loopstart + loopdur
 
         # Speed può essere numero fisso o Envelope
-        self.pointer_speed = self._parse_envelope_param(
-            params['pointer'].get('speed', 1.0), "pointer.speed"
-        )
-        self.pointer_jitter = self._parse_envelope_param(
-            params['pointer'].get('jitter', 0.0), "pointer.jitter"
-        )
-        self.pointer_random_range = params['pointer'].get('random_range', 1.0)
-
+        self.pointer_speed = self._parse_envelope_param(params['pointer'].get('speed', 1.0), "pointer.speed")
+        self.pointer_jitter = self._parse_envelope_param(params['pointer'].get('jitter', 0.0), "pointer.jitter")
+        self.pointer_offset_range = self._parse_envelope_param(params['pointer'].get('offset_range', 0.0), "pointer.offset_range")
     def _init_grain_params(self, params):
         """
         Gestisce i parametri base dei singoli grani.
@@ -326,38 +321,36 @@ class Stream:
     def _calculate_pointer(self, grain_count, elapsed_time):
         """
         Calcola la posizione di lettura nel sample per questo grano.
-
-        Usa il TEMPO REALE trascorso dall'inizio dello stream. 
-        Questo garantisce la separazione micro/macro di Truax (1994): la posizione nel sample (livello macro) è indipendente dalla density dei grani (livello micro).
+        
+        Modello unificato (Truax 1994):
+        - Posizione base = start + movimento da speed
+        - Jitter = micro-variazione bipolare (millisecondi)
+        - Offset range = macro-variazione bipolare (proporzione del sample)
         
         Args:
-            grain_count: numero progressivo del grano (0 = primo)
+            grain_count: numero progressivo del grano
             elapsed_time: secondi trascorsi dall'onset dello stream
             
         Returns:
             float: posizione in secondi nel sample sorgente
-        """        
-        # Calcola la distanza percorsa nel sample
+        """
+        # 1. Calcola la distanza percorsa nel sample (da speed)
         if isinstance(self.pointer_speed, Envelope):
-            # Envelope: integra la velocità nel tempo
             sample_position = self.pointer_speed.integrate(0, elapsed_time)
         else:
-            # Numero fisso: semplice moltiplicazione (veloce!)
             sample_position = elapsed_time * self.pointer_speed
-            
-        if self.pointer_mode == 'linear':
-            # Valuta jitter (supporta Envelope)
-            jitter_amount = self._safe_evaluate(self.pointer_jitter, elapsed_time,0.0, 10.0)
-            if jitter_amount > 0.0:
-                jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
-            else:
-                jitter_deviation = 0.0
-            base_pos = (self.pointer_start + sample_position + jitter_deviation) % self.sampleDurSec
-            return base_pos
-        # capire che senso ha valore 1, perché dovrebbe essere in secondi...            
-        elif self.pointer_mode == 'random':
-            # Random: posizione completamente casuale nel range
-            return self.pointer_start + random.uniform(0, self.pointer_random_range)*self.sampleDurSec
+
+        # 2. Posizione base
+        base_pos = self.pointer_start + sample_position
+        # 3. Jitter: micro-variazione (scala millisecondi, bipolare ±)
+        jitter_amount = self._safe_evaluate(self.pointer_jitter, elapsed_time,STREAM_MIN_JITTER, STREAM_MAX_JITTER)
+        jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
+        # 4. Offset range: macro-variazione (0-1 normalizzato, bipolare ±)
+        offset_range = self._safe_evaluate(self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE)
+        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * self.sampleDurSec    
+        # 5. Wrap sul buffer
+        final_pos = (base_pos + jitter_deviation + offset_deviation) % self.sampleDurSec
+        return final_pos
         
     def generate_grains(self):
         """

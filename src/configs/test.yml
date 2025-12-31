@@ -43,7 +43,7 @@ streams:
     grain:
       duration: [[0,.03],[55.5,0.001],[100,0.08]]      
       envelope: expodec
-    fill_factor: [[0,.1],[100,20]]
+    fill_factor: [[0,.1],[100,9]]
     distribution: [[0,0.0],[50,.9],[110,.4]]
     pointer:
       start: 0       
