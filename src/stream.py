@@ -506,8 +506,7 @@ class Stream:
                 # Envelope di semitoni → valuta e converti a ratio
                 base_semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
                 pitch_range = self._safe_evaluate(self.pitch_range,elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES,STREAM_MAX_PITCH_RANGE_SEMITONES)
-
-                pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
+                pitch_deviation = random.randint(int(-pitch_range*0.5), int(pitch_range*0.5))
                 final_semitones = base_semitones + pitch_deviation
                 pitch_ratio = pow(2.0, final_semitones / 12.0)
             
