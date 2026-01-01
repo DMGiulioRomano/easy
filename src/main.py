@@ -50,7 +50,7 @@ def main():
             pdf_file = output_file.rsplit('.', 1)[0] + '_score.pdf'
             
             viz = ScoreVisualizer(generator, config={
-                'page_duration': 30.0,
+                'page_duration': 15.0,
                 'pitch_range': (0.5, 2.0),
             })
             viz.export_pdf(pdf_file)

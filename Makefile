@@ -18,9 +18,17 @@ INPUT?=001
 
 AUTOKILL?=true
 AUTOPEN?=true
+AUTOVISUAL?=false
 FILE?=testLoop
 TEST?=false
 .SECONDARY: $(SCO_FILES)
+
+ifeq ($(AUTOVISUAL), true)
+  PYFLAG = --visualize
+else
+  PYFLAG =
+endif
+
 
 ifeq ($(AUTOKILL),true)
   ALL_PRE = rx-stop
@@ -41,7 +49,7 @@ test-csound: $(SFDIR)/$(FILE).aif
 	@echo "✓ Test Csound passed: $(FILE).aif rendered"
 
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
-	python3.11 $(INCDIR)/main.py $< $@ --visualize
+	python3.11 $(INCDIR)/main.py $< $@ $(PYFLAG)
 
 $(GENDIR):
 	mkdir -p $@
@@ -93,6 +101,6 @@ rx-stop:
 	fi
 
 clean:
-	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco *.wav logs/*.log
+	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco $(GENDIR)/*.pdf *.wav logs/*.log
 
 .PHONY: open sync test clean rx-stop test-python test-csound

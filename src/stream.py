@@ -253,77 +253,6 @@ class Stream:
         self.grains = []
         self.generated = False
 
-    def _parse_envelope_param(self, param, param_name="parameter"):
-        """
-        Helper per parsare parametri che possono essere numeri o Envelope
-        
-        Args:
-            param: numero singolo, lista di breakpoints, o dict con type/points
-            param_name: nome del parametro (per messaggi errore informativi)
-        
-        Returns:
-            numero o Envelope
-        
-        Examples:
-            >>> self._parse_envelope_param(50, "density")
-            50
-            >>> self._parse_envelope_param([[0, 20], [2, 100]], "density")
-            Envelope(type=linear, points=[[0, 20], [2, 100]])
-            >>> self._parse_envelope_param({'type': 'cubic', 'points': [...]}, "volume")
-            Envelope(type=cubic, ...)
-        """
-        if isinstance(param, (int, float)):
-            # Numero singolo → usa direttamente (efficiente!)
-            return param
-        elif isinstance(param, dict):
-            # Determina se normalizzare: locale > globale
-            local_mode = param.get('time_unit')  # None, 'normalized', 'absolute'
-            should_normalize = (
-                local_mode == 'normalized' or 
-                (local_mode is None and self.time_mode == 'normalized')
-            )
-            
-            if should_normalize:
-                scaled_points = [
-                    [x * self.duration, y] 
-                    for x, y in param['points']
-                ]
-                return Envelope({
-                    'type': param.get('type', 'linear'),
-                    'points': scaled_points
-                })
-            return Envelope(param)
-        
-        elif isinstance(param, list):
-            # Lista semplice: rispetta time_mode globale
-            if self.time_mode == 'normalized':
-                scaled_points = [[x * self.duration, y] for x, y in param]
-                return Envelope(scaled_points)
-            return Envelope(param)
-        
-        else:
-            raise ValueError(f"{param_name} formato non valido: {param}")
-
-
-    def _safe_evaluate(self, param, time, min_val, max_val):
-        """
-        Valuta un parametro (fisso o Envelope) con safety bounds
-        
-        Args:
-            param: numero o Envelope
-            time: tempo relativo all'onset dello stream (elapsed_time)
-            min_val: valore minimo ammissibile
-            max_val: valore massimo ammissibile
-        
-        Returns:
-            float: valore clippato nei bounds
-        """
-        if isinstance(param, Envelope):
-            value = param.evaluate(time)
-        else:
-            value = param
-        return max(min_val, min(max_val, value))
-
     def _calculate_inter_onset_time(self, elapsed_time, current_grain_dur):
         """
         Calcola l'inter-onset time basato su density/fill_factor e distribution
@@ -556,6 +485,77 @@ class Stream:
             # Safety check per async (evita loop infiniti)
         self.generated = True
         return self.grains
+
+    def _parse_envelope_param(self, param, param_name="parameter"):
+        """
+        Helper per parsare parametri che possono essere numeri o Envelope
+        
+        Args:
+            param: numero singolo, lista di breakpoints, o dict con type/points
+            param_name: nome del parametro (per messaggi errore informativi)
+        
+        Returns:
+            numero o Envelope
+        
+        Examples:
+            >>> self._parse_envelope_param(50, "density")
+            50
+            >>> self._parse_envelope_param([[0, 20], [2, 100]], "density")
+            Envelope(type=linear, points=[[0, 20], [2, 100]])
+            >>> self._parse_envelope_param({'type': 'cubic', 'points': [...]}, "volume")
+            Envelope(type=cubic, ...)
+        """
+        if isinstance(param, (int, float)):
+            # Numero singolo → usa direttamente (efficiente!)
+            return param
+        elif isinstance(param, dict):
+            # Determina se normalizzare: locale > globale
+            local_mode = param.get('time_unit')  # None, 'normalized', 'absolute'
+            should_normalize = (
+                local_mode == 'normalized' or 
+                (local_mode is None and self.time_mode == 'normalized')
+            )
+            
+            if should_normalize:
+                scaled_points = [
+                    [x * self.duration, y] 
+                    for x, y in param['points']
+                ]
+                return Envelope({
+                    'type': param.get('type', 'linear'),
+                    'points': scaled_points
+                })
+            return Envelope(param)
+        
+        elif isinstance(param, list):
+            # Lista semplice: rispetta time_mode globale
+            if self.time_mode == 'normalized':
+                scaled_points = [[x * self.duration, y] for x, y in param]
+                return Envelope(scaled_points)
+            return Envelope(param)
+        
+        else:
+            raise ValueError(f"{param_name} formato non valido: {param}")
+
+
+    def _safe_evaluate(self, param, time, min_val, max_val):
+        """
+        Valuta un parametro (fisso o Envelope) con safety bounds
+        
+        Args:
+            param: numero o Envelope
+            time: tempo relativo all'onset dello stream (elapsed_time)
+            min_val: valore minimo ammissibile
+            max_val: valore massimo ammissibile
+        
+        Returns:
+            float: valore clippato nei bounds
+        """
+        if isinstance(param, Envelope):
+            value = param.evaluate(time)
+        else:
+            value = param
+        return max(min_val, min(max_val, value))
 
     def __repr__(self):
         mode = "fill_factor" if self.fill_factor is not None else "density"

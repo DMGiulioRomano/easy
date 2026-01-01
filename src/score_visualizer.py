@@ -120,7 +120,7 @@ class ScoreVisualizer:
         self.total_duration = max(
             s.onset + s.duration for s in self.streams
         )
-        
+    
         # 2. Calcola numero pagine
         page_dur = self.config['page_duration']
         self.page_count = ceil(self.total_duration / page_dur)
@@ -308,13 +308,11 @@ class ScoreVisualizer:
     # =========================================================================
 
     def render_page(self, page_idx):
-        """Renderizza una singola pagina con waveform e envelope in subplot separati."""
+        """Renderizza pagina con subplot separati per ogni SAMPLE (non per stream)."""
         
         layout = self.page_layouts[page_idx]
         page_start, page_end = layout['time_range']
         active_streams = layout['active_streams']
-        max_concurrent = layout['max_concurrent']
-        slot_assignments = layout['slot_assignments']
         
         # Dimensioni figura (mm → inches)
         page_w_mm, page_h_mm = self.config['page_size']
@@ -323,35 +321,63 @@ class ScoreVisualizer:
         fig_w = page_w_mm / 25.4  # mm to inches
         fig_h = page_h_mm / 25.4
         
+        # Crea figura
+        fig = plt.figure(figsize=(fig_w, fig_h))
+        
         # Verifica se ci sono envelope da mostrare
         has_envelopes = any(self._get_stream_envelopes(s) for s in active_streams)
         
-        # Crea figura con GridSpec 2x2:
-        # [waveform | grani   ]
-        # [legenda  | envelope]
-        fig = plt.figure(figsize=(fig_w, fig_h))
+        # =========================================================================
+        # RAGGRUPPA STREAM PER SAMPLE_PATH
+        # =========================================================================
+        samples_dict = {}
+        for stream in active_streams:
+            path = stream.sample_path
+            if path not in samples_dict:
+                samples_dict[path] = []
+            samples_dict[path].append(stream)
         
+        # Numero subplot = numero di sample unici
+        n_samples = len(samples_dict)
+        
+        if n_samples == 0:
+            # Pagina vuota
+            ax = fig.add_subplot(111)
+            ax.text(0.5, 0.5, "Nessuno stream attivo",
+                    ha='center', va='center', fontsize=14, color='gray')
+            ax.axis('off')
+            
+            title = f"Pagina {page_idx + 1}/{self.page_count} — " \
+                    f"[{page_start:.1f}s - {page_end:.1f}s]"
+            fig.suptitle(title, fontsize=self.config['title_fontsize'])
+            return fig
+        
+        # =========================================================================
+        # SETUP GRIDSPEC
+        # =========================================================================
         waveform_ratio = self.config['waveform_width_ratio']
         envelope_ratio = self.config['envelope_panel_ratio'] if has_envelopes else 0.0
-        grain_ratio = 1.0 - envelope_ratio
         
+        # Altezza per sample (divisa equamente)
+        stream_total_ratio = 1.0 - envelope_ratio
+        sample_row_height = stream_total_ratio / n_samples
+        
+        # Crea height_ratios
         if has_envelopes:
-            gs = fig.add_gridspec(2, 2, 
-                                  width_ratios=[waveform_ratio, 1 - waveform_ratio],
-                                  height_ratios=[grain_ratio, envelope_ratio],
-                                  wspace=0.02, hspace=0.08)
-            ax_wave = fig.add_subplot(gs[0, 0])
-            ax_grain = fig.add_subplot(gs[0, 1])
-            ax_legend = fig.add_subplot(gs[1, 0])
-            ax_env = fig.add_subplot(gs[1, 1])
+            height_ratios = [sample_row_height] * n_samples + [envelope_ratio]
+            n_rows = n_samples + 1
         else:
-            gs = fig.add_gridspec(1, 2, 
-                                  width_ratios=[waveform_ratio, 1 - waveform_ratio],
-                                  wspace=0.02)
-            ax_wave = fig.add_subplot(gs[0])
-            ax_grain = fig.add_subplot(gs[1])
-            ax_legend = None
-            ax_env = None
+            height_ratios = [sample_row_height] * n_samples
+            n_rows = n_samples
+        
+        # GridSpec: n_rows righe × 2 colonne
+        gs = fig.add_gridspec(
+            n_rows, 2,
+            width_ratios=[waveform_ratio, 1 - waveform_ratio],
+            height_ratios=height_ratios,
+            wspace=0.02,
+            hspace=0.0  # gap verticale tra sample
+        )
         
         # Margini
         margin_ratio = margin_mm / page_w_mm
@@ -362,133 +388,155 @@ class ScoreVisualizer:
             top=1 - margin_ratio - 0.03
         )
         
-        if max_concurrent == 0:
-            # Pagina vuota
-            ax_grain.text(0.5, 0.5, "Nessuno stream attivo",
-                   ha='center', va='center', transform=ax_grain.transAxes,
-                   fontsize=14, color='gray')
-            ax_grain.set_xlim(page_start, page_end)
-            ax_grain.set_ylim(0, 1)
-            ax_wave.set_ylim(0, 1)
-            ax_wave.axis('off')
-            if ax_env:
-                ax_env.axis('off')
-            if ax_legend:
-                ax_legend.axis('off')
-        else:
-            # Calcola altezze slot
-            gap_ratio = self.config['stream_gap_ratio']
-            total_gap = gap_ratio * (max_concurrent - 1) if max_concurrent > 1 else 0
-            slot_height = (1.0 - total_gap) / max_concurrent
+        # =========================================================================
+        # DISEGNA SUBPLOT PER OGNI SAMPLE
+        # =========================================================================
+        all_envelope_types = set()
+        
+        for i, (sample_path, streams) in enumerate(samples_dict.items()):
+            # Crea subplot per questo sample
+            ax_wave = fig.add_subplot(gs[i, 0])
+            ax_grain = fig.add_subplot(gs[i, 1])
             
-            # Raccogli tutti i tipi di envelope usati (per legenda)
-            all_envelope_types = set()
+            # Ottieni durata sample
+            sample_duration = self._get_sample_duration(sample_path)
             
-            # Disegna ogni stream
-            for stream in active_streams:
-                slot = slot_assignments[stream.stream_id]
-                
-                # Bounds verticali per questo slot
-                y_base = slot * (slot_height + gap_ratio)
-                y_height = slot_height
-                
-                # 1. Disegna waveform nel subplot sinistro
-                self._draw_waveform(ax_wave, stream, y_base, y_height)
-                
-                # 2. Disegna grani nel subplot destro
-                self._draw_grains(ax_grain, stream, y_base, y_height,
-                                 page_start, page_end)
-                
-                # 3. Label stream (nel subplot grani)
-                self._draw_stream_label(ax_grain, stream, y_base, y_height,
-                                       page_start)
-                
-                # 4. Disegna envelope (se presenti)
-                if ax_env:
-                    env_types = self._draw_envelopes(ax_env, stream, y_base, y_height,
-                                                      page_start, page_end)
-                    all_envelope_types.update(env_types)
+            # Disegna waveform UNA VOLTA (usa il primo stream solo per il path)
+            self._draw_waveform_full(ax_wave, streams[0], sample_duration)
             
-            # Configura subplot waveform
-            ax_wave.set_ylim(0, 1)
+            # Disegna grani di TUTTI gli stream che usano questo sample
+            for stream in streams:
+                self._draw_grains_full(ax_grain, stream, sample_duration, 
+                                    page_start, page_end)
+                self._draw_stream_label_full(ax_grain, stream, page_start, sample_duration)
+            
+            # Configura assi waveform
+            ax_wave.set_ylim(-0.02, sample_duration+0.02)
             ax_wave.set_xlim(-1.1, 1.1)
-            ax_wave.set_ylabel("Posizione nel sample", fontsize=self.config['label_fontsize'])
+            ax_wave.set_ylabel(f"Sample (s)\n{sample_path}", 
+                            fontsize=self.config['label_fontsize'])
             ax_wave.set_xticks([])
             ax_wave.tick_params(axis='y', labelsize=self.config['label_fontsize'] - 1)
             ax_wave.axvline(x=0, color='gray', linewidth=0.5, alpha=0.5, linestyle=':')
+            ax_wave.grid(True, alpha=0.2, linestyle=':', axis='y')
             
-            # Configura subplot grani
+            # Configura assi grani
             ax_grain.set_xlim(page_start, page_end)
-            ax_grain.set_ylim(0, 1)
-            ax_grain.set_yticklabels([])
-            ax_grain.tick_params(axis='y', length=0)
+            ax_grain.set_ylim(-0.02, sample_duration+0.02)
+            ax_grain.set_ylabel("")  # label già nella waveform
+            ax_grain.tick_params(axis='y', labelsize=self.config['label_fontsize'] - 1)
             ax_grain.grid(True, alpha=0.3, linestyle='--')
             
-            # Configura subplot envelope
-            if ax_env:
-                ax_env.set_xlim(page_start, page_end)
-                ax_env.set_ylim(0, 1)
-                ax_env.set_xlabel("Tempo (s)", fontsize=self.config['label_fontsize'])
-                ax_env.set_yticklabels([])
-                ax_env.tick_params(axis='y', length=0)
-                ax_env.grid(True, alpha=0.3, linestyle='--')
+            # X label solo sull'ultimo sample (se non ci sono envelope)
+            if i == n_samples - 1 and not has_envelopes:
+                ax_grain.set_xlabel("Tempo (s)", fontsize=self.config['label_fontsize'])
+            else:
+                ax_grain.set_xticklabels([])
+        
+        # =========================================================================
+        # SUBPLOT ENVELOPE (se presenti)
+        # =========================================================================
+        if has_envelopes:
+            ax_env = fig.add_subplot(gs[n_samples, 1])
+            
+            # Calcola altezze per ogni stream nel subplot envelope
+            n_streams_with_env = len([s for s in active_streams if self._get_stream_envelopes(s)])
+            
+            if n_streams_with_env > 0:
+                gap_ratio = 0.02  # piccolo gap tra stream
+                total_gap = gap_ratio * 2 * (n_streams_with_env) if n_streams_with_env > 1 else 0
+                env_slot_height = (1.0 - total_gap) / n_streams_with_env
                 
-                # Disegna legenda
-                if ax_legend and all_envelope_types:
-                    self._draw_envelope_legend(ax_legend, all_envelope_types)
-        
-        # Asse X solo se non c'è envelope panel
-        if not has_envelopes:
-            ax_grain.set_xlabel("Tempo (s)", fontsize=self.config['label_fontsize'])
-        
-        # Titolo
+                slot_idx = 0
+                for stream in active_streams:
+                    if self._get_stream_envelopes(stream):
+                        # Calcola y_base e y_height per questo stream
+                        y_base = slot_idx * (env_slot_height + gap_ratio) + gap_ratio
+                        y_height = env_slot_height - gap_ratio
+
+                        y_single_stream_with_gap=gap_ratio*2+(env_slot_height)
+                        y_that_stream=y_single_stream_with_gap*slot_idx
+                        
+                        y_base=y_that_stream + gap_ratio
+                        y_height= env_slot_height
+                        # Disegna envelope in questa "corsia"
+                        env_types = self._draw_envelopes(ax_env, stream, y_base, y_height,
+                                                        page_start, page_end)
+                        all_envelope_types.update(env_types)
+                        
+                        # Label stream nella corsia envelope
+                        ax_env.text(
+                            page_start + 0.3, 
+                            y_base + y_height * 0.5,
+                            stream.stream_id,
+                            fontsize=self.config['label_fontsize'] - 2,
+                            verticalalignment='center',
+                            color='gray',
+                            alpha=0.6
+                        )
+                        # ========== LINEE DIVISORIE ==========
+                        # Linea sopra questa corsia (non sulla prima)
+                        if slot_idx > 0:
+                            ax_env.axhline(y=y_that_stream, color='darkgray', 
+                                        linewidth=1, alpha=0.4, linestyle='-')
+                        
+                        slot_idx += 1
+            
+            # Configura assi envelope
+            ax_env.set_xlim(page_start, page_end)
+            ax_env.set_ylim(0, 1)
+            ax_env.set_xlabel("Tempo (s)", fontsize=self.config['label_fontsize'])
+            ax_env.set_ylabel("", fontsize=self.config['label_fontsize'])
+            ax_env.set_yticklabels([])
+            ax_env.tick_params(axis='y', length=0)
+            ax_env.grid(True, alpha=0.3, linestyle='--', axis='x')
+
+            ax_env.spines['top'].set_position(('axes', 1))     
+            ax_env.spines['bottom'].set_position(('axes', 0))  
+
+
+            # Legenda envelope
+            if all_envelope_types:
+                ax_legend = fig.add_subplot(gs[n_samples, 0])
+                self._draw_envelope_legend(ax_legend, all_envelope_types)
+        # =========================================================================
+        # TITOLO
+        # =========================================================================
         title = f"Pagina {page_idx + 1}/{self.page_count} — " \
                 f"[{page_start:.1f}s - {page_end:.1f}s]"
         fig.suptitle(title, fontsize=self.config['title_fontsize'])
         
-        # Griglia waveform
-        ax_wave.grid(True, alpha=0.2, linestyle=':', axis='y')
-        
         return fig
-    
 
-
-    def _draw_waveform(self, ax, stream, y_base, y_height):
-        """Disegna waveform verticale bipolare nel subplot dedicato."""
+    def _draw_waveform_full(self, ax, stream, sample_duration):
+        """Disegna waveform usando tutto lo spazio verticale dello subplot."""
         
-        time_axis, amplitude, sample_duration = self._load_waveform(stream.sample_path)
+        time_axis, amplitude, _ = self._load_waveform(stream.sample_path)
         
-        # Scala Y: tempo nel sample → posizione verticale nello slot
-        y_scaled = y_base + (time_axis / sample_duration) * y_height
+        # Y = tempo nel sample (da 0 a sample_duration)
+        # X = ampiezza normalizzata (-1 a +1)
         
-        # Nel subplot waveform, X va da -1 a 1 (ampiezza normalizzata)
-        # amplitude già va da -1 a +1
-        
-        # Disegna come linea
+        # Disegna linea
         ax.plot(
-            amplitude, y_scaled,
+            amplitude, time_axis,
             color=self.config['waveform_color'],
             alpha=self.config['waveform_alpha'] + 0.3,
             linewidth=0.5
         )
         
-        # Fill dallo zero alla waveform
+        # Fill dallo zero
         ax.fill_betweenx(
-            y_scaled,
-            0,          # linea dello zero
-            amplitude,  # waveform
+            time_axis,
+            0,
+            amplitude,
             alpha=self.config['waveform_alpha'],
             color=self.config['waveform_color'],
             linewidth=0
         )
-    
 
 
-    def _draw_grains(self, ax, stream, y_base, y_height, page_start, page_end):
-        """Disegna tutti i grani dello stream."""
-        
-        sample_duration = self._get_sample_duration(stream.sample_path)
-        y_scale = y_height / sample_duration
+    def _draw_grains_full(self, ax, stream, sample_duration, page_start, page_end):
+        """Disegna grani con coordinate Y assolute nel sample."""
         
         # Filtra grani visibili
         visible_grains = [
@@ -499,68 +547,85 @@ class ScoreVisualizer:
         if not visible_grains:
             return
         
-        # Crea rettangoli
+        polygons = []
         rectangles = []
         colors = []
         
         for grain in visible_grains:
-            # Coordinate X (tempo partitura)
+            # X: tempo partitura
             x = grain.onset
             width = grain.duration
             
-            # Coordinate Y (posizione nel sample)
-            pointer_y = y_base + (grain.pointer_pos * y_scale)
+            # Y: posizione assoluta nel sample (in secondi)
+            pointer_y = grain.pointer_pos
             
-            # Altezza = sample consumato
-            sample_consumed = grain.duration
-            height = sample_consumed * y_scale
-            
-            # Direzione: normale (verso l'alto) o reverse (verso il basso)
+            # Altezza: sample consumato (in secondi)
+            # Considerando durata
+            height = grain.duration # * abs(grain.pitch_ratio)
+
+            # Dimensione punta freccia (% della larghezza)
+            arrow_head_width = width * 0.5  # 30% della larghezza del grano
+
+            # Direzione
             if grain.grain_reverse:
-                y = pointer_y - height
+                y_top = pointer_y
+                y_bottom = pointer_y - height
+
+                # 7 punti: rettangolo con punta triangolare in basso
+                vertices = [
+                    (x, y_top),                           # alto sinistra
+                    (x + width, y_top),                   # alto destra
+                    (x + width, y_bottom + arrow_head_width),  # prima della punta destra
+                    (x + width/2, y_bottom),              # punta centrale (GIÙ)
+                    (x, y_bottom + arrow_head_width),     # prima della punta sinistra
+                ]
             else:
-                y = pointer_y
+                # FRECCIA SU (forward)
+                y_bottom = pointer_y
+                y_top = pointer_y + height
+                
+                # 7 punti: rettangolo con punta triangolare in alto
+                vertices = [
+                    (x, y_bottom),                        # basso sinistra
+                    (x + width, y_bottom),                # basso destra
+                    (x + width, y_top - arrow_head_width),  # prima della punta destra
+                    (x + width/2, y_top),                 # punta centrale (SU)
+                    (x, y_top - arrow_head_width),        # prima della punta sinistra
+                ]
             
-            # Crea rettangolo
-            rect = mpatches.Rectangle(
-                (x, y), width, height,
-                linewidth=0.3,
-                edgecolor='black'
-            )
-            rectangles.append(rect)
+            # Crea poligono
+            poly = mpatches.Polygon(vertices, closed=True)
+            polygons.append(poly)
             
-            # Colore con alpha
+            # Colore
             color = list(self._pitch_to_color(grain.pitch_ratio))
-            color[3] = self._volume_to_alpha(grain.volume)  # alpha
+            color[3] = self._volume_to_alpha(grain.volume)
             colors.append(color)
         
-        # Aggiungi collection (più efficiente)
+        # Collection
         collection = PatchCollection(
-            rectangles,
+            polygons,
             facecolors=colors,
             edgecolors='black',
-            linewidths=0.2,
-            clip_on=True  # Clipping automatico
+            linewidths=0.02,
+            clip_on=True
         )
         ax.add_collection(collection)
-    
-    def _draw_stream_label(self, ax, stream, y_base, y_height, page_start):
-        """Disegna label identificativa dello stream."""
-        
-        label = f"{stream.stream_id}\n[{stream.sample_path}]"
-        
-        # Posizione: sopra lo slot, allineato a sinistra
+
+    def _draw_stream_label_full(self, ax, stream, page_start, sample_duration):
+        """Label stream nell'angolo in alto a sinistra del subplot."""
+        label_x = max(stream.onset, page_start) + 0.5        
         ax.text(
-            page_start + 0.5,  # leggermente a destra del bordo
-            y_base + y_height - 0.01,
-            label,
+            label_x, 
+            sample_duration * 0.95,  # posizione relativa all'altezza del sample
+            stream.stream_id,
             fontsize=self.config['label_fontsize'] - 1,
             verticalalignment='top',
             horizontalalignment='left',
             color='darkblue',
             alpha=0.8,
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
-                     alpha=0.7, edgecolor='none')
+                    alpha=0.7, edgecolor='none')
         )
 
     # =========================================================================
@@ -684,7 +749,7 @@ class ScoreVisualizer:
             color = colors.get(param_name, '#333333')
             
             # Disegna curva
-            ax.plot(times, y_values, color=color, linewidth=1.2, 
+            ax.plot(times, y_values, color=color, linewidth=1.1, 
                    alpha=0.8, label=param_name)
             
             # === ANNOTAZIONE BREAKPOINT ===
@@ -695,8 +760,8 @@ class ScoreVisualizer:
             drawn_types.add(param_name)
         
         # Linee orizzontali di riferimento per la corsia
-        ax.axhline(y=y_base, color='gray', linewidth=0.3, alpha=0.3)
-        ax.axhline(y=y_base + y_height, color='gray', linewidth=0.3, alpha=0.3)
+        #ax.axhline(y=y_base, color='black', linewidth=0.3, alpha=0.3)
+        #ax.axhline(y=y_base + y_height, color='black', linewidth=0.3, alpha=0.3)
         
         return drawn_types
     
@@ -779,18 +844,18 @@ class ScoreVisualizer:
         
         # Posiziona verticalmente
         n = len(sorted_types)
-        y_positions = np.linspace(0.9, 0.1, n) if n > 1 else [0.5]
+        y_positions = np.linspace(0.85, 0.15, n) if n > 1 else [0.5]
         
         for i, param_name in enumerate(sorted_types):
             color = colors.get(param_name, '#333333')
             
             # Linea di esempio
-            ax.plot([0.1, 0.35], [y_positions[i], y_positions[i]], 
+            ax.plot([0.1, 0.15], [y_positions[i], y_positions[i]], 
                    color=color, linewidth=2)
             
             # Label
             ax.text(0.4, y_positions[i], param_name.replace('_', ' '),
-                   fontsize=self.config['label_fontsize'] - 1,
+                   fontsize=self.config['label_fontsize'] - 2,
                    verticalalignment='center',
                    color=color)
         
