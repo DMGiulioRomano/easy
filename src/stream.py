@@ -22,6 +22,10 @@ STREAM_MIN_JITTER=0.00001
 STREAM_MAX_JITTER=10.0
 STREAM_MIN_OFFSET_RANGE=0.0
 STREAM_MAX_OFFSET_RANGE=1.0
+STREAM_MIN_PITCH_RANGE_SEMITONES = 0.0
+STREAM_MAX_PITCH_RANGE_SEMITONES = 36.0
+STREAM_MIN_PITCH_RANGE_RATIO = 0.0
+STREAM_MAX_PITCH_RANGE_RATIO = 2.0
 
 def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
@@ -76,22 +80,17 @@ class Stream:
         if 'shift_semitones' in pitch_params:
             # Modalità SEMITONI
             shift_param = pitch_params['shift_semitones']
-            if isinstance(shift_param, (int, float)):
-                # Numero singolo → converti subito a ratio
-                self.pitch_ratio = pow(2.0, shift_param / 12.0)
-                self.pitch_semitones_envelope = None
-            else:
-                # Envelope di semitoni → salva envelope, conversione per-grano
-                self.pitch_semitones_envelope = self._parse_envelope_param(
-                    shift_param, "pitch.shift_semitones"
-                )
-                self.pitch_ratio = None  # marker: usa envelope
+
+            self.pitch_semitones_envelope = self._parse_envelope_param(shift_param, "pitch.shift_semitones")
+            self.pitch_ratio = None  # marker: usa envelope
+            self.pitch_range = self._parse_envelope_param(pitch_params.get('range', 0.0), "pitch.range")
+            self.pitch_range_mode = 'semitones'
         else:
             # Modalità RATIO diretta (o default a 1.0)
-            self.pitch_ratio = self._parse_envelope_param(
-                pitch_params.get('ratio', 1.0), "pitch.ratio"
-            )
+            self.pitch_ratio = self._parse_envelope_param(pitch_params.get('ratio', 1.0), "pitch.ratio")
             self.pitch_semitones_envelope = None
+            self.pitch_range = self._parse_envelope_param(pitch_params.get('range', 0.0), "pitch.range")
+            self.pitch_range_mode = 'ratio'
 
     def _init_pointer_params(self, params):
         """
@@ -505,11 +504,24 @@ class Stream:
             # PITCH_RATIO (con envelope support + safety)
             if self.pitch_semitones_envelope is not None:
                 # Envelope di semitoni → valuta e converti a ratio
-                semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
-                pitch_ratio = pow(2.0, semitones / 12.0)
+                base_semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
+                pitch_range = self._safe_evaluate(self.pitch_range,elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES,STREAM_MAX_PITCH_RANGE_SEMITONES)
+
+                pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
+                final_semitones = base_semitones + pitch_deviation
+                pitch_ratio = pow(2.0, final_semitones / 12.0)
+            
             else:
                 # Numero fisso o envelope di ratio
-                pitch_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
+                base_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
+                if self.pitch_range_mode == 'ratio':
+                    # Applica deviazione in RATIO
+                    pitch_range = self._safe_evaluate(self.pitch_range,elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO,STREAM_MAX_PITCH_RANGE_RATIO)
+                    pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
+                    pitch_ratio = base_ratio + pitch_deviation
+                else:
+                    # Fallback (non dovrebbe accadere)
+                    pitch_ratio = base_ratio
             if self.grain_reverse_mode == 'auto':
                 # Calcola la velocità effettiva a questo tempo
                 if isinstance(self.pointer_speed, Envelope):
