@@ -70,7 +70,7 @@ class Stream:
         self.duration = params['duration']
         self.timeScale = params.get('time_scale', 1.0)
         self.time_mode = params.get('time_mode', 'absolute')
-
+        self.num_voices = params.get('num_voices', 1)  # Default: 1 voice
         self._init_audio(params)
         
         # === PARAMETRI COMPLESSI (metodi dedicati) ===
@@ -272,7 +272,8 @@ class Stream:
         Inizializza lo stato interno dello stream.
         """
         self._cumulative_read_time = 0.0
-        self.grains = []
+        self.voices = [] #new
+        self.grains =[] #old
         self.generated = False
 
     def _calculate_inter_onset_time(self, elapsed_time, current_grain_dur):
