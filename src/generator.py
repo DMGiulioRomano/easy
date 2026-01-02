@@ -186,7 +186,7 @@ class Generator:
                 # Default: hanning
                 else:
                     f.write(f'f {num} 0 1024 20 2 1\n\n')
-                    
+                        
     def write_score_events(self, f):
         """Scrive gli eventi dei grani"""
         # GRANULAR EVENTS
@@ -201,14 +201,30 @@ class Generator:
                 f.write(f'; Grain duration: {self._format_param_for_comment(stream.grain_duration, 1000, "ms")}\n')
                 f.write(f'; Density: {self._format_param_for_comment(stream.density, 1, " g/s")} \n')
                 f.write(f'; Distribution: {self._format_param_for_comment(stream.distribution, 1, "")} \n')
-
-                f.write(f'; Total grains: {len(stream.grains)}\n\n')
                 
-                for grain in stream.grains:
-                    f.write(grain.to_score_line())
-                f.write('\n')
+                # NUOVO: info sulle voices
+                if isinstance(stream.num_voices, Envelope):
+                    f.write(f'; Num voices: {self._format_param_for_comment(stream.num_voices, 1, " voices")}\n')
+                else:
+                    f.write(f'; Num voices: {stream.num_voices}\n')
+                
+                # Conta grani totali
+                total_grains = sum(len(voice_grains) for voice_grains in stream.voices)
+                f.write(f'; Total grains: {total_grains}\n\n')
+                
+                # NUOVO: itera per voice
+                for voice_index, voice_grains in enumerate(stream.voices):
+                    if voice_grains:  # Solo se la voice ha grani
+                        f.write(f';   Voice {voice_index} ({len(voice_grains)} grains)\n')
+                        
+                        for grain in voice_grains:
+                            f.write(grain.to_score_line())
+                        
+                        f.write('\n')  # Separatore tra voices
+                
+                f.write('\n')  # Separatore tra streams
         
-        # TAPE RECORDER EVENTS
+        # TAPE RECORDER EVENTS (invariato)
         if self.testine:
             f.write("; " + "="*77 + "\n")
             f.write("; TAPE RECORDER TRACKS\n")
@@ -242,6 +258,10 @@ class Generator:
         print(f"✓ Score generato: {output_path}")
         print(f"  - {len(self.ftables)} function tables")
         print(f"  - {len(self.streams)} streams")
-        total_grains = sum(len(s.grains) for s in self.streams)
+        
+        # NUOVO: conta grani usando voices
+        total_grains = sum(
+            sum(len(voice_grains) for voice_grains in stream.voices) 
+            for stream in self.streams
+        )
         print(f"  - {total_grains} grains totali")
-

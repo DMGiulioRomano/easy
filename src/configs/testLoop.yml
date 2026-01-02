@@ -4,28 +4,38 @@ composition:
 streams:
   - stream_id: "texture1"
     onset: 0.0
-    duration: 10
+    duration: 20
     solo:
+    voices:
+      offset_pitch:
+        type: cubic
+        points: [[0,0],[.5,20],[1,0]]
+      pointer_range: 1
+      number: 1 #[[0,1],[.5,10],[1,4]]
+      pointer_offset: [[0,0],[.5,1.0],[.7,0]]
     time_mode: normalized
     sample: "008-1_778-_560.wav"
-    #fill_factor: [[0,0.4],[0.3,1.5],[.7,.7],[2,1]]
-    #distribution: [[0,0],[.3,.3],[.7,1],[1,1]]
+    #fill_factor: [[0,0.4],[0.3,1.5],[.7,.7],[2,.2]]
+    density: [[0,10],[.3,10],[.7,60],[1,10]]
+    distribution: [[0,0],[.3,.3],[.7,1],[1,1]]
     grain:
       duration: [[0,0.01],[.4,.02],[1,.0001]]
-      duration_range: 0.01
+      duration_range: 0.005
     pointer:
       start: 1
-      speed: [[0,1],[0.5,1],[1,4]]
-      jitter: 0.001
-      #offset_range: 1
-      loop_unit: normalized
-      loop_start: 0
-      loop_dur:      
-        type: cubic
-        points: [[0, 1], [1, .01]]
+      speed: .002 #[[0,1],[0.5,1],[1,.002]]
+      #jitter: 0.001
+      offset_range: [[0,0],[.5,.2],[1,0]]
+      #loop_unit: normalized
+      #loop_start: 0
+      #loop_dur:      
+      #  type: cubic
+      #  points: [[0, 1], [1, .01]]
+    #pan_range: [[0,10],[.5,180],[1,0]]
+    volume: -6
     pitch:
       shift_semitones: 0
-      range: [[0, 0], [1, 3]] 
+      #range: [[0, 0], [1, 24]] 
   - stream_id: "texture1-1"
     onset: 400.0
     duration: 10
