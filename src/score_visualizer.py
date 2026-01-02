@@ -663,7 +663,7 @@ class ScoreVisualizer:
                 value = getattr(stream, attr_name)
                 if isinstance(value, Envelope):
                     # Salta envelope costanti (un solo punto)
-                    if value.type != 'constant' or len(value.breakpoints) > 1:
+                    if len(value.breakpoints) > 1:
                         envelopes[param_name] = value
         
         return envelopes

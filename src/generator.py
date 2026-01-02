@@ -76,28 +76,40 @@ class Generator:
         self.next_table_num += 1
         self.ftables[table_num] = ('sample', sample_path)
         return table_num
-    
+
     def generate_ftable_for_envelope(self, envelope_type):
         """Genera numero ftable per un envelope (evita duplicati)"""
         # Controlla se l'envelope è già stato creato
         for num, (ftype, param) in self.ftables.items():
             if ftype == 'envelope' and param == envelope_type:
                 return num
-        
         table_num = self.next_table_num
         self.next_table_num += 1
         self.ftables[table_num] = ('envelope', envelope_type)
         return table_num
-    
+
     def create_elements(self):
         """Crea gli oggetti Stream dai dati YAML"""
         if not self.data:
             raise ValueError("Devi chiamare load_yaml() prima!")
-
         # Crea STREAMS (granular synthesis)
         if 'streams' in self.data:
-            print(f"Creazione di {len(self.data['streams'])} streams granulari...")
-            for stream_data in self.data['streams']:
+            # 1. CONTROLLO SOLO: verifica se almeno uno stream ha "solo"
+            solo_mode = any('solo' in stream_data for stream_data in self.data['streams'])
+            # Filtra gli stream in base a solo/mute
+            if solo_mode:
+                # Se c'è almeno un solo, prendi solo quelli con 'solo'
+                filtered_streams = [s for s in self.data['streams'] if 'solo' in s]
+                print(f"⚡ SOLO MODE: creazione di {len(filtered_streams)} stream (su {len(self.data['streams'])} totali)")
+            else:
+                # Altrimenti escludi solo quelli con 'mute'
+                filtered_streams = [s for s in self.data['streams'] if 'mute' not in s]
+                muted_count = len(self.data['streams']) - len(filtered_streams)
+                if muted_count > 0:
+                    print(f"🔇 {muted_count} stream muted")
+                print(f"Creazione di {len(filtered_streams)} streams granulari...")
+            # 2. CREAZIONE STREAM FILTRATI
+            for stream_data in filtered_streams:
                 # Crea lo stream
                 stream = Stream(stream_data)
                 # Assegna i numeri delle ftable            
@@ -106,7 +118,6 @@ class Generator:
                 # Genera i grani
                 stream.generate_grains()
                 self.streams.append(stream)
-
         # Crea TESTINE (tape recorder)
         if 'testine' in self.data:
             print(f"Creazione di {len(self.data['testine'])} testine tape recorder...")
@@ -115,7 +126,6 @@ class Generator:
                 testina.sample_table_num = self.generate_ftable_for_sample(testina.sample_path)
                 self.testine.append(testina)
                 print(f"  → Testina '{testina.testina_id}': {testina}")
-        
         return self.streams, self.testine
 
     def write_score_header(self, f):

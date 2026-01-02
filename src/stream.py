@@ -4,28 +4,53 @@ from grain import Grain
 from envelope import Envelope
 PATHSAMPLES='./refs/'
 
+# parametri density
 STREAM_MIN_FILLFACTOR=0.001
 STREAM_MAX_FILLFACTOR=50
 STREAM_MIN_DENSITY=0.1
 STREAM_MAX_DENSITY=4000
+# parametri grain_duration (in secondi)
 STREAM_MIN_GRAIN_DURATION=0.0001
 STREAM_MAX_GRAIN_DURATION=10.0
+# parametri pitch
 STREAM_MIN_SEMITONES=-36
 STREAM_MAX_SEMITONES=36
 STREAM_MIN_PITCH_RATIO=0.125
 STREAM_MAX_PITCH_RATIO=8.0
+# parametri output
 STREAM_MIN_VOLUME=-120
 STREAM_MAX_VOLUME=12
 STREAM_MIN_PANDEGREE=-360*10
 STREAM_MAX_PANDEGREE=360*10
+# parametri altri
 STREAM_MIN_JITTER=0.00001
 STREAM_MAX_JITTER=10.0
 STREAM_MIN_OFFSET_RANGE=0.0
 STREAM_MAX_OFFSET_RANGE=1.0
+
+# ============================================================================= 
+# SAFETY LIMITS - Range parameters (deviazioni)
+# =============================================================================
 STREAM_MIN_PITCH_RANGE_SEMITONES = 0.0
 STREAM_MAX_PITCH_RANGE_SEMITONES = 36.0
 STREAM_MIN_PITCH_RANGE_RATIO = 0.0
 STREAM_MAX_PITCH_RANGE_RATIO = 2.0
+# Nuovi range per grain_duration (in secondi)
+STREAM_MIN_GRAIN_DURATION_RANGE = 0.0
+STREAM_MAX_GRAIN_DURATION_RANGE = 1.0
+# Nuovi range per volume (in dB)
+STREAM_MIN_VOLUME_RANGE = 0.0
+STREAM_MAX_VOLUME_RANGE = 12.0  # ±12dB massimo consigliato
+# Nuovi range per pan (in gradi)
+STREAM_MIN_PAN_RANGE = 0.0
+STREAM_MAX_PAN_RANGE = 360.0
+# Nuovi range per density (grani/sec)
+STREAM_MIN_DENSITY_RANGE = 0.0
+STREAM_MAX_DENSITY_RANGE = 100.0
+# Nuovi range per fill_factor
+STREAM_MIN_FILLFACTOR_RANGE = 0.0
+STREAM_MAX_FILLFACTOR_RANGE = 10.0
+
 
 def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
@@ -167,13 +192,14 @@ class Stream:
         
         Parametri:
         - duration: durata del grano (supporta Envelope)
+        - duration_range: variazione stocastica della durata (±range/2)
         - envelope: tipo di inviluppo (hanning, hamming, etc.)
         """
-        self.grain_duration = self._parse_envelope_param(
-            params['grain']['duration'], "grain.duration"
-        )
-        self.grain_envelope = params['grain'].get('envelope', 'hanning')
-
+        grain_params = params.get('grain', {})
+        self.grain_duration = self._parse_envelope_param(grain_params['duration'], "grain.duration")        
+        self.grain_duration_range = self._parse_envelope_param(grain_params.get('duration_range', 0.0), "grain.duration_range")
+        self.grain_envelope = grain_params.get('envelope', 'hanning')
+        
     def _init_density_params(self, params):
         """
         Gestisce density con due modalità mutuamente esclusive:
@@ -187,16 +213,12 @@ class Stream:
         """
         if 'fill_factor' in params:
             # Modalità FILL_FACTOR esplicita
-            self.fill_factor = self._parse_envelope_param(
-                params['fill_factor'], "fill_factor"
-            )
+            self.fill_factor = self._parse_envelope_param(params['fill_factor'], "fill_factor")
             self.density = None
         elif 'density' in params:
             # Modalità DENSITY diretta
             self.fill_factor = None
-            self.density = self._parse_envelope_param(
-                params['density'], "density"
-            )
+            self.density = self._parse_envelope_param(params['density'], "density")
         else:
             # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
             self.fill_factor = 2.0
@@ -221,14 +243,14 @@ class Stream:
         
         Parametri:
         - volume: livello in dB (supporta Envelope)
-        - pan: posizione stereo 0-1 (supporta Envelope)
+        - volume_range: variazione stocastica volume (±range/2 dB)
+        - pan: posizione stereo (gradi, supporta Envelope)
+        - pan_range: variazione stocastica pan (±range/2 gradi)
         """
-        self.volume = self._parse_envelope_param(
-            params.get('volume', -6.0), "output.volume"
-        )
-        self.pan = self._parse_envelope_param(
-            params.get('pan', 0.0), "pan"
-        )
+        self.volume = self._parse_envelope_param(params.get('volume', -6.0), "output.volume")
+        self.volume_range = self._parse_envelope_param(params.get('volume_range', 0.0), "output.volume_range")
+        self.pan = self._parse_envelope_param(params.get('pan', 0.0), "pan")
+        self.pan_range = self._parse_envelope_param(params.get('pan_range', 0.0), "pan_range")
 
     def _init_audio(self, params):
         """
@@ -307,7 +329,7 @@ class Stream:
             async_value = random.uniform(0, 2.0 * avg_inter_onset)
             return (1.0 - distribution) * sync_value + distribution * async_value    
 
-    def _calculate_pointer(self, grain_count, elapsed_time):
+    def _calculate_pointer(self, elapsed_time):
         """
         Calcola la posizione di lettura nel sample per questo grano.
         
@@ -316,7 +338,6 @@ class Stream:
         loop_length cambia.
         
         Args:
-            grain_count: numero progressivo del grano
             elapsed_time: secondi trascorsi dall'onset dello stream
             
         Returns:
@@ -427,43 +448,18 @@ class Stream:
         grain_count = 0
         while current_onset < stream_end:
             elapsed_time = current_onset - self.onset
-            grain_dur = self._safe_evaluate(self.grain_duration,elapsed_time, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION)
-            # Calcola pointer position (dove leggere nel sample)
-            pointer_pos = self._calculate_pointer(grain_count, elapsed_time)
-            # PITCH_RATIO (con envelope support + safety)
-            if self.pitch_semitones_envelope is not None:
-                # Envelope di semitoni → valuta e converti a ratio
-                base_semitones = self._safe_evaluate(self.pitch_semitones_envelope,elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
-                pitch_range = self._safe_evaluate(self.pitch_range,elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES,STREAM_MAX_PITCH_RANGE_SEMITONES)
-                pitch_deviation = random.randint(int(-pitch_range*0.5), int(pitch_range*0.5))
-                final_semitones = base_semitones + pitch_deviation
-                pitch_ratio = pow(2.0, final_semitones / 12.0)
-            
-            else:
-                # Numero fisso o envelope di ratio
-                base_ratio = self._safe_evaluate(self.pitch_ratio,elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
-                if self.pitch_range_mode == 'ratio':
-                    # Applica deviazione in RATIO
-                    pitch_range = self._safe_evaluate(self.pitch_range,elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO,STREAM_MAX_PITCH_RANGE_RATIO)
-                    pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
-                    pitch_ratio = base_ratio + pitch_deviation
-                else:
-                    # Fallback (non dovrebbe accadere)
-                    pitch_ratio = base_ratio
+            grain_dur = self._calculate_parameter_within_range(elapsed_time, self.grain_duration, self.grain_duration_range, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION, STREAM_MIN_GRAIN_DURATION_RANGE, STREAM_MAX_GRAIN_DURATION_RANGE)
+            pointer_pos = self._calculate_pointer(elapsed_time)
+            pitch_ratio = self._calculate_pitch_ratio(elapsed_time)
             if self.grain_reverse_mode == 'auto':
                 # Calcola la velocità effettiva a questo tempo
-                if isinstance(self.pointer_speed, Envelope):
-                    current_speed = self.pointer_speed.evaluate(elapsed_time)
-                else:
-                    current_speed = self.pointer_speed
+                current_speed = self.pointer_speed.evaluate(elapsed_time)
                 grain_reverse = (current_speed < 0)
             else:
                 # Usa il valore esplicito (True o False)
                 grain_reverse = self.grain_reverse_mode
-            # VOLUME (con envelope support + safety)
-            volume = self._safe_evaluate(self.volume,elapsed_time, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME)
-            # PAN (con envelope support + safety)
-            pan = self._safe_evaluate(self.pan,elapsed_time, STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE)
+            volume = self._calculate_parameter_within_range(elapsed_time, self.volume, self.volume_range, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME, STREAM_MIN_VOLUME_RANGE, STREAM_MAX_VOLUME_RANGE)
+            pan = self._calculate_parameter_within_range(elapsed_time, self.pan, self.pan_range,STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE,STREAM_MIN_PAN_RANGE, STREAM_MAX_PAN_RANGE)
 
             # CREA IL GRANO
             grain = Grain(
@@ -478,14 +474,58 @@ class Stream:
                 grain_reverse=grain_reverse
             )
             self.grains.append(grain)
-            # Calcola quando parte il PROSSIMO grano
             inter_onset = self._calculate_inter_onset_time(elapsed_time, grain_dur)
             current_onset += inter_onset
             grain_count += 1     
-            # Safety check per async (evita loop infiniti)
         self.generated = True
         return self.grains
 
+    def _calculate_parameter_within_range(self, elapsed_time, param, param_range, 
+                                        min_param, max_param, min_range, max_range):
+        """
+        Calcola un parametro con variazione stocastica basata su range.
+        Args:
+            elapsed_time: tempo relativo all'onset dello stream
+            param: valore base del parametro (numero o Envelope)
+            param_range: ampiezza della variazione (numero o Envelope)  
+            min_param: limite minimo del parametro
+            max_param: limite massimo del parametro
+            min_range: limite minimo del range
+            max_range: limite massimo del range
+        Returns:
+            float: valore del parametro con deviazione stocastica applicata
+        """
+        base_param = self._safe_evaluate(param, elapsed_time, min_param, max_param)
+        range_value = self._safe_evaluate(param_range, elapsed_time, min_range, max_range)
+        param_deviation = random.uniform(-0.5, 0.5) * range_value
+        final_value = base_param + param_deviation        
+        return max(min_param, min(max_param, final_value))
+
+    def _calculate_pitch_ratio(self, elapsed_time):
+        """
+        Calcola pitch ratio con support per range.
+        Estrae la logica di calcolo pitch per pulizia del codice.
+        
+        Returns:
+            float: pitch ratio finale (con deviazione se range != 0)
+        """
+        if self.pitch_semitones_envelope is not None:
+            # Modalità SEMITONI
+            base_semitones = self._safe_evaluate(self.pitch_semitones_envelope, elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
+            pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES, STREAM_MAX_PITCH_RANGE_SEMITONES)
+            pitch_deviation = random.randint(int(-pitch_range*0.5), int(pitch_range*0.5))
+            final_semitones = base_semitones + pitch_deviation
+            return pow(2.0, final_semitones / 12.0)
+        else:
+            # Modalità RATIO
+            base_ratio = self._safe_evaluate(self.pitch_ratio, elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
+            if self.pitch_range_mode == 'ratio':
+                pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO, STREAM_MAX_PITCH_RANGE_RATIO)
+                pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
+                return base_ratio + pitch_deviation
+            else:
+                return base_ratio
+            
     def _parse_envelope_param(self, param, param_name="parameter"):
         """
         Helper per parsare parametri che possono essere numeri o Envelope
@@ -511,32 +551,19 @@ class Stream:
         elif isinstance(param, dict):
             # Determina se normalizzare: locale > globale
             local_mode = param.get('time_unit')  # None, 'normalized', 'absolute'
-            should_normalize = (
-                local_mode == 'normalized' or 
-                (local_mode is None and self.time_mode == 'normalized')
-            )
-            
+            should_normalize = (local_mode == 'normalized' or (local_mode is None and self.time_mode == 'normalized'))
             if should_normalize:
-                scaled_points = [
-                    [x * self.duration, y] 
-                    for x, y in param['points']
-                ]
-                return Envelope({
-                    'type': param.get('type', 'linear'),
-                    'points': scaled_points
-                })
+                scaled_points = [[x * self.duration, y] for x, y in param['points']]
+                return Envelope({'type': param.get('type', 'linear'),'points': scaled_points})
             return Envelope(param)
-        
         elif isinstance(param, list):
             # Lista semplice: rispetta time_mode globale
             if self.time_mode == 'normalized':
                 scaled_points = [[x * self.duration, y] for x, y in param]
                 return Envelope(scaled_points)
             return Envelope(param)
-        
         else:
             raise ValueError(f"{param_name} formato non valido: {param}")
-
 
     def _safe_evaluate(self, param, time, min_val, max_val):
         """
@@ -551,10 +578,7 @@ class Stream:
         Returns:
             float: valore clippato nei bounds
         """
-        if isinstance(param, Envelope):
-            value = param.evaluate(time)
-        else:
-            value = param
+        value = param.evaluate(time) if isinstance(param, Envelope) else param
         return max(min_val, min(max_val, value))
 
     def __repr__(self):

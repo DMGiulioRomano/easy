@@ -9,16 +9,12 @@ class Envelope:
             breakpoints: valore singolo, lista di [time, value], o dict con 'type'
             
         Examples:
-            Envelope(50)                                    # costante
+            Envelope([[0,50]])                                    # costante
             Envelope([[0, 50], [2, 100], [5, 20]])         # lineare (default)
             Envelope({'type': 'cubic', 'points': [[0, 10], [2, 50], [5, 100]]})
             Envelope({'type': 'step', 'points': [[0, 3], [2, 5], [6, 2]]})
         """
-        if isinstance(breakpoints, (int, float)):
-            # Valore costante
-            self.breakpoints = [[0, breakpoints]]
-            self.type = 'constant'
-        elif isinstance(breakpoints, list):
+        if isinstance(breakpoints, list):
             # Lista di breakpoints → default linear
             self.breakpoints = sorted(breakpoints, key=lambda x: x[0])
             self.type = 'linear'
@@ -101,9 +97,8 @@ class Envelope:
         Returns:
             float: valore interpolato/costante
         """
-        if self.type == 'constant' or len(self.breakpoints) == 1:
+        if len(self.breakpoints) == 1:
             return self.breakpoints[0][1]
-        
         # Se time è prima del primo breakpoint → hold primo valore
         if time <= self.breakpoints[0][0]:
             return self.breakpoints[0][1]
@@ -194,7 +189,7 @@ class Envelope:
             return 0.0
         
         # Caso costante: rettangolo semplice
-        if self.type == 'constant' or len(self.breakpoints) == 1:
+        if len(self.breakpoints) == 1:
             value = self.breakpoints[0][1]
             return value * (to_time - from_time)
         
