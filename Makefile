@@ -17,11 +17,11 @@ DURATA?=30.0
 DURATA_:=$(subst .,_,$(DURATA))
 INPUT?=001
 #-----------------------------------------------
-AUTOKILL?=false
-AUTOPEN?=false
+AUTOKILL?=true
+AUTOPEN?=true
 AUTOVISUAL?=false
 FILE?=testLoop
-TEST?=false
+TEST?=true
 .SECONDARY: $(SCO_FILES)
 
 ifeq ($(AUTOVISUAL), true)

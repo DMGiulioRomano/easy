@@ -28,40 +28,52 @@ class Envelope:
         # Pre-calcola le tangenti per interpolazione cubica
         if self.type == 'cubic' and len(self.breakpoints) > 1:
             self._compute_tangents()
-    
+        
     def _compute_tangents(self):
         """
         Calcola le tangenti per interpolazione cubica Hermite.
-        Usa finite differences per i punti interni, zero ai bordi.
+        Usa l'algoritmo Fritsch-Carlson per garantire monotonia locale
+        ed evitare overshoot/undershoot nei plateau.
         """
         n = len(self.breakpoints)
         self.tangents = []
         
+        # Prima calcola le pendenze di ogni segmento
+        deltas = []
+        for i in range(n - 1):
+            t0, v0 = self.breakpoints[i]
+            t1, v1 = self.breakpoints[i + 1]
+            deltas.append((v1 - v0) / (t1 - t0))
+        
         for i in range(n):
             if i == 0:
-                # Primo punto: tangente basata sul segmento successivo
-                if n > 1:
-                    t0, v0 = self.breakpoints[0]
-                    t1, v1 = self.breakpoints[1]
-                    m = (v1 - v0) / (t1 - t0)
-                else:
-                    m = 0.0
+                # Primo punto: tangente = pendenza del primo segmento
+                m = deltas[0] if n > 1 else 0.0
             elif i == n - 1:
-                # Ultimo punto: tangente basata sul segmento precedente
-                t_prev, v_prev = self.breakpoints[i-1]
-                t_curr, v_curr = self.breakpoints[i]
-                m = (v_curr - v_prev) / (t_curr - t_prev)
+                # Ultimo punto: tangente = pendenza dell'ultimo segmento
+                m = deltas[-1]
             else:
-                # Punto interno: media dei due segmenti adiacenti (Catmull-Rom style)
-                t_prev, v_prev = self.breakpoints[i-1]
-                t_curr, v_curr = self.breakpoints[i]
-                t_next, v_next = self.breakpoints[i+1]
+                # Punto interno: applica Fritsch-Carlson
+                d0 = deltas[i - 1]  # pendenza segmento precedente
+                d1 = deltas[i]      # pendenza segmento successivo
                 
-                # Tangente = (v_next - v_prev) / (t_next - t_prev)
-                m = (v_next - v_prev) / (t_next - t_prev)
+                # Se le pendenze hanno segni opposti o una è zero → tangente = 0
+                # Questo garantisce che plateau e inversioni non abbiano overshoot
+                if d0 * d1 <= 0:
+                    m = 0.0
+                else:
+                    # Media armonica (più conservativa della media aritmetica)
+                    m = 2.0 * d0 * d1 / (d0 + d1)
+                    
+                    # Clamp per garantire monotonia (Fritsch-Carlson)
+                    # La tangente non deve eccedere 3x la pendenza minore
+                    if m > 0:
+                        m = min(m, 3.0 * min(d0, d1))
+                    else:
+                        m = max(m, 3.0 * max(d0, d1))
             
             self.tangents.append(m)
-    
+
     def _cubic_hermite(self, t, t0, v0, m0, t1, v1, m1):
         """
         Interpolazione cubica Hermite tra due punti.
