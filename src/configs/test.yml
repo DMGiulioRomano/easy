@@ -36,25 +36,3 @@ streams:
       type: cubic
       points: [[0,360],[5,-360]]  
     # -----------------------------------------------------------------
-  - stream_id: "texture1"
-    onset: 30.0
-    duration: (60*8)
-    sample: "016-39_8-2_2.wav"
-    grain:
-      duration: [[0,.03],[55.5,0.001],[100,0.08]]      
-      envelope: expodec
-    fill_factor: [[0,.1],[100,4]]
-    distribution: [[0,0.0],[50,.9],[110,.4]]
-    pointer:
-      start: 0       
-      speed: .001
-      jitter: 0.001
-      loop_start: 0.0
-      loop_end: 1.0
-    pitch:
-      shift_semitones: [[0,4],[5,0],[12,-10],[18,7],[18.2,-7],[25,12]]
-    pan:
-      type: cubic
-      points: [[0,180],[100,-180]]  
-    # -----------------------------------------------------------------
-        

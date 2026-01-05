@@ -11,7 +11,7 @@ streams:
         type: cubic
         points: [[0,0],[.5,20],[1,0]]
       pointer_range: 1
-      number: 1 #[[0,1],[.5,10],[1,4]]
+      number: [[0,1],[.5,10],[1,4]]
       pointer_offset: [[0,0],[.5,1.0],[.7,0]]
     time_mode: normalized
     sample: "008-1_778-_560.wav"

@@ -10,14 +10,15 @@ YML_FILES := $(wildcard $(YMLDIR)/*.yml)
 SCO_FILES := $(patsubst $(YMLDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
 AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
+#---------- $(INPUT)-$(SKIP_)-$(DURATA_).wav ---
 SKIP?=0.0
 SKIP_:=$(subst .,_,$(SKIP))
 DURATA?=30.0
 DURATA_:=$(subst .,_,$(DURATA))
 INPUT?=001
-
-AUTOKILL?=true
-AUTOPEN?=true
+#-----------------------------------------------
+AUTOKILL?=false
+AUTOPEN?=false
 AUTOVISUAL?=false
 FILE?=testLoop
 TEST?=false
@@ -84,8 +85,8 @@ sync:
 
 $(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
 	sox $(SSDIR)/$(INPUT).wav $@ trim $(SKIP) $(DURATA)
-	mv $@ $(SSDIR)/$@ && open $(SSDIR)/$@
-
+	mv $@ $(SSDIR)/$@
+	@if [ "$(AUTOPEN)" = "true" ]; then open $(SSDIR)/$@; fi
 
 .PHONY: rx-stop
 

@@ -538,9 +538,11 @@ class ScoreVisualizer:
     def _draw_grains_full(self, ax, stream, sample_duration, page_start, page_end):
         """Disegna grani con coordinate Y assolute nel sample."""
         
+        all_grains = [grain for voice_grains in stream.voices for grain in voice_grains]
+
         # Filtra grani visibili
         visible_grains = [
-            g for g in stream.grains
+            g for g in all_grains
             if g.onset < page_end and (g.onset + g.duration) > page_start
         ]
         
@@ -548,7 +550,7 @@ class ScoreVisualizer:
             return
         
         polygons = []
-        rectangles = []
+        #rectangles = []
         colors = []
         
         for grain in visible_grains:

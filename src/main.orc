@@ -26,7 +26,7 @@ instr Grain
     ; CALCOLI INIT-TIME
     ;-------------------------------------------------------------------------
     ; Ottieni la lunghezza del sample dalla tabella
-    iSampleLen = ftlen(iSampleTable) / sr    ; ← MODIFICATO
+    iSampleLen = ftlen(iSampleTable) / ftsr(iSampleTable)    ; ← MODIFICATO
     ; Normalizza start position (0-1)
     iStartNorm = iStart / iSampleLen
     ; Calcola frequenza per poscil3
