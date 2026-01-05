@@ -1,5 +1,6 @@
-import logging
-from datetime import datetime
+#import logging
+#from datetime import datetime
+from logger import log_clip_warning
 import random
 import soundfile as sf
 from grain import Grain
@@ -28,7 +29,7 @@ STREAM_MAX_VOLUME=12
 STREAM_MIN_PANDEGREE=-360*10
 STREAM_MAX_PANDEGREE=360*10
 # parametri altri
-STREAM_MIN_JITTER=0.00001
+STREAM_MIN_JITTER=0
 STREAM_MAX_JITTER=10.0
 STREAM_MIN_OFFSET_RANGE=0.0
 STREAM_MAX_OFFSET_RANGE=1.0
@@ -138,18 +139,18 @@ class Stream:
             while current_onset < stream_end:
                 elapsed_time = current_onset - self.onset
                 # 3. Quante voices sono attive ORA?
-                active_voices = int(round(self._safe_evaluate(self.num_voices, elapsed_time, 1, max_voices)))
+                active_voices = int(round(self._safe_evaluate(self.num_voices, elapsed_time, 1, max_voices, "num_voices")))
                 # 4. Questa voice è attiva in questo momento?
-                grain_dur = self._calculate_parameter_within_range(elapsed_time, self.grain_duration, self.grain_duration_range, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION, STREAM_MIN_GRAIN_DURATION_RANGE, STREAM_MAX_GRAIN_DURATION_RANGE)
+                grain_dur = self._calculate_parameter_within_range(elapsed_time, self.grain_duration, self.grain_duration_range, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION, STREAM_MIN_GRAIN_DURATION_RANGE, STREAM_MAX_GRAIN_DURATION_RANGE,"grain_duration", "grain_dur_range")
                 if voice_index < active_voices:
-                    voice_pitch = self._semitones_2_ratio(self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pitch_offset,elapsed_time, STREAM_MIN_VOICE_PITCH_OFFSET,STREAM_MAX_VOICE_PITCH_OFFSET)))
-                    voice_pointer_offset = self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pointer_offset,elapsed_time,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec))
-                    voice_pointer = self._calculate_parameter_within_range(elapsed_time,voice_pointer_offset,self.voice_pointer_range,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec, STREAM_MIN_VOICE_POINTER_RANGE,STREAM_MAX_VOICE_POINTER_RANGE*self.sampleDurSec)
+                    voice_pitch = self._semitones_2_ratio(self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pitch_offset,elapsed_time, STREAM_MIN_VOICE_PITCH_OFFSET,STREAM_MAX_VOICE_PITCH_OFFSET, "voice_pitch_offset")))
+                    voice_pointer_offset = self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pointer_offset,elapsed_time,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec,"voice_pointer_offset"))
+                    voice_pointer = self._calculate_parameter_within_range(elapsed_time,voice_pointer_offset,self.voice_pointer_range,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec, STREAM_MIN_VOICE_POINTER_RANGE,STREAM_MAX_VOICE_POINTER_RANGE*self.sampleDurSec,"voice_pointer", "voice_ptr_range")
                     pointer_pos = self._calculate_pointer(elapsed_time) + voice_pointer
                     pitch_ratio = self._calculate_pitch_ratio(elapsed_time) * voice_pitch
                     grain_reverse = self._calculate_grain_reverse(elapsed_time)
-                    volume = self._calculate_parameter_within_range(elapsed_time, self.volume, self.volume_range, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME, STREAM_MIN_VOLUME_RANGE, STREAM_MAX_VOLUME_RANGE)
-                    pan = self._calculate_parameter_within_range(elapsed_time, self.pan, self.pan_range,STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE,STREAM_MIN_PAN_RANGE, STREAM_MAX_PAN_RANGE)
+                    volume = self._calculate_parameter_within_range(elapsed_time, self.volume, self.volume_range, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME, STREAM_MIN_VOLUME_RANGE, STREAM_MAX_VOLUME_RANGE,"volume", "volume_range")
+                    pan = self._calculate_parameter_within_range(elapsed_time, self.pan, self.pan_range,STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE,STREAM_MIN_PAN_RANGE, STREAM_MAX_PAN_RANGE,"pan", "pan_range")
                     grain = Grain(onset=current_onset,duration=grain_dur,pointer_pos=pointer_pos,pitch_ratio=pitch_ratio,volume=volume,pan=pan,sample_table=self.sample_table_num,envelope_table=self.envelope_table_num,grain_reverse=grain_reverse)
                     voice_grains.append(grain)
                     #self.grains.append(grain)  # !!!! DEPRECATO - backward compatibility
@@ -161,9 +162,11 @@ class Stream:
         return self.voices
 
     def _calculate_parameter_within_range(self, elapsed_time, param, param_range, 
-                                        min_param, max_param, min_range, max_range):
+                                        min_param, max_param, min_range, max_range,
+                                        param_name="param", range_name="range"):
         """
         Calcola un parametro con variazione stocastica basata su range.
+        
         Args:
             elapsed_time: tempo relativo all'onset dello stream
             param: valore base del parametro (numero o Envelope)
@@ -172,14 +175,34 @@ class Stream:
             max_param: limite massimo del parametro
             min_range: limite minimo del range
             max_range: limite massimo del range
+            param_name: nome del parametro base (per logging)
+            range_name: nome del parametro range (per logging)
+            
         Returns:
             float: valore del parametro con deviazione stocastica applicata
         """
-        base_param = self._safe_evaluate(param, elapsed_time, min_param, max_param)
-        range_value = self._safe_evaluate(param_range, elapsed_time, min_range, max_range)
+        base_param = self._safe_evaluate(param, elapsed_time, min_param, max_param, param_name)
+        range_value = self._safe_evaluate(param_range, elapsed_time, min_range, max_range, range_name)
         param_deviation = random.uniform(-0.5, 0.5) * range_value
-        final_value = base_param + param_deviation        
-        return max(min_param, min(max_param, final_value))
+        final_value = base_param + param_deviation
+        
+        # Clip finale (logga se fuori range dopo la deviazione)
+        clipped_final = max(min_param, min(max_param, final_value))
+        
+        if final_value != clipped_final:
+            log_clip_warning(
+                self.stream_id, 
+                f"{param_name}_final",
+                elapsed_time,
+                final_value, 
+                clipped_final, 
+                min_param, 
+                max_param, 
+                is_envelope=False  # è il risultato di un calcolo, non direttamente un envelope
+            )
+
+        
+        return clipped_final
 
     def _get_voice_multiplier(self, voice_index, param):
         """
@@ -231,21 +254,20 @@ class Stream:
         # Calcola density effettiva
         if self.fill_factor is not None:
             # Modalità FILL_FACTOR: density = fill_factor / grain_duration
-            ff = self._safe_evaluate(self.fill_factor, elapsed_time, STREAM_MIN_FILLFACTOR,STREAM_MAX_FILLFACTOR)
+            ff = self._safe_evaluate(self.fill_factor, elapsed_time, STREAM_MIN_FILLFACTOR,STREAM_MAX_FILLFACTOR, "fill_factor")
             effective_density = ff / current_grain_dur
         else:
             # Modalità DENSITY diretta
             effective_density = self._safe_evaluate(
                 self.density, elapsed_time,
-                STREAM_MIN_DENSITY, STREAM_MAX_DENSITY
-            )
+                STREAM_MIN_DENSITY, STREAM_MAX_DENSITY, "density")
         
         # Safety: clamp density per evitare problemi
         effective_density = max(0.1, min(4000.0, effective_density))
         
         avg_inter_onset = 1.0 / effective_density
         
-        distribution = self._safe_evaluate(self.distribution, elapsed_time,0.0, 1.0)
+        distribution = self._safe_evaluate(self.distribution, elapsed_time,0.0, 1.0, "distribution")
 
         if distribution == 0.0:
             # SYNCHRONOUS: inter-onset fisso
@@ -287,8 +309,7 @@ class Stream:
                 # loop_dur dinamico (può essere Envelope)
                 current_loop_dur = self._safe_evaluate(
                     self.loop_dur, elapsed_time, 
-                    0.001, self.sampleDurSec
-                )
+                    0.001, self.sampleDurSec, "loop_dur")
             else:
                 # loop_end fisso (legacy)
                 current_loop_dur = self.loop_end - self.loop_start
@@ -340,11 +361,9 @@ class Stream:
 
         # 4. Deviazioni stocastiche
         jitter_amount = self._safe_evaluate(
-            self.pointer_jitter, elapsed_time, STREAM_MIN_JITTER, STREAM_MAX_JITTER
-        )
+            self.pointer_jitter, elapsed_time, STREAM_MIN_JITTER, STREAM_MAX_JITTER, "pointer_jitter")
         offset_range = self._safe_evaluate(
-            self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE
-        )
+            self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE, "pointer_offset_range")
         
         jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
         offset_deviation = random.uniform(-0.5, 0.5) * offset_range * context_length
@@ -354,7 +373,7 @@ class Stream:
         return wrap_fn(final_pos)
 
     def _calculate_grain_reverse(self,elapsed_time):
-            return (self._safe_evaluate(self.pointer_speed,elapsed_time,STREAM_MIN_POINTER_SPEED,STREAM_MAX_POINTER_SPEED) < 0) if self.grain_reverse_mode == 'auto' else self.grain_reverse_mode
+            return (self._safe_evaluate(self.pointer_speed,elapsed_time,STREAM_MIN_POINTER_SPEED,STREAM_MAX_POINTER_SPEED, "pointer_speed") < 0) if self.grain_reverse_mode == 'auto' else self.grain_reverse_mode
 
     def _calculate_pitch_ratio(self, elapsed_time):
         """
@@ -366,16 +385,16 @@ class Stream:
         """
         if self.pitch_semitones_envelope is not None:
             # Modalità SEMITONI
-            base_semitones = self._safe_evaluate(self.pitch_semitones_envelope, elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES)
-            pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES, STREAM_MAX_PITCH_RANGE_SEMITONES)
+            base_semitones = self._safe_evaluate(self.pitch_semitones_envelope, elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES, "pitch_semitones")
+            pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES, STREAM_MAX_PITCH_RANGE_SEMITONES, "pitch_range_semi")
             pitch_deviation = random.randint(int(-pitch_range*0.5), int(pitch_range*0.5))
             final_semitones = base_semitones + pitch_deviation
             return self._semitones_2_ratio(final_semitones)
         else:
             # Modalità RATIO
-            base_ratio = self._safe_evaluate(self.pitch_ratio, elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO)
+            base_ratio = self._safe_evaluate(self.pitch_ratio, elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO, "pitch_ratio")
             if self.pitch_range_mode == 'ratio':
-                pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO, STREAM_MAX_PITCH_RANGE_RATIO)
+                pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO, STREAM_MAX_PITCH_RANGE_RATIO, "pitch_range_ratio")
                 pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
                 return base_ratio + pitch_deviation
             else:
@@ -424,21 +443,36 @@ class Stream:
         else:
             raise ValueError(f"{param_name} formato non valido: {param}")
 
-    def _safe_evaluate(self, param, time, min_val, max_val):
+    def _safe_evaluate(self, param, time, min_val, max_val, param_name="unknown"):
         """
-        Valuta un parametro (fisso o Envelope) con safety bounds
+        Valuta un parametro (fisso o Envelope) con safety bounds.
+        Logga warning quando il valore viene clippato.
         
         Args:
             param: numero o Envelope
             time: tempo relativo all'onset dello stream (elapsed_time)
             min_val: valore minimo ammissibile
             max_val: valore massimo ammissibile
+            param_name: nome del parametro (per logging)
         
         Returns:
             float: valore clippato nei bounds
         """
-        value = param.evaluate(time) if isinstance(param, Envelope) else param
-        return max(min_val, min(max_val, value))
+        # Valuta il parametro
+        is_envelope = isinstance(param, Envelope)
+        value = param.evaluate(time) if is_envelope else param
+        
+        # Clip
+        clipped_value = max(min_val, min(max_val, value))
+        
+        # Log se clippato
+        if value != clipped_value:
+            log_clip_warning(
+                self.stream_id, param_name, time,
+                value, clipped_value, min_val, max_val, is_envelope
+            )
+        
+        return clipped_value
 
     def _init_distribution(self, params):
         """

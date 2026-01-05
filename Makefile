@@ -102,6 +102,6 @@ rx-stop:
 	fi
 
 clean:
-	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco $(GENDIR)/*.pdf *.wav logs/*.log
+	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco $(GENDIR)/*.pdf *.wav logs/*.log *.log
 
 .PHONY: open sync test clean rx-stop test-python test-csound
