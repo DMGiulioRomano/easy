@@ -3,7 +3,7 @@ INCDIR:=src
 SSDIR?=refs
 LOGDIR:=logs
 SFDIR:=output
-GENDIR:=$(INCDIR)/generated
+GENDIR:=generated
 YMLDIR:=$(INCDIR)/configs
 PYTHON_SOURCES := $(wildcard $(INCDIR)/*.py)
 YML_FILES := $(wildcard $(YMLDIR)/*.yml)
@@ -19,7 +19,7 @@ INPUT?=001
 #-----------------------------------------------
 AUTOKILL?=true
 AUTOPEN?=true
-AUTOVISUAL?=false
+AUTOVISUAL?=true
 FILE?=testLoop
 TEST?=true
 .SECONDARY: $(SCO_FILES)
@@ -76,6 +76,9 @@ $(LOGDIR):
 
 open:
 	open $(SFDIR)/*.aif
+
+pdf:
+	open $(GENDIR)/*.pdf
 
 sync:
 	git add .

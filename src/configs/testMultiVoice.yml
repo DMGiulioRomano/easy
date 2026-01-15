@@ -5,7 +5,6 @@ streams:
   - stream_id: "texture1"
     onset: 0.0
     duration: 20
-    solo:
     voices:
       offset_pitch:
         type: cubic
@@ -37,7 +36,7 @@ streams:
       shift_semitones: 0
       #range: [[0, 0], [1, 24]] 
   - stream_id: "texture1-1"
-    onset: 400.0
+    onset: 25.0
     duration: 10
     time_mode: normalized
     sample: "008-1_778-_560.wav"
@@ -58,55 +57,3 @@ streams:
     pitch:
       shift_semitones: 8
       range: [[0, 0], [1, 8]] 
-
-  - stream_id: "texture2"
-    onset: 0.0
-    duration: 10
-    time_mode: normalized
-    sample: "016-39_8-2_2.wav"
-    fill_factor: [[0,0.4],[0.3,1.5],[.7,.7],[2,1]]
-    distribution: [[0,0],[.3,.3],[.7,1],[1,1]]
-    grain:
-      duration: [[0,0.01],[.4,.02],[1,.0001]]
-    pointer:  
-      start: 1
-      speed: [[0,1],[0.5,1],[1,4]]
-      jitter: 0.001
-      #offset_range: 1
-      loop_unit: normalized
-      loop_start: 0
-      loop_dur:      
-        type: cubic
-        points: [[0, 1], [1, .01]]
-    pitch:
-      shift_semitones: 0
-      range: [[0, 0], [1, 3]] 
-    # -----------------------------------------------------------------
-  - stream_id: "texture1"
-    onset: 15.0
-    duration: 10
-    time_mode: normalized
-    sample: "016-39_8-2_2.wav"
-    grain:
-      duration: 0.1
-    pointer:  
-      start: 1
-      jitter: 0.001
-    pitch:
-      shift_semitones: 0
-      range: [[0, 0], [1.0, 24]] 
-    # -----------------------------------------------------------------
-  - stream_id: "texture1"
-    onset: 30.0
-    duration: 10
-    time_mode: normalized
-    sample: "016-39_8-2_2.wav"
-    grain:
-      duration: 0.1
-    pointer:  
-      start: 1
-      jitter: 0.001
-    pitch:
-      shift_semitones: 0
-      range: [[0, 0], [1.0, 24]] 
-    # -----------------------------------------------------------------

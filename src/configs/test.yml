@@ -3,6 +3,7 @@ composition:
 
 streams:
   - stream_id: "texture1"
+    solo:
     onset: 0.0
     duration: 25.0
     sample: "016-39_8-2_2.wav"

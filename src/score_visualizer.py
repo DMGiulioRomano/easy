@@ -73,6 +73,7 @@ class ScoreVisualizer:
                 'fill_factor': (0.1, 20),
                 'distribution': (0, 1),
                 'pitch_semitones': (-36, 36),  # range in envelope_ranges
+                'num_voices': (1, 20),
             },
             # Colori per ogni tipo di envelope
             'envelope_colors': {
@@ -85,6 +86,7 @@ class ScoreVisualizer:
                 'fill_factor': '#f781bf',     # rosa
                 'distribution': '#999999',    # grigio
                 'pitch_semitones': '#9467bd',  # colore viola chiaro in envelope_colors
+                'num_voices': '#e377c2',
             },
             'envelope_panel_ratio': 0.3,      # 30% altezza per envelope
         }
@@ -658,6 +660,7 @@ class ScoreVisualizer:
             ('pitch_ratio', 'pitch_ratio'),
             ('pitch_semitones', 'pitch_semitones_envelope'),  # nome diverso!
             ('distribution', 'distribution'),
+            ('num_voices', 'num_voices'),
         ]
         
         for param_name, attr_name in params_to_check:
@@ -784,6 +787,7 @@ class ScoreVisualizer:
             'pointer_speed': 'x',
             'fill_factor': '',
             'distribution': '',
+            'num_voices': ' voci',
         }
         
         # Moltiplicatori per visualizzazione leggibile

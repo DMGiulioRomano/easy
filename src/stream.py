@@ -13,7 +13,7 @@ STREAM_MAX_FILLFACTOR=50
 STREAM_MIN_DENSITY=0.1
 STREAM_MAX_DENSITY=4000
 # parametri Speed
-STREAM_MIN_POINTER_SPEED =  0.0001
+STREAM_MIN_POINTER_SPEED =  -100
 STREAM_MAX_POINTER_SPEED =  100
 # parametri grain_duration (in secondi)
 STREAM_MIN_GRAIN_DURATION=0.0001
@@ -73,6 +73,9 @@ def get_sample_duration(filepath):
     info = sf.info(PATHSAMPLES + filepath)
     return info.duration  # secondi come float
 
+def randomPerc(percent=90):
+    return (percent/100) > random.uniform(0,1)
+
 class Stream:
     def __init__(self, params):
         """
@@ -98,10 +101,19 @@ class Stream:
         self._init_density_params(params)
         self._init_grain_reverse(params)
         self._init_output_params(params)
+        self._init_randomness(params)
         
         # === AUDIO & STATE (setup finale) ===
         self._init_csound_references()
         self._init_state()
+
+    def _init_randomness(self, params):        
+        default_value = 10 if 'dephase' in params else 0
+        dephase_params = params.get('dephase') or {}        
+        self.grain_reverse_randomness = self._parse_envelope_param(
+            dephase_params.get('pc_rand_reverse', default_value), 
+            "pc_random_reverse"
+        )
 
     def _init_voices_params(self,params):
         voices_params = params.get('voices', {})
@@ -148,7 +160,8 @@ class Stream:
                     voice_pointer = self._calculate_parameter_within_range(elapsed_time,voice_pointer_offset,self.voice_pointer_range,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec, STREAM_MIN_VOICE_POINTER_RANGE,STREAM_MAX_VOICE_POINTER_RANGE*self.sampleDurSec,"voice_pointer", "voice_ptr_range")
                     pointer_pos = self._calculate_pointer(elapsed_time) + voice_pointer
                     pitch_ratio = self._calculate_pitch_ratio(elapsed_time) * voice_pitch
-                    grain_reverse = self._calculate_grain_reverse(elapsed_time)
+                    randomness_reverse = self._safe_evaluate(self.grain_reverse_randomness, elapsed_time, 0, 100, "grain_reverse_randomness")
+                    grain_reverse = self._calculate_grain_reverse(elapsed_time) != randomPerc(randomness_reverse)
                     volume = self._calculate_parameter_within_range(elapsed_time, self.volume, self.volume_range, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME, STREAM_MIN_VOLUME_RANGE, STREAM_MAX_VOLUME_RANGE,"volume", "volume_range")
                     pan = self._calculate_parameter_within_range(elapsed_time, self.pan, self.pan_range,STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE,STREAM_MIN_PAN_RANGE, STREAM_MAX_PAN_RANGE,"pan", "pan_range")
                     grain = Grain(onset=current_onset,duration=grain_dur,pointer_pos=pointer_pos,pitch_ratio=pitch_ratio,volume=volume,pan=pan,sample_table=self.sample_table_num,envelope_table=self.envelope_table_num,grain_reverse=grain_reverse)
