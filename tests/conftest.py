@@ -113,3 +113,134 @@ def pointer_with_loop(pointer_factory):
         'loop_start': 2.0,
         'loop_end': 4.0
     })
+
+# =============================================================================
+# FIXTURES PITCH CONTROLLER
+# =============================================================================
+
+@pytest.fixture
+def pitch_factory(evaluator):
+    """
+    Factory per creare PitchController con configurazioni custom.
+    
+    Usage:
+        def test_something(pitch_factory):
+            pitch = pitch_factory({'ratio': 2.0})
+            # oppure con override:
+            pitch = pitch_factory({'shift_semitones': 7}, eval_override=custom_eval)
+    """
+    from pitch_controller import PitchController
+    
+    def _create(params: dict, eval_override=None):
+        return PitchController(
+            params=params,
+            evaluator=eval_override or evaluator
+        )
+    
+    return _create
+
+
+@pytest.fixture
+def pitch_ratio_default(pitch_factory):
+    """PitchController in modalità ratio con default (ratio=1.0)."""
+    return pitch_factory({})
+
+
+@pytest.fixture
+def pitch_ratio_double(pitch_factory):
+    """PitchController in modalità ratio con ratio=2.0 (ottava su)."""
+    return pitch_factory({'ratio': 2.0})
+
+
+@pytest.fixture
+def pitch_semitones_fifth(pitch_factory):
+    """PitchController in modalità semitoni: +7 semitoni (quinta giusta)."""
+    return pitch_factory({'shift_semitones': 7})
+
+
+@pytest.fixture
+def pitch_semitones_envelope(pitch_factory):
+    """PitchController con shift_semitones come envelope: 0 → 12 in 10s."""
+    return pitch_factory({
+        'shift_semitones': [[0, 0], [10, 12]]
+    })
+
+
+@pytest.fixture
+def pitch_with_range(pitch_factory):
+    """PitchController con range stocastico (ratio mode)."""
+    return pitch_factory({
+        'ratio': 1.0,
+        'range': 0.5
+    })
+
+
+@pytest.fixture
+def pitch_semitones_with_range(pitch_factory):
+    """PitchController con range stocastico (semitones mode)."""
+    return pitch_factory({
+        'shift_semitones': 0,
+        'range': 4  # ±2 semitoni
+    })
+
+# =============================================================================
+# FIXTURES DENSITY CONTROLLER
+# =============================================================================
+
+from unittest.mock import Mock
+
+@pytest.fixture
+def mock_evaluator():
+    """
+    Mock di ParameterEvaluator configurato per i test.
+    """
+    evaluator = Mock(spec=ParameterEvaluator)
+    
+    # 1. PARSE: Lascia passare TUTTO
+    def parse_side_effect(value, param_name):
+        return value
+    
+    # 2. EVALUATE: Gestisce numeri, Envelope reali e Mock
+    def evaluate_side_effect(value, elapsed_time, param_name):
+        # Caso A: Envelope (reale o mockato che ha il metodo evaluate)
+        if hasattr(value, 'evaluate'):
+            val = float(value.evaluate(elapsed_time))
+            
+        # Caso B: Numero semplice (float, int)
+        else:
+            val = float(value)
+            
+        # Simulazione Clamping per effective_density
+        if param_name == 'effective_density':
+            return max(0.1, min(4000.0, val))
+            
+        return val
+    
+    evaluator.parse.side_effect = parse_side_effect
+    evaluator.evaluate.side_effect = evaluate_side_effect
+    
+    return evaluator
+
+@pytest.fixture
+def density_factory(mock_evaluator):  # <--- CAMBIATO QUI: usa mock_evaluator
+    """
+    Factory per creare DensityController usando il MOCK evaluator.
+    """
+    from density_controller import DensityController
+    
+    def _create(params: dict):
+        # Passiamo il mock, così accetta oggetti Mock nei parametri
+        return DensityController(mock_evaluator, params)
+    
+    return _create
+
+# Queste fixtures ora useranno indirettamente il mock_evaluator tramite la factory
+@pytest.fixture
+def density_fill_factor(density_factory):
+    """DensityController standard in modalità fill_factor (2.0)."""
+    return density_factory({'fill_factor': 2.0})
+
+@pytest.fixture
+def density_explicit(density_factory):
+    """DensityController standard in modalità density (10.0)."""
+    return density_factory({'density': 10.0})

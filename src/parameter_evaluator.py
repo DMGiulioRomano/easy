@@ -70,6 +70,7 @@ class ParameterEvaluator:
         'density': ParameterBounds(0.1, 4000.0, 0.0, 100.0),
         'fill_factor': ParameterBounds(0.001, 50.0, 0.0, 10.0),
         'distribution': ParameterBounds(0.0, 1.0),
+        'effective_density': ParameterBounds(0.1, 4000.0),         
         
         # --- Grain ---
         'grain_duration': ParameterBounds(0.0001, 10.0, 0.0, 1.0),
@@ -92,7 +93,7 @@ class ParameterEvaluator:
         'voice_pitch_offset': ParameterBounds(0.0, 24.0),
         'voice_pointer_offset': ParameterBounds(0.0, 1.0),  # normalizzato, scalato runtime
         'voice_pointer_range': ParameterBounds(0.0, 1.0),   # normalizzato, scalato runtime
-        
+
         # --- Dephase/Reverse ---
         'grain_reverse_randomness': ParameterBounds(0.0, 100.0),
         
