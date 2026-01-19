@@ -2,7 +2,7 @@
 # GENERATOR (gestisce sia Stream che Testina)
 # =============================================================================
 import yaml
-from stream import Stream
+from src.streamOld import Stream
 from testina import Testina
 from envelope import Envelope
 class Generator:

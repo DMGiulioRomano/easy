@@ -1,682 +1,419 @@
-#import logging
-#from datetime import datetime
-from logger import log_clip_warning
+# src/stream.py
+"""
+Stream - Orchestratore per la sintesi granulare.
+
+Fase 6 del refactoring: questa classe coordina i controller specializzati:
+- ParameterEvaluator: parsing e validazione parametri
+- PointerController: posizionamento testina con loop e jitter
+- PitchController: trasposizione (semitoni o ratio)
+- DensityController: densità e distribuzione temporale
+- VoiceManager: voci multiple con offset pitch/pointer
+
+Mantiene backward compatibility con Generator e ScoreVisualizer.
+Ispirato al DMX-1000 di Barry Truax (1988).
+"""
+
 import random
 import soundfile as sf
+from typing import List, Optional, Union
+
 from grain import Grain
 from envelope import Envelope
-PATHSAMPLES='./refs/'
+from parameter_evaluator import ParameterEvaluator
+from pointer_controller import PointerController
+from pitch_controller import PitchController
+from density_controller import DensityController
+from voice_manager import VoiceManager
 
-# parametri density
-STREAM_MIN_FILLFACTOR=0.001
-STREAM_MAX_FILLFACTOR=50
-STREAM_MIN_DENSITY=0.1
-STREAM_MAX_DENSITY=4000
-# parametri Speed
-STREAM_MIN_POINTER_SPEED =  -100
-STREAM_MAX_POINTER_SPEED =  100
-# parametri grain_duration (in secondi)
-STREAM_MIN_GRAIN_DURATION=0.0001
-STREAM_MAX_GRAIN_DURATION=10.0
-# parametri pitch
-STREAM_MIN_SEMITONES=-36
-STREAM_MAX_SEMITONES=36
-STREAM_MIN_PITCH_RATIO=0.125
-STREAM_MAX_PITCH_RATIO=8.0
-# parametri output
-STREAM_MIN_VOLUME=-120
-STREAM_MAX_VOLUME=12
-STREAM_MIN_PANDEGREE=-360*10
-STREAM_MAX_PANDEGREE=360*10
-# parametri altri
-STREAM_MIN_JITTER=0
-STREAM_MAX_JITTER=10.0
-STREAM_MIN_OFFSET_RANGE=0.0
-STREAM_MAX_OFFSET_RANGE=1.0
-# parametri relativi alle voices
-# parametri voices
-STREAM_MIN_VOICES = 1
-STREAM_MAX_VOICES = 20  # come in Truax DMX-1000
-STREAM_MIN_VOICE_PITCH_OFFSET = 0.0
-STREAM_MAX_VOICE_PITCH_OFFSET = 24.0  # semitoni
-STREAM_MIN_VOICE_POINTER_OFFSET = 0.0
-STREAM_MAX_VOICE_POINTER_OFFSET = 1.0  
-# ============================================================================= 
-# SAFETY LIMITS - Range parameters (deviazioni)
-# =============================================================================
-# voices
-STREAM_MIN_VOICE_POINTER_RANGE = 0.0
-STREAM_MAX_VOICE_POINTER_RANGE = 1.0
-# nuovi ranges per il pitch
-STREAM_MIN_PITCH_RANGE_SEMITONES = 0.0
-STREAM_MAX_PITCH_RANGE_SEMITONES = 36.0
-STREAM_MIN_PITCH_RANGE_RATIO = 0.0
-STREAM_MAX_PITCH_RANGE_RATIO = 2.0
-# Nuovi range per grain_duration (in secondi)
-STREAM_MIN_GRAIN_DURATION_RANGE = 0.0
-STREAM_MAX_GRAIN_DURATION_RANGE = 1.0
-# Nuovi range per volume (in dB)
-STREAM_MIN_VOLUME_RANGE = 0.0
-STREAM_MAX_VOLUME_RANGE = 12.0  # ±12dB massimo consigliato
-# Nuovi range per pan (in gradi)
-STREAM_MIN_PAN_RANGE = 0.0
-STREAM_MAX_PAN_RANGE = 360.0
-# Nuovi range per density (grani/sec)
-STREAM_MIN_DENSITY_RANGE = 0.0
-STREAM_MAX_DENSITY_RANGE = 100.0
-# Nuovi range per fill_factor
-STREAM_MIN_FILLFACTOR_RANGE = 0.0
-STREAM_MAX_FILLFACTOR_RANGE = 10.0
+# Path per i sample audio
+PATHSAMPLES = './refs/'
 
 
-def get_sample_duration(filepath):
+def get_sample_duration(filepath: str) -> float:
+    """Ottiene la durata di un file audio in secondi."""
     info = sf.info(PATHSAMPLES + filepath)
-    return info.duration  # secondi come float
+    return info.duration
 
-def randomPerc(percent=90):
-    return (percent/100) > random.uniform(0,1)
+
+def random_percent(percent: float = 90) -> bool:
+    """Ritorna True con probabilità percent%."""
+    return (percent / 100) > random.uniform(0, 1)
+
 
 class Stream:
-    def __init__(self, params):
+    """
+    Orchestratore per uno stream di sintesi granulare.
+    
+    Coordina i controller specializzati e genera la lista di grani.
+    Mantiene compatibilità con Generator e ScoreVisualizer.
+    
+    Attributes:
+        stream_id: identificatore univoco
+        onset: tempo di inizio (secondi)
+        duration: durata dello stream (secondi)
+        voices: List[List[Grain]] - grani organizzati per voce
+        grains: List[Grain] - lista flattened (backward compatibility)
+    """
+    
+    def __init__(self, params: dict):
         """
-        Inizializza uno stream granulare.
+        Inizializza lo stream dai parametri YAML.
         
-        La funzione è ora divisa in metodi specifici per area funzionale,
-        migliorando leggibilità, testabilità e manutenibilità.
+        Args:
+            params: dizionario parametri dallo YAML
         """
-        # === IDENTITÀ & TIMING (sempre necessari, brevi) ===
+        # === 1. IDENTITÀ & TIMING ===
         self.stream_id = params['stream_id']
         self.onset = params['onset']
         self.duration = params['duration']
-        self.timeScale = params.get('time_scale', 1.0)
         self.time_mode = params.get('time_mode', 'absolute')
-        self._init_voices_params(params)
-        self._init_audio(params)
+        self.time_scale = params.get('time_scale', 1.0)
         
-        # === PARAMETRI COMPLESSI (metodi dedicati) ===
-        self._init_distribution(params)
-        self._init_pitch_params(params)
-        self._init_pointer_params(params)
-        self._init_grain_params(params)
-        self._init_density_params(params)
-        self._init_grain_reverse(params)
-        self._init_output_params(params)
-        self._init_randomness(params)
-        
-        # === AUDIO & STATE (setup finale) ===
-        self._init_csound_references()
-        self._init_state()
-
-    def _init_randomness(self, params):        
-        default_value = 10 if 'dephase' in params else 0
-        dephase_params = params.get('dephase') or {}        
-        self.grain_reverse_randomness = self._parse_envelope_param(
-            dephase_params.get('pc_rand_reverse', default_value), 
-            "pc_random_reverse"
-        )
-
-    def _init_voices_params(self,params):
-        voices_params = params.get('voices', {})
-        self.num_voices = self._parse_envelope_param(voices_params.get('number', 1), "num_voices")
-        self.voice_pointer_range = self._parse_envelope_param(voices_params.get('pointer_range', 0.0), "voice_pointer_range")
-        self.voice_pitch_offset = self._parse_envelope_param(voices_params.get('offset_pitch', 0.0), "voice_pitch_offset")
-        self.voice_pointer_offset = self._parse_envelope_param(voices_params.get('pointer_offset', 0.0), "voice_pointer_offset")
-
-
-    def generate_grains(self):
-        """
-        Genera grani per tutte le voices con num_voices variabile.
-        
-        ALGORITMO:
-        1. Determina max_voices dall'envelope
-        2. Per ogni voice (0 a max_voices-1):
-           a. Mantiene il proprio current_onset
-           b. Verifica se è attiva in questo momento (voice_index < active_voices)
-           c. Se attiva: genera grano + aggiunge deviazione stocastica onset
-           d. Sempre: calcola inter-onset per mantenere la "fase"
-        3. Result: self.voices = [[grain, grain], [grain], ...]
-        """
-        # 1. Determina il massimo numero di voices necessario
-        max_voices = int(max(point[1] for point in self.num_voices.breakpoints)) if isinstance(self.num_voices, Envelope) else int(self.num_voices)        
-        # Safety clamp
-        max_voices = max(1, min(100, max_voices))  # Max 100 voices
-        # 2. Genera grani per TUTTE le possibili voices
-        for voice_index in range(max_voices):
-            voice_grains = []
-
-            current_onset = self.onset
-            stream_end = self.onset + self.duration
-            # Calcola deviazione stocastica per questa voice (FISSO per tutta la durata)
-            # Ogni voice ha il proprio offset temporale
-            while current_onset < stream_end:
-                elapsed_time = current_onset - self.onset
-                # 3. Quante voices sono attive ORA?
-                active_voices = int(round(self._safe_evaluate(self.num_voices, elapsed_time, 1, max_voices, "num_voices")))
-                # 4. Questa voice è attiva in questo momento?
-                grain_dur = self._calculate_parameter_within_range(elapsed_time, self.grain_duration, self.grain_duration_range, STREAM_MIN_GRAIN_DURATION, STREAM_MAX_GRAIN_DURATION, STREAM_MIN_GRAIN_DURATION_RANGE, STREAM_MAX_GRAIN_DURATION_RANGE,"grain_duration", "grain_dur_range")
-                if voice_index < active_voices:
-                    voice_pitch = self._semitones_2_ratio(self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pitch_offset,elapsed_time, STREAM_MIN_VOICE_PITCH_OFFSET,STREAM_MAX_VOICE_PITCH_OFFSET, "voice_pitch_offset")))
-                    voice_pointer_offset = self._get_voice_multiplier(voice_index,self._safe_evaluate(self.voice_pointer_offset,elapsed_time,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec,"voice_pointer_offset"))
-                    voice_pointer = self._calculate_parameter_within_range(elapsed_time,voice_pointer_offset,self.voice_pointer_range,STREAM_MIN_VOICE_POINTER_OFFSET,STREAM_MAX_VOICE_POINTER_OFFSET*self.sampleDurSec, STREAM_MIN_VOICE_POINTER_RANGE,STREAM_MAX_VOICE_POINTER_RANGE*self.sampleDurSec,"voice_pointer", "voice_ptr_range")
-                    pointer_pos = self._calculate_pointer(elapsed_time) + voice_pointer
-                    pitch_ratio = self._calculate_pitch_ratio(elapsed_time) * voice_pitch
-                    randomness_reverse = self._safe_evaluate(self.grain_reverse_randomness, elapsed_time, 0, 100, "grain_reverse_randomness")
-                    grain_reverse = self._calculate_grain_reverse(elapsed_time) != randomPerc(randomness_reverse)
-                    volume = self._calculate_parameter_within_range(elapsed_time, self.volume, self.volume_range, STREAM_MIN_VOLUME, STREAM_MAX_VOLUME, STREAM_MIN_VOLUME_RANGE, STREAM_MAX_VOLUME_RANGE,"volume", "volume_range")
-                    pan = self._calculate_parameter_within_range(elapsed_time, self.pan, self.pan_range,STREAM_MIN_PANDEGREE, STREAM_MAX_PANDEGREE,STREAM_MIN_PAN_RANGE, STREAM_MAX_PAN_RANGE,"pan", "pan_range")
-                    grain = Grain(onset=current_onset,duration=grain_dur,pointer_pos=pointer_pos,pitch_ratio=pitch_ratio,volume=volume,pan=pan,sample_table=self.sample_table_num,envelope_table=self.envelope_table_num,grain_reverse=grain_reverse)
-                    voice_grains.append(grain)
-                    #self.grains.append(grain)  # !!!! DEPRECATO - backward compatibility
-                inter_onset = self._calculate_inter_onset_time(elapsed_time, grain_dur)
-                current_onset += inter_onset    
-            # Aggiungi voice anche se ha 0 grani (per mantenere indices)
-            self.voices.append(voice_grains)
-        self.generated = True
-        return self.voices
-
-    def _calculate_parameter_within_range(self, elapsed_time, param, param_range, 
-                                        min_param, max_param, min_range, max_range,
-                                        param_name="param", range_name="range"):
-        """
-        Calcola un parametro con variazione stocastica basata su range.
-        
-        Args:
-            elapsed_time: tempo relativo all'onset dello stream
-            param: valore base del parametro (numero o Envelope)
-            param_range: ampiezza della variazione (numero o Envelope)  
-            min_param: limite minimo del parametro
-            max_param: limite massimo del parametro
-            min_range: limite minimo del range
-            max_range: limite massimo del range
-            param_name: nome del parametro base (per logging)
-            range_name: nome del parametro range (per logging)
-            
-        Returns:
-            float: valore del parametro con deviazione stocastica applicata
-        """
-        base_param = self._safe_evaluate(param, elapsed_time, min_param, max_param, param_name)
-        range_value = self._safe_evaluate(param_range, elapsed_time, min_range, max_range, range_name)
-        param_deviation = random.uniform(-0.5, 0.5) * range_value
-        final_value = base_param + param_deviation
-        
-        # Clip finale (logga se fuori range dopo la deviazione)
-        clipped_final = max(min_param, min(max_param, final_value))
-        
-        if final_value != clipped_final:
-            log_clip_warning(
-                self.stream_id, 
-                f"{param_name}_final",
-                elapsed_time,
-                final_value, 
-                clipped_final, 
-                min_param, 
-                max_param, 
-                is_envelope=False  # è il risultato di un calcolo, non direttamente un envelope
-            )
-
-        
-        return clipped_final
-
-    def _get_voice_multiplier(self, voice_index, param):
-        """
-        Calcola il moltiplicatore pitch per una specifica voice.
-        Pattern alternato +/-:
-        - voice 0: 2^(0/12) = 1.0
-        - voice 1: 2^(+offset/12)
-        - voice 2: 2^(-offset/12)
-        - voice 3: 2^(+offset*2/12)
-        - voice 4: 2^(-offset*2/12)
-        - ecc.
-        """
-        if voice_index == 0 or param == 0:
-            return 0.0
-        # Calcola il multiplier basato sull'indice
-        # voice 1,3,5,... → +offset, +offset*2, +offset*3
-        # voice 2,4,6,... → -offset, -offset*2, -offset*3
-        if voice_index % 2 == 1:  # dispari: positivo
-            return param * ((voice_index + 1) // 2)
-        else:  # pari: negativo
-            return -param * (voice_index // 2)
-
-
-    def _calculate_inter_onset_time(self, elapsed_time, current_grain_dur):
-        """
-        Calcola l'inter-onset time basato su density/fill_factor e distribution
-        
-        Se fill_factor è definito:
-            density_effettiva = fill_factor / current_grain_dur
-            (la density si adatta dinamicamente alla durata del grano)
-        
-        Se density è definita direttamente:
-            density_effettiva = density (fissa o da envelope)
-        
-        SYNCHRONOUS (distribution=0):
-            inter_onset = 1 / density (fisso)
-            
-        ASYNCHRONOUS (distribution>0):
-            inter_onset = random(0, 2 × avg_inter_onset)
-            (Truax 1994: "random value between zero and twice the average")
-        
-        Args:
-            elapsed_time: tempo trascorso dall'onset dello stream
-            current_grain_dur: durata del grano corrente (già valutata)
-            
-        Returns:
-            float: tempo in secondi fino al prossimo grano
-        """
-        # Calcola density effettiva
-        if self.fill_factor is not None:
-            # Modalità FILL_FACTOR: density = fill_factor / grain_duration
-            ff = self._safe_evaluate(self.fill_factor, elapsed_time, STREAM_MIN_FILLFACTOR,STREAM_MAX_FILLFACTOR, "fill_factor")
-            effective_density = ff / current_grain_dur
-        else:
-            # Modalità DENSITY diretta
-            effective_density = self._safe_evaluate(
-                self.density, elapsed_time,
-                STREAM_MIN_DENSITY, STREAM_MAX_DENSITY, "density")
-        
-        # Safety: clamp density per evitare problemi
-        effective_density = max(0.1, min(4000.0, effective_density))
-        
-        avg_inter_onset = 1.0 / effective_density
-        
-        distribution = self._safe_evaluate(self.distribution, elapsed_time,0.0, 1.0, "distribution")
-
-        if distribution == 0.0:
-            # SYNCHRONOUS: inter-onset fisso
-            return avg_inter_onset
-        else:
-            # INTERPOLAZIONE sync → async
-            # Preserva la media, aumenta la varianza con distribution
-            sync_value = avg_inter_onset
-            async_value = random.uniform(0, 2.0 * avg_inter_onset)
-            return (1.0 - distribution) * sync_value + distribution * async_value    
-
-    def _calculate_pointer(self, elapsed_time):
-        """
-        Calcola la posizione di lettura nel sample per questo grano.
-        
-        Usa Phase Accumulator per loop con durata dinamica (envelope).
-        La fase si accumula incrementalmente, evitando salti quando
-        loop_length cambia.
-        
-        Args:
-            elapsed_time: secondi trascorsi dall'onset dello stream
-            
-        Returns:
-            float: posizione in secondi nel sample sorgente
-        """
-        # 1. Calcola movimento lineare (da speed)
-        if isinstance(self.pointer_speed, Envelope):
-            sample_position = self.pointer_speed.integrate(0, elapsed_time)
-        else:
-            sample_position = elapsed_time * self.pointer_speed
-
-        linear_pos = self.pointer_start + sample_position
-
-        if self.has_loop:
-            # === CALCOLA LOOP BOUNDS CORRENTI ===
-            current_loop_start = self.loop_start
-            
-            if self.loop_dur is not None:
-                # loop_dur dinamico (può essere Envelope)
-                current_loop_dur = self._safe_evaluate(
-                    self.loop_dur, elapsed_time, 
-                    0.001, self.sampleDurSec, "loop_dur")
-            else:
-                # loop_end fisso (legacy)
-                current_loop_dur = self.loop_end - self.loop_start
-                
-            current_loop_end = min(current_loop_start + current_loop_dur, self.sampleDurSec)
-            loop_length = max(current_loop_end - current_loop_start, 0.001)
-
-            # === PHASE ACCUMULATOR ===
-            if not self._in_loop:
-                # Check entrata nel loop
-                check_pos = linear_pos % self.sampleDurSec
-                if current_loop_start <= check_pos < current_loop_end:
-                    self._in_loop = True
-                    # Inizializza fase: posizione relativa nel loop (0-1)
-                    self._loop_phase = (check_pos - current_loop_start) / loop_length
-                    self._last_linear_pos = linear_pos
-            
-            if self._in_loop:
-                # Calcola delta movimento dall'ultimo grano
-                if self._last_linear_pos is not None:
-                    delta_pos = linear_pos - self._last_linear_pos
-                    # Converti in incremento di fase (normalizzato su loop corrente)
-                    delta_phase = delta_pos / loop_length
-                    self._loop_phase += delta_phase
-                    
-                    # Wrap fase (gestisce anche speed negativi e multi-giri)
-                    self._loop_phase = self._loop_phase % 1.0
-                
-                self._last_linear_pos = linear_pos
-                
-                # Converti fase in posizione assoluta
-                base_pos = current_loop_start + self._loop_phase * loop_length
-                context_length = loop_length
-                
-                # Wrap function per deviazioni stocastiche
-                def wrap_fn(pos):
-                    rel = pos - current_loop_start
-                    return current_loop_start + (rel % loop_length)
-            else:
-                # Prima del loop: wrap sul buffer intero
-                base_pos = linear_pos % self.sampleDurSec
-                context_length = self.sampleDurSec
-                wrap_fn = lambda p: p % self.sampleDurSec
-        else:
-            # Nessun loop: wrap semplice sul buffer
-            base_pos = linear_pos % self.sampleDurSec
-            context_length = self.sampleDurSec
-            wrap_fn = lambda p: p % self.sampleDurSec
-
-        # 4. Deviazioni stocastiche
-        jitter_amount = self._safe_evaluate(
-            self.pointer_jitter, elapsed_time, STREAM_MIN_JITTER, STREAM_MAX_JITTER, "pointer_jitter")
-        offset_range = self._safe_evaluate(
-            self.pointer_offset_range, elapsed_time, STREAM_MIN_OFFSET_RANGE, STREAM_MAX_OFFSET_RANGE, "pointer_offset_range")
-        
-        jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
-        offset_deviation = random.uniform(-0.5, 0.5) * offset_range * context_length
-        
-        # 5. Posizione finale con wrap
-        final_pos = base_pos + jitter_deviation + offset_deviation
-        return wrap_fn(final_pos)
-
-    def _calculate_grain_reverse(self,elapsed_time):
-            return (self._safe_evaluate(self.pointer_speed,elapsed_time,STREAM_MIN_POINTER_SPEED,STREAM_MAX_POINTER_SPEED, "pointer_speed") < 0) if self.grain_reverse_mode == 'auto' else self.grain_reverse_mode
-
-    def _calculate_pitch_ratio(self, elapsed_time):
-        """
-        Calcola pitch ratio con support per range.
-        Estrae la logica di calcolo pitch per pulizia del codice.
-        
-        Returns:
-            float: pitch ratio finale (con deviazione se range != 0)
-        """
-        if self.pitch_semitones_envelope is not None:
-            # Modalità SEMITONI
-            base_semitones = self._safe_evaluate(self.pitch_semitones_envelope, elapsed_time, STREAM_MIN_SEMITONES, STREAM_MAX_SEMITONES, "pitch_semitones")
-            pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_SEMITONES, STREAM_MAX_PITCH_RANGE_SEMITONES, "pitch_range_semi")
-            pitch_deviation = random.randint(int(-pitch_range*0.5), int(pitch_range*0.5))
-            final_semitones = base_semitones + pitch_deviation
-            return self._semitones_2_ratio(final_semitones)
-        else:
-            # Modalità RATIO
-            base_ratio = self._safe_evaluate(self.pitch_ratio, elapsed_time, STREAM_MIN_PITCH_RATIO, STREAM_MAX_PITCH_RATIO, "pitch_ratio")
-            if self.pitch_range_mode == 'ratio':
-                pitch_range = self._safe_evaluate(self.pitch_range, elapsed_time,STREAM_MIN_PITCH_RANGE_RATIO, STREAM_MAX_PITCH_RANGE_RATIO, "pitch_range_ratio")
-                pitch_deviation = random.uniform(-0.5, 0.5) * pitch_range
-                return base_ratio + pitch_deviation
-            else:
-                return base_ratio
-
-    def _semitones_2_ratio(self,semitones):
-        return pow(2.0, semitones / 12.0)
-
-
-    def _parse_envelope_param(self, param, param_name="parameter"):
-        """
-        Helper per parsare parametri che possono essere numeri o Envelope
-        
-        Args:
-            param: numero singolo, lista di breakpoints, o dict con type/points
-            param_name: nome del parametro (per messaggi errore informativi)
-        
-        Returns:
-            numero o Envelope
-        
-        Examples:
-            >>> self._parse_envelope_param(50, "density")
-            50
-            >>> self._parse_envelope_param([[0, 20], [2, 100]], "density")
-            Envelope(type=linear, points=[[0, 20], [2, 100]])
-            >>> self._parse_envelope_param({'type': 'cubic', 'points': [...]}, "volume")
-            Envelope(type=cubic, ...)
-        """
-        if isinstance(param, (int, float)):
-            # Numero singolo → usa direttamente (efficiente!)
-            return param
-        elif isinstance(param, dict):
-            # Determina se normalizzare: locale > globale
-            local_mode = param.get('time_unit')  # None, 'normalized', 'absolute'
-            should_normalize = (local_mode == 'normalized' or (local_mode is None and self.time_mode == 'normalized'))
-            if should_normalize:
-                scaled_points = [[x * self.duration, y] for x, y in param['points']]
-                return Envelope({'type': param.get('type', 'linear'),'points': scaled_points})
-            return Envelope(param)
-        elif isinstance(param, list):
-            # Lista semplice: rispetta time_mode globale
-            if self.time_mode == 'normalized':
-                scaled_points = [[x * self.duration, y] for x, y in param]
-                return Envelope(scaled_points)
-            return Envelope(param)
-        else:
-            raise ValueError(f"{param_name} formato non valido: {param}")
-
-    def _safe_evaluate(self, param, time, min_val, max_val, param_name="unknown"):
-        """
-        Valuta un parametro (fisso o Envelope) con safety bounds.
-        Logga warning quando il valore viene clippato.
-        
-        Args:
-            param: numero o Envelope
-            time: tempo relativo all'onset dello stream (elapsed_time)
-            min_val: valore minimo ammissibile
-            max_val: valore massimo ammissibile
-            param_name: nome del parametro (per logging)
-        
-        Returns:
-            float: valore clippato nei bounds
-        """
-        # Valuta il parametro
-        is_envelope = isinstance(param, Envelope)
-        value = param.evaluate(time) if is_envelope else param
-        
-        # Clip
-        clipped_value = max(min_val, min(max_val, value))
-        
-        # Log se clippato
-        if value != clipped_value:
-            log_clip_warning(
-                self.stream_id, param_name, time,
-                value, clipped_value, min_val, max_val, is_envelope
-            )
-        
-        return clipped_value
-
-    def _init_distribution(self, params):
-        """
-        Inizializza il parametro distribution (0=sync, 1=async).
-        """
-        self.distribution = self._parse_envelope_param(params.get('distribution', 0.0), 'distribution')
-
-    def _init_pitch_params(self, params):
-        """
-        Gestisce i parametri di pitch con due modalità:
-        1. shift_semitones: trasposizione in semitoni (convertita a ratio)
-        2. ratio: trasposizione diretta come ratio (default 1.0)
-        
-        Entrambe supportano numeri fissi o Envelope.
-        """
-        pitch_params = params.get('pitch', {})
-        
-        if 'shift_semitones' in pitch_params:
-            # Modalità SEMITONI
-            shift_param = pitch_params['shift_semitones']
-
-            self.pitch_semitones_envelope = self._parse_envelope_param(shift_param, "pitch.shift_semitones")
-            self.pitch_ratio = None  # marker: usa envelope
-            self.pitch_range = self._parse_envelope_param(pitch_params.get('range', 0.0), "pitch.range")
-            self.pitch_range_mode = 'semitones'
-        else:
-            # Modalità RATIO diretta (o default a 1.0)
-            self.pitch_ratio = self._parse_envelope_param(pitch_params.get('ratio', 1.0), "pitch.ratio")
-            self.pitch_semitones_envelope = None
-            self.pitch_range = self._parse_envelope_param(pitch_params.get('range', 0.0), "pitch.range")
-            self.pitch_range_mode = 'ratio'
-
-    def _init_pointer_params(self, params):
-        """
-        Gestisce tutti i parametri del pointer (posizionamento nel sample).
-        
-        Parametri:
-        - start: posizione iniziale (secondi)
-        - speed: velocità di scansione (supporta Envelope)
-        - jitter: micro-variazione bipolare (0.001-0.01 sec tipico)
-        - offset_range: macro-variazione bipolare (0-1, normalizzato su durata sample)
-        - loop_start: inizio loop (opzionale, secondi) - FISSO
-        - loop_end: fine loop (opzionale, secondi) - FISSO (mutualmente esclusivo con loop_dur)
-        - loop_dur: durata loop (opzionale) - SUPPORTA ENVELOPE
-        """ 
-        pointer = params.get('pointer', {})
-        
-        # Posizione iniziale
-        self.pointer_start = pointer.get('start', 0.0)
-        self.pointer_speed = self._parse_envelope_param(pointer.get('speed', 1.0), "pointer.speed")
-        self.pointer_jitter = self._parse_envelope_param(pointer.get('jitter', 0.0), "pointer.jitter")        
-        self.pointer_offset_range = self._parse_envelope_param(pointer.get('offset_range', 0.0), "pointer.offset_range")
-
-        # === LOOP STATE (Phase Accumulator) ===
-        self._in_loop = False
-        self._loop_phase = 0.0           # Fase nel loop (0.0 - 1.0)
-        self._last_linear_pos = None     # Per calcolare delta movimento
-        
-        raw_start = pointer.get('loop_start')
-        raw_end = pointer.get('loop_end')
-        raw_dur = pointer.get('loop_dur')
-
-        if raw_start is not None:
-            loop_mode = pointer.get('loop_unit') or self.time_mode
-            scale = self.sampleDurSec if loop_mode == 'normalized' else 1.0
-            
-            # loop_start è SEMPRE fisso
-            self.loop_start = raw_start * scale
-            
-            if raw_end is not None:
-                # Modalità loop_end FISSO (legacy)
-                self.loop_end = raw_end * scale
-                self.loop_dur = None
-            elif raw_dur is not None:
-                # Modalità loop_dur (può essere Envelope!)
-                self.loop_end = None
-                
-                if isinstance(raw_dur, (int, float)):
-                    self.loop_dur = raw_dur * scale
-                else:
-                    # È un envelope/lista - scala i valori Y se normalized
-                    if loop_mode == 'normalized':
-                        if isinstance(raw_dur, dict):
-                            scaled_points = [[x, y * scale] for x, y in raw_dur['points']]
-                            raw_dur = {'type': raw_dur.get('type', 'linear'), 'points': scaled_points}
-                        elif isinstance(raw_dur, list):
-                            raw_dur = [[x, y * scale] for x, y in raw_dur]
-                    
-                    self.loop_dur = self._parse_envelope_param(raw_dur, "pointer.loop_dur")
-            else:
-                # Solo loop_start → loop fino a fine sample
-                self.loop_end = self.sampleDurSec
-                self.loop_dur = None
-                
-            self.has_loop = True
-        else:
-            self.loop_start = None
-            self.loop_end = None
-            self.loop_dur = None
-            self.has_loop = False
-
-    def _init_grain_params(self, params):
-        """
-        Gestisce i parametri base dei singoli grani.
-        
-        Parametri:
-        - duration: durata del grano (supporta Envelope)
-        - duration_range: variazione stocastica della durata (±range/2)
-        - envelope: tipo di inviluppo (hanning, hamming, etc.)
-        """
-        grain_params = params.get('grain', {})
-        self.grain_duration = self._parse_envelope_param(grain_params['duration'], "grain.duration")        
-        self.grain_duration_range = self._parse_envelope_param(grain_params.get('duration_range', 0.0), "grain.duration_range")
-        self.grain_envelope = grain_params.get('envelope', 'hanning')
-        
-    def _init_density_params(self, params):
-        """
-        Gestisce density con due modalità mutuamente esclusive:
-        
-        1. FILL_FACTOR (preferito): density = fill_factor / grain_duration
-           - La density si adatta automaticamente alla durata del grano
-           - Default: 2.0 (Roads: "covered/packed texture")
-        
-        2. DENSITY diretta: valore fisso o Envelope
-           - Controllo esplicito della density
-        """
-        if 'fill_factor' in params:
-            # Modalità FILL_FACTOR esplicita
-            self.fill_factor = self._parse_envelope_param(params['fill_factor'], "fill_factor")
-            self.density = None
-        elif 'density' in params:
-            # Modalità DENSITY diretta
-            self.fill_factor = None
-            self.density = self._parse_envelope_param(params['density'], "density")
-        else:
-            # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
-            self.fill_factor = 2.0
-            self.density = None
-
-    def _init_grain_reverse(self, params):
-        """
-        Gestisce la direzione di lettura dei grani.
-        
-        Modalità:
-        - 'auto': segue il segno di pointer_speed (negativo = reverse)
-        - True/False: valore esplicito
-        """
-        if 'reverse' in params['grain']:
-            self.grain_reverse_mode = params['grain']['reverse']  # True o False
-        else:
-            self.grain_reverse_mode = 'auto'  # segui pointer_speed
-
-    def _init_output_params(self, params):
-        """
-        Gestisce i parametri di output audio.
-        
-        Parametri:
-        - volume: livello in dB (supporta Envelope)
-        - volume_range: variazione stocastica volume (±range/2 dB)
-        - pan: posizione stereo (gradi, supporta Envelope)
-        - pan_range: variazione stocastica pan (±range/2 gradi)
-        """
-        self.volume = self._parse_envelope_param(params.get('volume', -6.0), "output.volume")
-        self.volume_range = self._parse_envelope_param(params.get('volume_range', 0.0), "output.volume_range")
-        self.pan = self._parse_envelope_param(params.get('pan', 0.0), "pan")
-        self.pan_range = self._parse_envelope_param(params.get('pan_range', 0.0), "pan_range")
-
-    def _init_audio(self, params):
-        """
-        Gestisce il file audio sorgente.
-        """
+        # === 2. AUDIO ===
         self.sample_path = params['sample']
-        self.sampleDurSec = get_sample_duration(self.sample_path)
-
-    def _init_csound_references(self):
-        """
-        Inizializza i riferimenti alle ftable Csound.
-        Questi saranno assegnati dal Generator.
-        """
-        self.sample_table_num = None
-        self.envelope_table_num = None
-
-    def _init_state(self):
-        """
-        Inizializza lo stato interno dello stream.
-        """
-        self.voices =[] #new
-        self.grains =[] #old
+        self.sample_dur_sec = get_sample_duration(self.sample_path)
+        
+        # === 3. PARAMETER EVALUATOR (primo!) ===
+        self._evaluator = ParameterEvaluator(
+            stream_id=self.stream_id,
+            duration=self.duration,
+            time_mode=self.time_mode
+        )
+        
+        # === 4. CONTROLLER ===
+        self._init_controllers(params)
+        
+        # === 5. PARAMETRI DIRETTI (non delegati) ===
+        self._init_grain_params(params)
+        self._init_output_params(params)
+        self._init_grain_reverse(params)
+        
+        # === 6. RIFERIMENTI CSOUND (assegnati da Generator) ===
+        self.sample_table_num: Optional[int] = None
+        self.envelope_table_num: Optional[int] = None
+        
+        # === 7. STATO ===
+        self.voices: List[List[Grain]] = []
+        self.grains: List[Grain] = []  # backward compatibility
         self.generated = False
-
-    def __repr__(self):
+    
+    # =========================================================================
+    # INIZIALIZZAZIONE CONTROLLER
+    # =========================================================================
+    
+    def _init_controllers(self, params: dict) -> None:
+        """Inizializza tutti i controller con i loro parametri."""
+        
+        # POINTER CONTROLLER
+        pointer_params = params.get('pointer', {})
+        self._pointer = PointerController(
+            params=pointer_params,
+            evaluator=self._evaluator,
+            sample_dur_sec=self.sample_dur_sec,
+            time_mode=self.time_mode
+        )
+        
+        # PITCH CONTROLLER
+        pitch_params = params.get('pitch', {})
+        self._pitch = PitchController(
+            params=pitch_params,
+            evaluator=self._evaluator
+        )
+        
+        # DENSITY CONTROLLER
+        self._density = DensityController(
+            evaluator=self._evaluator,
+            params=params
+        )
+        
+        # VOICE MANAGER
+        voices_params = params.get('voices', {})
+        self._voice_manager = VoiceManager(
+            evaluator=self._evaluator,
+            voices_params=voices_params,
+            sample_dur_sec=self.sample_dur_sec
+        )
+    
+    # =========================================================================
+    # PARAMETRI DIRETTI (non delegati ai controller)
+    # =========================================================================
+    
+    def _init_grain_params(self, params: dict) -> None:
+        """Inizializza parametri del grano (duration, envelope)."""
+        grain_params = params.get('grain', {})
+        
+        self.grain_duration = self._evaluator.parse(
+            grain_params.get('duration', 0.05),
+            'grain_duration'
+        )
+        self.grain_duration_range = self._evaluator.parse(
+            grain_params.get('duration_range', 0.0),
+            'grain_duration'  # usa stessi bounds
+        )
+        self.grain_envelope = grain_params.get('envelope', 'hanning')
+    
+    def _init_output_params(self, params: dict) -> None:
+        """Inizializza parametri di output (volume, pan)."""
+        self.volume = self._evaluator.parse(
+            params.get('volume', -6.0),
+            'volume'
+        )
+        self.volume_range = self._evaluator.parse(
+            params.get('volume_range', 0.0),
+            'volume'
+        )
+        self.pan = self._evaluator.parse(
+            params.get('pan', 0.0),
+            'pan'
+        )
+        self.pan_range = self._evaluator.parse(
+            params.get('pan_range', 0.0),
+            'pan'
+        )
+    
+    def _init_grain_reverse(self, params: dict) -> None:
+        """Inizializza parametri reverse del grano."""
+        grain_params = params.get('grain', {})
+        
+        # Modalità reverse: 'auto', True, o False
+        if 'reverse' in grain_params:
+            self.grain_reverse_mode = grain_params['reverse']
+        else:
+            self.grain_reverse_mode = 'auto'
+        
+        # Randomness per dephase
+        dephase_params = params.get('dephase', {})
+        default_randomness = 10 if dephase_params else 0
+        
+        self.grain_reverse_randomness = self._evaluator.parse(
+            dephase_params.get('pc_rand_reverse', default_randomness),
+            'grain_reverse_randomness'
+        )
+    
+    # =========================================================================
+    # GENERAZIONE GRANI
+    # =========================================================================
+    
+    def generate_grains(self) -> List[List[Grain]]:
+        """
+        Genera grani per tutte le voices.
+        
+        Algoritmo:
+        1. Determina max_voices dall'envelope/valore fisso
+        2. Per ogni voice (0 a max_voices-1):
+           - Mantiene il proprio current_onset
+           - Verifica se è attiva (voice_index < active_voices)
+           - Se attiva: genera grano con parametri calcolati
+           - Sempre: avanza current_onset per mantenere la "fase"
+        
+        Returns:
+            List[List[Grain]]: grani organizzati per voce
+        """
+        # Reset stato
+        self.voices = []
+        self.grains = []
+        
+        # 1. Determina max voices
+        max_voices = self._voice_manager.max_voices
+        
+        # 2. Loop per ogni voice
+        for voice_index in range(max_voices):
+            voice_grains: List[Grain] = []
+            current_onset = 0.0
+            
+            # Loop temporale per questa voice
+            while current_onset < self.duration:
+                elapsed_time = current_onset
+                
+                # 3. Calcola grain_duration (serve per density)
+                grain_dur = self._evaluator.evaluate_with_range(
+                    self.grain_duration,
+                    self.grain_duration_range,
+                    elapsed_time,
+                    'grain_duration'
+                )
+                
+                # 4. Verifica se voice è attiva
+                if self._voice_manager.is_voice_active(voice_index, elapsed_time):
+                    grain = self._create_grain(voice_index, elapsed_time, grain_dur)
+                    voice_grains.append(grain)
+                
+                # 5. Calcola inter-onset (sempre, per mantenere fase)
+                inter_onset = self._density.calculate_inter_onset(
+                    elapsed_time,
+                    grain_dur
+                )
+                current_onset += inter_onset
+            
+            self.voices.append(voice_grains)
+        
+        # 6. Flatten per backward compatibility
+        self.grains = [grain for voice in self.voices for grain in voice]
+        self.generated = True
+        
+        return self.voices
+    
+    def _create_grain(self, 
+                      voice_index: int, 
+                      elapsed_time: float, 
+                      grain_dur: float) -> Grain:
+        """
+        Crea un singolo grano con tutti i parametri calcolati.
+        
+        Args:
+            voice_index: indice della voce (0-based)
+            elapsed_time: tempo trascorso dall'inizio dello stream
+            grain_dur: durata del grano (già calcolata)
+        
+        Returns:
+            Grain: oggetto grano completo
+        """
+        # PITCH: base + voice offset
+        base_pitch = self._pitch.calculate(elapsed_time)
+        voice_pitch_mult = self._voice_manager.get_voice_pitch_multiplier(
+            voice_index, elapsed_time
+        )
+        pitch_ratio = base_pitch * voice_pitch_mult
+        
+        # POINTER: base + voice offset + jitter
+        base_pointer = self._pointer.calculate(elapsed_time)
+        voice_pointer_offset = self._voice_manager.get_voice_pointer_offset(
+            voice_index, elapsed_time
+        ) * self.sample_dur_sec  # Scala a secondi
+        
+        # Aggiungi variazione stocastica pointer delle voci
+        voice_ptr_range = self._voice_manager.get_voice_pointer_range(elapsed_time)
+        voice_ptr_deviation = random.uniform(-0.5, 0.5) * voice_ptr_range * self.sample_dur_sec
+        
+        pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
+        
+        # VOLUME con range stocastico
+        volume = self._evaluator.evaluate_with_range(
+            self.volume,
+            self.volume_range,
+            elapsed_time,
+            'volume'
+        )
+        
+        # PAN con range stocastico
+        pan = self._evaluator.evaluate_with_range(
+            self.pan,
+            self.pan_range,
+            elapsed_time,
+            'pan'
+        )
+        
+        # REVERSE
+        grain_reverse = self._calculate_grain_reverse(elapsed_time)
+        
+        # Onset assoluto (rispetto all'inizio della composizione)
+        absolute_onset = self.onset + elapsed_time
+        
+        return Grain(
+            onset=absolute_onset,
+            duration=grain_dur,
+            pointer_pos=pointer_pos,
+            pitch_ratio=pitch_ratio,
+            volume=volume,
+            pan=pan,
+            sample_table=self.sample_table_num,
+            envelope_table=self.envelope_table_num,
+            grain_reverse=grain_reverse
+        )
+    
+    def _calculate_grain_reverse(self, elapsed_time: float) -> bool:
+        """
+        Calcola se il grano deve essere riprodotto al contrario.
+        
+        - 'auto': segue il segno di pointer_speed
+        - True/False: valore esplicito
+        - Con randomness: può invertire casualmente
+        """
+        if self.grain_reverse_mode == 'auto':
+            base_reverse = self._pointer.get_speed(elapsed_time) < 0
+        else:
+            base_reverse = bool(self.grain_reverse_mode)
+        
+        # Applica randomness
+        randomness = self._evaluator.evaluate(
+            self.grain_reverse_randomness,
+            elapsed_time,
+            'grain_reverse_randomness'
+        )
+        
+        if random_percent(randomness):
+            return not base_reverse
+        return base_reverse
+    
+    # =========================================================================
+    # PROPRIETÀ PER BACKWARD COMPATIBILITY
+    # =========================================================================
+    
+    @property
+    def sampleDurSec(self) -> float:
+        """Alias per backward compatibility."""
+        return self.sample_dur_sec
+    
+    @property
+    def num_voices(self) -> Union[int, Envelope]:
+        """Espone num_voices per ScoreVisualizer."""
+        return self._voice_manager.num_voices
+    
+    @property
+    def density(self) -> Optional[Union[float, Envelope]]:
+        """Espone density per Generator/ScoreVisualizer."""
+        return self._density.density
+    
+    @property
+    def fill_factor(self) -> Optional[Union[float, Envelope]]:
+        """Espone fill_factor per Generator/ScoreVisualizer."""
+        return self._density.fill_factor
+    
+    @property
+    def distribution(self) -> Union[float, Envelope]:
+        """Espone distribution per ScoreVisualizer."""
+        return self._density.distribution
+    
+    @property
+    def pointer_speed(self) -> Union[float, Envelope]:
+        """Espone pointer_speed per ScoreVisualizer."""
+        return self._pointer.speed
+    
+    @property
+    def pitch_ratio(self) -> Optional[Union[float, Envelope]]:
+        """Espone pitch_ratio per ScoreVisualizer (solo se in modalità ratio)."""
+        return self._pitch.base_ratio
+    
+    @property
+    def pitch_semitones_envelope(self) -> Optional[Union[float, Envelope]]:
+        """Espone pitch_semitones per ScoreVisualizer (solo se in modalità semitoni)."""
+        return self._pitch.base_semitones
+    
+    @property
+    def pitch_range(self) -> Union[float, Envelope]:
+        """Espone pitch_range per ScoreVisualizer."""
+        return self._pitch.range
+    
+    @property
+    def voice_pitch_offset(self) -> Union[float, Envelope]:
+        """Espone voice_pitch_offset per ScoreVisualizer."""
+        return self._voice_manager.voice_pitch_offset
+    
+    @property
+    def voice_pointer_offset(self) -> Union[float, Envelope]:
+        """Espone voice_pointer_offset per ScoreVisualizer."""
+        return self._voice_manager.voice_pointer_offset
+    
+    @property
+    def voice_pointer_range(self) -> Union[float, Envelope]:
+        """Espone voice_pointer_range per ScoreVisualizer."""
+        return self._voice_manager.voice_pointer_range
+    
+    # =========================================================================
+    # REPR
+    # =========================================================================
+    
+    def __repr__(self) -> str:
         mode = "fill_factor" if self.fill_factor is not None else "density"
         return (f"Stream(id={self.stream_id}, onset={self.onset}, "
                 f"dur={self.duration}, mode={mode}, grains={len(self.grains)})")

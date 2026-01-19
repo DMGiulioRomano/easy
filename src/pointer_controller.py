@@ -319,6 +319,15 @@ class PointerController:
     def reset(self) -> None:
         """Resetta lo stato del loop (per riuso del controller)."""
         self._init_loop_state()
+
+    def get_speed(self, elapsed_time: float) -> float:
+        """
+        Ritorna la velocità istantanea al tempo specificato.
+        Utile per determinare la direzione (reverse) in Stream.
+        """
+        if isinstance(self.speed, Envelope):
+            return self.speed.evaluate(elapsed_time)
+        return float(self.speed)
     
     # =========================================================================
     # PROPERTIES (Read-only access)

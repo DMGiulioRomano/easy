@@ -2,6 +2,7 @@
 import pytest
 import sys
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Aggiunge la root del progetto al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -187,7 +188,6 @@ def pitch_semitones_with_range(pitch_factory):
 # FIXTURES DENSITY CONTROLLER
 # =============================================================================
 
-from unittest.mock import Mock
 
 @pytest.fixture
 def mock_evaluator():
@@ -295,3 +295,172 @@ def voice_manager_four_voices(voice_manager_factory):
         'offset_pitch': 7.0,
         'pointer_offset': 0.5
     })
+
+# =============================================================================
+# FIXTURES STREAM (Orchestratore)
+# =============================================================================
+
+@pytest.fixture
+def mock_sample_duration():
+    """Mock per get_sample_duration che ritorna sempre 10.0 secondi."""
+    with patch('stream.get_sample_duration', return_value=10.0):
+        yield
+
+
+@pytest.fixture
+def stream_params_minimal():
+    """Parametri minimi per creare uno Stream valido."""
+    return {
+        'stream_id': 'test_stream',
+        'onset': 0.0,
+        'duration': 5.0,
+        'sample': 'test.wav',
+        'grain': {
+            'duration': 0.05,
+            'envelope': 'hanning'
+        }
+    }
+
+
+@pytest.fixture
+def stream_params_full():
+    """Parametri completi per creare uno Stream con tutte le feature."""
+    return {
+        'stream_id': 'full_test_stream',
+        'onset': 1.0,
+        'duration': 10.0,
+        'sample': 'test.wav',
+        'time_mode': 'absolute',
+        
+        # Grain
+        'grain': {
+            'duration': 0.05,
+            'duration_range': 0.01,
+            'envelope': 'hanning',
+            'reverse': 'auto'
+        },
+        
+        # Pointer
+        'pointer': {
+            'start': 0.0,
+            'speed': 1.0,
+            'jitter': 0.01
+        },
+        
+        # Pitch
+        'pitch': {
+            'ratio': 1.0,
+            'range': 0.1
+        },
+        
+        # Density
+        'fill_factor': 2.0,
+        'distribution': 0.0,
+        
+        # Voices
+        'voices': {
+            'number': 2,
+            'offset_pitch': 7.0,
+            'pointer_offset': 0.1
+        },
+        
+        # Output
+        'volume': -6.0,
+        'volume_range': 3.0,
+        'pan': 0.0,
+        'pan_range': 30.0
+    }
+
+
+@pytest.fixture
+def stream_params_with_envelopes():
+    """Parametri con envelope per test dinamici."""
+    return {
+        'stream_id': 'envelope_test_stream',
+        'onset': 0.0,
+        'duration': 10.0,
+        'sample': 'test.wav',
+        
+        # Grain con envelope
+        'grain': {
+            'duration': [[0, 0.05], [10, 0.1]],  # 50ms → 100ms
+            'envelope': 'hanning'
+        },
+        
+        # Pointer con envelope
+        'pointer': {
+            'start': 0.0,
+            'speed': [[0, 1.0], [10, 2.0]]  # 1x → 2x
+        },
+        
+        # Density con envelope
+        'density': [[0, 10], [10, 50]],  # 10 → 50 g/s
+        
+        # Voices con envelope
+        'voices': {
+            'number': [[0, 1], [5, 4], [10, 1]]  # 1 → 4 → 1
+        },
+        
+        # Volume con envelope
+        'volume': [[0, -12], [5, -3], [10, -12]]  # fade in/out
+    }
+
+
+@pytest.fixture
+def stream_factory(mock_sample_duration):
+    """
+    Factory per creare Stream con configurazioni custom.
+    Usa il mock della durata sample per evitare I/O su file.
+    
+    Usage:
+        def test_something(stream_factory):
+            stream = stream_factory({'stream_id': 'test', ...})
+    """
+    from stream import Stream
+    
+    def _create(params: dict):
+        return Stream(params)
+    
+    return _create
+
+
+@pytest.fixture
+def stream_minimal(stream_factory, stream_params_minimal):
+    """Stream con configurazione minima."""
+    return stream_factory(stream_params_minimal)
+
+
+@pytest.fixture
+def stream_full(stream_factory, stream_params_full):
+    """Stream con configurazione completa."""
+    return stream_factory(stream_params_full)
+
+
+@pytest.fixture
+def stream_with_envelopes(stream_factory, stream_params_with_envelopes):
+    """Stream con envelope sui parametri principali."""
+    return stream_factory(stream_params_with_envelopes)
+
+
+# =============================================================================
+# FIXTURES PER DETERMINISMO
+# =============================================================================
+
+@pytest.fixture
+def fixed_seed():
+    """Fissa il seed random per test deterministici."""
+    random.seed(42)
+    yield
+    # Non resetta il seed, i test successivi avranno seed diversi
+    # se non usano questa fixture
+
+
+@pytest.fixture
+def deterministic_random(monkeypatch):
+    """
+    Fixture che rende random.uniform e random.randint deterministici.
+    Utile per test che verificano valori esatti.
+    """
+    # Sempre al centro del range
+    monkeypatch.setattr(random, "uniform", lambda a, b: (a + b) / 2)
+    monkeypatch.setattr(random, "randint", lambda a, b: (a + b) // 2)
