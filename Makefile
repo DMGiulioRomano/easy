@@ -1,76 +1,31 @@
 # Makefile Principale
-# Include la gestione dell'ambiente di test e dipendenze
-include Makefile.test
-
-PWD_DIR:=$(shell pwd)
-INCDIR:=src
-SSDIR?=refs
-LOGDIR:=logs
-SFDIR:=output
-GENDIR:=generated
-YMLDIR:=$(INCDIR)/configs
-PYTHON_SOURCES := $(wildcard $(INCDIR)/*.py)
-YML_FILES := $(wildcard $(YMLDIR)/*.yml)
-SCO_FILES := $(patsubst $(YMLDIR)/%.yml,$(GENDIR)/%.sco,$(YML_FILES))
-AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
-
-#---------- $(INPUT)-$(SKIP_)-$(DURATA_).wav ---
-SKIP?=0.0
-SKIP_:=$(subst .,_,$(SKIP))
-DURATA?=30.0
-DURATA_:=$(subst .,_,$(DURATA))
-INPUT?=001
-#-----------------------------------------------
-AUTOKILL?=true
-AUTOPEN?=true
-AUTOVISUAL?=true
-FILE?=testLoop
-TEST?=true
-.SECONDARY: $(SCO_FILES)
-
-ifeq ($(AUTOVISUAL), true)
-  PYFLAG = --visualize
-else
-  PYFLAG =
-endif
 
 
-ifeq ($(AUTOKILL),true)
-  ALL_PRE = rx-stop
-else
-  ALL_PRE =
-endif
+# --- Configurazione directory ---
+PWD_DIR := $(shell pwd)
+GENDIR := generated
+INCDIR := src
+LOGDIR := logs
+SFDIR := output
+SSDIR := refs
+YMLDIR := $(INCDIR)/configs
 
-ifeq ($(TEST), true)
-all: $(ALL_PRE) $(AIF_FILES)
-else
-all: $(ALL_PRE) $(SFDIR)/$(FILE).aif
-endif
+# --- Flags configurabili ---
+AUTOKILL ?= true
+AUTOPEN ?= true
+AUTOVISUAL ?= true
+FILE ?= testLoop
+TEST ?= true
 
-test-python: $(GENDIR)/$(FILE).sco
-	@echo "✓ Test Python passed: $(FILE).sco generated"
+# Include moduli
+include make/test.mk
+include make/utils.mk
+include make/audioFile.mk
+include make/build.mk
 
-test-csound: $(SFDIR)/$(FILE).aif
-	@echo "✓ Test Csound passed: $(FILE).aif rendered"
-
-$(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES)| $(GENDIR)
-	python3.11 $(INCDIR)/main.py $< $@ $(PYFLAG)
-
+# --- Infrastruttura: creazione directory ---
 $(GENDIR):
 	mkdir -p $@
-
-$(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
-	csound \
-	--env:INCDIR+=$(PWD_DIR)/$(INCDIR) \
-	--env:SSDIR+=$(PWD_DIR)/$(SSDIR) \
-	--env:SFDIR=$(PWD_DIR)/$(SFDIR) \
-	$(INCDIR)/main.orc $< \
-	--logfile=$(LOGDIR)/$*.log \
-	-o $@
-	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
-		open "$@"; \
-	fi
-
 
 $(SFDIR):
 	mkdir -p $@
@@ -78,37 +33,41 @@ $(SFDIR):
 $(LOGDIR):
 	mkdir -p $@
 
-open:
-	open $(SFDIR)/*.aif
+# --- Setup iniziale ---
+.PHONY: setup
+setup: $(GENDIR) $(SFDIR) $(LOGDIR) venv-setup
+	@echo "✅ [SETUP] Project ready."
 
-pdf:
-	open $(GENDIR)/*.pdf
+# --- Help ---
+.DEFAULT_GOAL := help
 
-sync:
-	git add .
-	git commit -m "."
-	git pull --quiet
-	git push
-
-$(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
-	sox $(SSDIR)/$(INPUT).wav $@ trim $(SKIP) $(DURATA)
-	mv $@ $(SSDIR)/$@
-	@if [ "$(AUTOPEN)" = "true" ]; then open $(SSDIR)/$@; fi
-
-.PHONY: rx-stop
-
-rx-stop:
-	@if [ "$$(uname)" = "Darwin" ] && \
-	   [ -d "/Applications/iZotope RX 11 Audio Editor.app" ] && \
-	   pgrep -f "iZotope RX 11" >/dev/null; then \
-		echo "RX 11 attivo: AUTOKILL=true, chiusura in corso"; \
-		osascript -e 'tell application "iZotope RX 11 Audio Editor" to quit' || true; \
-		sleep 1; \
-	else \
-		echo "make: Nothing to be done for 'all'..."; \
-	fi
-
-clean:
-	rm -f $(SFDIR)/*.aif $(GENDIR)/*.sco $(GENDIR)/*.pdf *.wav logs/*.log *.log
-
-.PHONY: open sync test clean rx-stop test-python test-csound
+.PHONY: help
+help:
+	@echo " Granular Synthesis - Comandi disponibili:"
+	@echo ""
+	@echo "  Setup:"
+	@echo "  make setup           - Setup completo progetto"
+	@echo "  make venv-setup      - Setup virtual environment"
+	@echo ""
+	@echo " Build:"
+	@echo "  make all             - Build pipeline (YAML→SCO→AIF)"
+	@echo "  make FILE=nome       - Build singolo file"
+	@echo ""
+	@echo " Testing:"
+	@echo "  make run-unit-tests  - Esegui test"
+	@echo ""
+	@echo " Utility:"
+	@echo "  make open            - Apri file audio generati"
+	@echo "  make pdf             - Apri PDF generati"
+	@echo "  make sync            - Git add/commit/pull/push"
+	@echo "  make rx-stop         - Chiudi iZotope RX 11"
+	@echo ""
+	@echo " Pulizia:"
+	@echo "  make clean           - Pulisci file generati"
+	@echo "  make clean-all       - Pulizia completa (+ venv)"
+	@echo ""
+	@echo "  Flags:"
+	@echo "  AUTOKILL=true/false  - Auto-chiudi RX prima di build"
+	@echo "  AUTOPEN=true/false   - Auto-apri file generati"
+	@echo "  AUTOVISUAL=true/false- Genera visualizzazioni PDF"
+	@echo "  TEST=true/false      - Build tutti i file o solo FILE"
