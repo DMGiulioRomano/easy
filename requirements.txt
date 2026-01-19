@@ -1,0 +1,10 @@
+# Gestione Audio e Dati
+numpy
+soundfile
+matplotlib
+
+# Parsing Config (necessario per i tuoi file .yml)
+PyYAML
+
+# Testing
+pytest

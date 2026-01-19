@@ -1,3 +1,7 @@
+# Makefile Principale
+# Include la gestione dell'ambiente di test e dipendenze
+include Makefile.test
+
 PWD_DIR:=$(shell pwd)
 INCDIR:=src
 SSDIR?=refs
