@@ -19,7 +19,8 @@ class TestVoiceManagerInit:
         """Default: 1 voce, offset zero."""
         manager = voice_manager_factory({})
         
-        assert manager.get_max_voices() == 1
+        # CORRETTO: max_voices è una property
+        assert manager.max_voices == 1
         assert manager.voice_pitch_offset == 0.0
         assert manager.voice_pointer_offset == 0.0
     
@@ -32,7 +33,8 @@ class TestVoiceManagerInit:
             'pointer_range': 0.1
         })
         
-        assert manager.get_max_voices() == 4
+        # CORRETTO: max_voices è una property
+        assert manager.max_voices == 4
         assert manager.voice_pitch_offset == 12.0
         assert manager.voice_pointer_offset == 0.5
         assert manager.voice_pointer_range == 0.1
@@ -59,11 +61,13 @@ class TestMaxVoicesWithBounds:
             manager = voice_manager_factory({'number': 30})
             
             # Il max_voices dovrebbe essere 20, non 30
-            assert manager.get_max_voices() == 20
+            # CORRETTO: max_voices è una property
+            assert manager.max_voices == 20
             
             # Prova con un valore sotto il limite
             manager2 = voice_manager_factory({'number': 0})
-            assert manager2.get_max_voices() == 1  # Clippato a min_val=1.0
+            # CORRETTO: max_voices è una property
+            assert manager2.max_voices == 1  # Clippato a min_val=1.0
         finally:
             # Ripristina
             mock_evaluator.get_bounds = original_get_bounds
@@ -85,7 +89,8 @@ class TestMaxVoicesWithBounds:
             manager = voice_manager_factory({'number': env})
             
             # Il massimo dell'envelope è 25, ma dovrebbe essere clippato a 20
-            assert manager.get_max_voices() == 20
+            # CORRETTO: max_voices è una property
+            assert manager.max_voices == 20
         finally:
             mock_evaluator.get_bounds = original_get_bounds
     

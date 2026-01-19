@@ -103,14 +103,11 @@ class VoiceManager:
         # Arrotonda all'intero più vicino (le voci sono intere)
         return int(round(clipped_max))
     
-    def get_max_voices(self) -> int:
+    @property
+    def max_voices(self) -> int:
         """
         Restituisce il numero massimo assoluto di voci.
-        
         Usato per allocazione iniziale (iterazione su tutte le voci potenziali).
-        
-        Returns:
-            int: Numero massimo di voci (clippato ai bounds del ParameterEvaluator)
         """
         return self._max_voices
     
