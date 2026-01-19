@@ -25,10 +25,20 @@ class Envelope:
         else:
             raise ValueError(f"Formato envelope non valido: {breakpoints}")
         
+        # A) Check lista vuota
+        if not self.breakpoints:
+            raise ValueError("Envelope deve contenere almeno un breakpoint.")
+            
+        # B) Check tipo valido (per evitare errori silenziosi)
+        valid_types = ['linear', 'step', 'cubic']
+        if self.type not in valid_types:
+            raise ValueError(f"Tipo envelope non valido: '{self.type}'. Validi: {valid_types}")
+
         # Pre-calcola le tangenti per interpolazione cubica
         if self.type == 'cubic' and len(self.breakpoints) > 1:
             self._compute_tangents()
-        
+
+
     def _compute_tangents(self):
         """
         Calcola le tangenti per interpolazione cubica Hermite.

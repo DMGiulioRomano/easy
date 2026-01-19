@@ -22,7 +22,7 @@ venv-setup: $(VENV_MARKER)
 # Regola: se manca il marker o cambia requirements.txt, rifà il setup
 $(VENV_MARKER): $(REQUIREMENTS)
 	@echo "🔧 [VENV] Creating/Updating Virtual Environment..."
-	python3.11 -m venv $(VENV_DIR)
+	python3 -m venv $(VENV_DIR)
 	$(PIP_VENV) install --upgrade pip
 	$(PIP_VENV) install -r $(REQUIREMENTS)
 	touch $(VENV_MARKER)

@@ -1,285 +1,212 @@
-"""
-Test per ParameterEvaluator
-
-Esegui con: python test_parameter_evaluator.py
-"""
-
-import sys
-import random
+import pytest
+from envelope import Envelope
+from parameter_evaluator import ParameterEvaluator, ParameterBounds
 
 # =============================================================================
-# MOCK delle dipendenze (per test standalone)
+# 1. TEST PARSING (Conversione input -> dati utilizzabili)
 # =============================================================================
 
-class MockEnvelope:
-    """Mock minimale di Envelope per testing"""
-    def __init__(self, breakpoints):
-        if isinstance(breakpoints, dict):
-            self.breakpoints = sorted(breakpoints['points'], key=lambda x: x[0])
-            self.type = breakpoints.get('type', 'linear')
-        else:
-            self.breakpoints = sorted(breakpoints, key=lambda x: x[0])
-            self.type = 'linear'
+def test_parse_scalar(evaluator):
+    """Un numero semplice deve rimanere un numero."""
+    result = evaluator.parse(42.5, "test_param")
+    assert result == 42.5
+
+def test_parse_list_creates_envelope(evaluator):
+    """Una lista di liste deve diventare un oggetto Envelope."""
+    data = [[0, 0], [1, 100]]
+    result = evaluator.parse(data, "test_param")
     
-    def evaluate(self, time):
-        if len(self.breakpoints) == 1:
-            return self.breakpoints[0][1]
-        
-        if time <= self.breakpoints[0][0]:
-            return self.breakpoints[0][1]
-        if time >= self.breakpoints[-1][0]:
-            return self.breakpoints[-1][1]
-        
-        for i in range(len(self.breakpoints) - 1):
-            t1, v1 = self.breakpoints[i]
-            t2, v2 = self.breakpoints[i + 1]
-            if t1 <= time < t2:
-                t_norm = (time - t1) / (t2 - t1)
-                return v1 + (v2 - v1) * t_norm
-        
-        return self.breakpoints[-1][1]
+    assert isinstance(result, Envelope)
+    assert result.type == 'linear'
+    assert result.evaluate(1) == 100
+
+def test_parse_dict_creates_typed_envelope(evaluator):
+    """Un dict deve creare un Envelope con il tipo specificato."""
+    data = {'type': 'step', 'points': [[0, 10], [5, 50]]}
+    result = evaluator.parse(data, "test_param")
     
-    def __repr__(self):
-        return f"Envelope(type={self.type}, points={self.breakpoints})"
+    assert isinstance(result, Envelope)
+    assert result.type == 'step'
+    # Test comportamento step (valore sinistro)
+    assert result.evaluate(4.9) == 10
+    assert result.evaluate(5.0) == 50
 
-
-# Mock del logger
-def mock_log_clip_warning(stream_id, param_name, time, value, clamped, min_val, max_val, is_envelope):
-    print(f"  ⚠️  CLIP [{stream_id}] {param_name} @ t={time:.3f}: {value:.4f} → {clamped:.4f} (bounds: {min_val}, {max_val})")
-
-
-# Inject mocks nel namespace prima di importare
-sys.modules['envelope'] = type(sys)('envelope')
-sys.modules['envelope'].Envelope = MockEnvelope
-
-sys.modules['logger'] = type(sys)('logger')
-sys.modules['logger'].log_clip_warning = mock_log_clip_warning
-
-# Ora possiamo importare
-from src.parameter_evaluator import ParameterEvaluator, ParameterBounds
-
+def test_parse_invalid_format_raises_error(evaluator):
+    """Input stringa non parsabile (senza eval math) deve alzare errore."""
+    with pytest.raises(ValueError):
+        evaluator.parse("non_un_numero", "bad_param")
 
 # =============================================================================
-# TEST
+# 2. TEST NORMALIZZAZIONE TEMPORALE
 # =============================================================================
 
-def test_parse_number():
-    """Test: parsing di numeri semplici"""
-    print("\n📝 Test: parse numeri")
+def test_normalized_time_mode():
+    """
+    Se time_mode='normalized' e duration=10.0:
+    Un punto a t=0.5 deve diventare t=5.0
+    """
+    eval_norm = ParameterEvaluator("test", duration=10.0, time_mode='normalized')
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
+    # Input: Envelope che finisce a 1.0 (cioè 100% durata)
+    data = [[0.0, 0], [0.5, 50], [1.0, 100]]
     
-    result = evaluator.parse(50, "density")
-    assert result == 50, f"Expected 50, got {result}"
-    print(f"  ✓ parse(50) → {result}")
+    env = eval_norm.parse(data, "param")
     
-    result = evaluator.parse(3.14, "some_param")
-    assert result == 3.14, f"Expected 3.14, got {result}"
-    print(f"  ✓ parse(3.14) → {result}")
+    # Verifica i breakpoints scalati
+    # env.breakpoints è [[time, val], ...]
+    assert env.breakpoints[1][0] == 5.0  # 0.5 * 10.0
+    assert env.breakpoints[2][0] == 10.0 # 1.0 * 10.0
 
+def test_local_normalization_override(evaluator):
+    """Un parametro può specificare 'normalized' nel dict anche se l'evaluator è absolute."""
+    # Evaluator è 'absolute' di default (dalla fixture in conftest)
+    data = {
+        'time_unit': 'normalized',  # Override locale
+        'points': [[0.5, 100]]
+    }
+    # La fixture 'evaluator' ha duration=10.0 (vedi conftest.py)
+    env = evaluator.parse(data, "param")
+    
+    assert env.breakpoints[0][0] == 5.0
 
-def test_parse_list_envelope():
-    """Test: parsing di envelope da lista"""
-    print("\n📝 Test: parse lista → Envelope")
-    
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
-    
-    result = evaluator.parse([[0, 20], [5, 100], [10, 50]], "density")
-    assert isinstance(result, MockEnvelope), f"Expected Envelope, got {type(result)}"
-    print(f"  ✓ parse([[0,20], [5,100], [10,50]]) → {result}")
-    
-    # Verifica valutazione
-    val = result.evaluate(2.5)
-    expected = 20 + (100 - 20) * (2.5 / 5)  # interpolazione lineare
-    assert abs(val - expected) < 0.001, f"Expected ~{expected}, got {val}"
-    print(f"  ✓ evaluate(2.5) → {val:.2f} (expected ~{expected:.2f})")
+# =============================================================================
+# 3. TEST BOUNDS & CLIPPING (Sicurezza)
+# =============================================================================
 
+def test_evaluate_respects_min_bound(evaluator):
+    """Density non può essere < 0.1"""
+    # Bound definito nel codice: 'density': ParameterBounds(0.1, 4000.0, ...)
+    
+    # Tentiamo di passare 0.0
+    val = evaluator.evaluate(0.0, time=0, param_name='density')
+    
+    assert val == 0.1  # Deve essere clippato al minimo
 
-def test_parse_dict_envelope():
-    """Test: parsing di envelope da dict"""
-    print("\n📝 Test: parse dict → Envelope")
+def test_evaluate_respects_max_bound(evaluator):
+    """Density non può essere > 4000.0"""
+    # Tentiamo di passare 10000
+    val = evaluator.evaluate(10000, time=0, param_name='density')
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
-    
-    result = evaluator.parse({
-        'type': 'cubic',
-        'points': [[0, 0], [5, 100], [10, 0]]
-    }, "volume")
-    
-    assert isinstance(result, MockEnvelope), f"Expected Envelope, got {type(result)}"
-    assert result.type == 'cubic'
-    print(f"  ✓ parse(dict con type='cubic') → {result}")
+    assert val == 4000.0
 
+def test_evaluate_envelope_clipping(evaluator):
+    """Anche i valori che escono da un Envelope devono essere clippati."""
+    # Envelope che va a -100 (illegale per density)
+    env = Envelope([[0, -100], [10, -100]])
+    
+    val = evaluator.evaluate(env, time=5, param_name='density')
+    assert val == 0.1
 
-def test_parse_normalized_time():
-    """Test: normalizzazione temporale"""
-    print("\n📝 Test: time_mode='normalized'")
-    
-    evaluator = ParameterEvaluator("test_stream", duration=10.0, time_mode='normalized')
-    
-    # Con time_mode normalized, [0, 1] diventa [0, 10]
-    result = evaluator.parse([[0, 20], [1, 100]], "density")
-    
-    # Verifica che i tempi siano stati scalati
-    assert result.breakpoints[0][0] == 0.0
-    assert result.breakpoints[1][0] == 10.0  # 1 * 10
-    print(f"  ✓ [[0,20], [1,100]] con duration=10 → breakpoints tempi: {[bp[0] for bp in result.breakpoints]}")
+def test_missing_bounds_raises_error(evaluator):
+    """Se chiediamo un parametro non mappato in BOUNDS, deve esplodere."""
+    with pytest.raises(ValueError) as excinfo:
+        evaluator.evaluate(10, 0, "parametro_inventato_inesistente")
+    assert "Bounds non definiti" in str(excinfo.value)
 
+# =============================================================================
+# 4. TEST RANGE E RANDOM (Stocastico)
+# =============================================================================
 
-def test_evaluate_basic():
-    """Test: valutazione con bounds"""
-    print("\n📝 Test: evaluate con bounds")
+def test_evaluate_with_range_logic(evaluator, monkeypatch):
+    """
+    Testa evaluate_with_range mockando random.uniform.
+    Formula: base + random(-0.5, 0.5) * range
+    """
+    import random
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
+    # 1. Mockiamo random.uniform per restituire sempre il valore massimo (0.5)
+    # Questo ci permette di testare la matematica deterministicamente
+    monkeypatch.setattr(random, "uniform", lambda a, b: 0.5)
     
-    # Valore dentro i bounds
-    result = evaluator.evaluate(500, time=0, param_name='density')
-    assert result == 500
-    print(f"  ✓ evaluate(500, 'density') → {result} (dentro bounds)")
-    
-    # Valore sotto il minimo (dovrebbe clippare a 0.1)
-    print("  Testing valore sotto minimo...")
-    result = evaluator.evaluate(0.01, time=0, param_name='density')
-    assert result == 0.1, f"Expected 0.1 (min), got {result}"
-    print(f"  ✓ evaluate(0.01, 'density') → {result} (clipped to min)")
-    
-    # Valore sopra il massimo (dovrebbe clippare a 4000)
-    print("  Testing valore sopra massimo...")
-    result = evaluator.evaluate(10000, time=0, param_name='density')
-    assert result == 4000, f"Expected 4000 (max), got {result}"
-    print(f"  ✓ evaluate(10000, 'density') → {result} (clipped to max)")
+    # Parametro: pan (Min -3600, Max 3600)
+    # Base: 0
+    # Range: 100
+    # Expected: 0 + (0.5 * 100) = 50
+    val = evaluator.evaluate_with_range(
+        param=0, 
+        param_range=100, 
+        time=0, 
+        param_name='pan'
+    )
+    assert val == 50.0
 
+def test_evaluate_with_range_clipping(evaluator, monkeypatch):
+    """
+    Se la variazione random spinge il valore fuori dai limiti,
+    deve essere clippato.
+    """
+    import random
+    monkeypatch.setattr(random, "uniform", lambda a, b: 0.5) # Max deviation positiva
+    
+    # Density: Max 4000
+    # Base: 3950
+    # Range: 200 (Deviazione max = +100)
+    # Calcolo teorico: 3950 + 100 = 4050
+    # Expected: 4000 (clippato)
+    
+    val = evaluator.evaluate_with_range(3950, 200, 0, 'density')
+    assert val == 4000.0
 
-def test_evaluate_envelope():
-    """Test: valutazione di Envelope"""
-    print("\n📝 Test: evaluate Envelope")
-    
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
-    
-    # Crea envelope
-    env = evaluator.parse([[0, 50], [10, 200]], "density")
-    
-    # Valuta a vari tempi
-    val_0 = evaluator.evaluate(env, time=0, param_name='density')
-    val_5 = evaluator.evaluate(env, time=5, param_name='density')
-    val_10 = evaluator.evaluate(env, time=10, param_name='density')
-    
-    print(f"  ✓ t=0:  {val_0}")
-    print(f"  ✓ t=5:  {val_5}")
-    print(f"  ✓ t=10: {val_10}")
-    
-    assert val_0 == 50
-    assert val_5 == 125  # interpolazione lineare
-    assert val_10 == 200
+# =============================================================================
+# 5. TEST PARAMETRI SCALATI
+# =============================================================================
 
-
-def test_evaluate_with_range():
-    """Test: valutazione con range stocastico"""
-    print("\n📝 Test: evaluate_with_range")
+def test_evaluate_scaled(evaluator):
+    """
+    Testa parametri che dipendono dalla durata del sample (es. loop_dur).
+    """
+    # 'loop_dur' ha bounds min=0.001, max=100.0 (default placeholder)
+    # Se passiamo scale=0.5 (es. sample dura 0.5s), il max deve diventare 50.0 o 0.5?
+    # Rivedendo il codice di ParameterEvaluator:
+    # scaled_max = bounds.max_val * scale
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
+    # Prendiamo 'voice_pointer_offset': bounds 0.0 -> 1.0
+    # Se il sample dura 10s (scale=10), il max diventa 10.0
     
-    # Fissa il seed per riproducibilità
-    random.seed(42)
-    
-    # Base = -6 dB, range = 6 dB → risultato in [-9, -3]
-    results = []
-    for _ in range(100):
-        val = evaluator.evaluate_with_range(
-            param=-6.0,
-            param_range=6.0,
-            time=0,
-            param_name='volume'
-        )
-        results.append(val)
-        assert -9.0 <= val <= -3.0, f"Value {val} out of expected range [-9, -3]"
-    
-    avg = sum(results) / len(results)
-    print(f"  ✓ 100 samples con base=-6, range=6:")
-    print(f"    min={min(results):.2f}, max={max(results):.2f}, avg={avg:.2f}")
-
-
-def test_evaluate_scaled():
-    """Test: valutazione con bounds scalati"""
-    print("\n📝 Test: evaluate_scaled")
-    
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
-    
-    # voice_pointer_offset ha bounds [0, 1], scala per sample_duration=5 sec
-    result = evaluator.evaluate_scaled(
-        param=0.5,  # 50%
+    val = evaluator.evaluate_scaled(
+        param=5.0,     # Valore input
         time=0,
         param_name='voice_pointer_offset',
-        scale=5.0  # sample duration
+        scale=10.0     # Moltiplicatore bounds
     )
     
-    # 0.5 * 1 (max bounds) = 0.5, ma con scale=5, max diventa 5
-    # Quindi 0.5 dovrebbe restare 0.5 (dentro [0, 5])
-    assert result == 0.5
-    print(f"  ✓ evaluate_scaled(0.5, scale=5.0) → {result}")
+    # Min bound (0.0 * 10) = 0
+    # Max bound (1.0 * 10) = 10
+    # Input 5.0 è valido
+    assert val == 5.0
     
-    # Test con valore che eccede il bound scalato
-    print("  Testing valore oltre bound scalato...")
-    result = evaluator.evaluate_scaled(
-        param=10.0,  # oltre il max scalato (5.0)
+    # Test clipping scalato
+    val_overflow = evaluator.evaluate_scaled(
+        param=15.0,    # Fuori dal limite scalato (10.0)
         time=0,
         param_name='voice_pointer_offset',
-        scale=5.0
+        scale=10.0
     )
-    assert result == 5.0, f"Expected 5.0 (scaled max), got {result}"
-    print(f"  ✓ evaluate_scaled(10.0, scale=5.0) → {result} (clipped)")
+    assert val_overflow == 10.0
 
+# Aggiungi in coda a tests/test_parameter_evaluator.py
 
-def test_unknown_param():
-    """Test: errore per parametro senza bounds"""
-    print("\n📝 Test: errore parametro sconosciuto")
+def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
+    """
+    FEATURE CRITICA: Il range di randomizzazione è esso stesso un Envelope.
+    Esempio: All'inizio (t=0) jitter=0. Alla fine (t=10) jitter=100.
+    """
+    import random
+    # Mockiamo random per restituire sempre +0.5 (deviazione massima positiva)
+    monkeypatch.setattr(random, "uniform", lambda a, b: 0.5)
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
+    # Parametro base fisso a 0
+    # Range dinamico: Envelope che va da 0 a 100 in 10s
+    range_env = Envelope([[0, 0], [10, 100]])
     
-    try:
-        evaluator.evaluate(100, time=0, param_name='parametro_inventato')
-        assert False, "Doveva sollevare ValueError"
-    except ValueError as e:
-        print(f"  ✓ ValueError sollevato correttamente: {e}")
-
-
-def test_bounds_inspection():
-    """Test: ispezione bounds"""
-    print("\n📝 Test: get_bounds")
+    # T=0: Range è 0. Deviazione = 0.5 * 0 = 0. Risultato 0.
+    val_0 = evaluator.evaluate_with_range(0, range_env, time=0, param_name='pan')
+    assert val_0 == 0.0
     
-    evaluator = ParameterEvaluator("test_stream", duration=10.0)
+    # T=5: Range è 50. Deviazione = 0.5 * 50 = 25. Risultato 25.
+    val_5 = evaluator.evaluate_with_range(0, range_env, time=5, param_name='pan')
+    assert val_5 == 25.0
     
-    bounds = evaluator.get_bounds('volume')
-    assert bounds is not None
-    assert bounds.min_val == -120.0
-    assert bounds.max_val == 12.0
-    print(f"  ✓ get_bounds('volume') → min={bounds.min_val}, max={bounds.max_val}")
-    
-    bounds = evaluator.get_bounds('non_esiste')
-    assert bounds is None
-    print(f"  ✓ get_bounds('non_esiste') → None")
-
-
-# =============================================================================
-# MAIN
-# =============================================================================
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("TEST ParameterEvaluator")
-    print("=" * 60)
-    
-    test_parse_number()
-    test_parse_list_envelope()
-    test_parse_dict_envelope()
-    test_parse_normalized_time()
-    test_evaluate_basic()
-    test_evaluate_envelope()
-    test_evaluate_with_range()
-    test_evaluate_scaled()
-    test_unknown_param()
-    test_bounds_inspection()
-    
-    print("\n" + "=" * 60)
-    print("✅ TUTTI I TEST PASSATI!")
-    print("=" * 60)
+    # T=10: Range è 100. Deviazione = 0.5 * 100 = 50. Risultato 50.
+    val_10 = evaluator.evaluate_with_range(0, range_env, time=10, param_name='pan')
+    assert val_10 == 50.0
