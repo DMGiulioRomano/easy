@@ -194,6 +194,8 @@ def mock_evaluator():
     """
     Mock di ParameterEvaluator configurato per i test.
     """
+    from parameter_evaluator import ParameterBounds
+    
     evaluator = Mock(spec=ParameterEvaluator)
     
     # 1. PARSE: Lascia passare TUTTO
@@ -202,22 +204,31 @@ def mock_evaluator():
     
     # 2. EVALUATE: Gestisce numeri, Envelope reali e Mock
     def evaluate_side_effect(value, elapsed_time, param_name):
-        # Caso A: Envelope (reale o mockato che ha il metodo evaluate)
         if hasattr(value, 'evaluate'):
             val = float(value.evaluate(elapsed_time))
-            
-        # Caso B: Numero semplice (float, int)
         else:
             val = float(value)
             
-        # Simulazione Clamping per effective_density
         if param_name == 'effective_density':
             return max(0.1, min(4000.0, val))
             
         return val
     
+    # 3. GET_BOUNDS: Restituisce bounds realistici per i parametri comuni
+    def get_bounds_side_effect(param_name):
+        default_bounds = {
+            'num_voices': ParameterBounds(1.0, 20.0),
+            'voice_pitch_offset': ParameterBounds(-48.0, 48.0),
+            'voice_pointer_offset': ParameterBounds(0.0, 1.0),
+            'voice_pointer_range': ParameterBounds(0.0, 1.0),
+            'density': ParameterBounds(0.1, 4000.0),
+            'effective_density': ParameterBounds(0.1, 4000.0),
+        }
+        return default_bounds.get(param_name)
+    
     evaluator.parse.side_effect = parse_side_effect
     evaluator.evaluate.side_effect = evaluate_side_effect
+    evaluator.get_bounds.side_effect = get_bounds_side_effect  # <-- AGGIUNTO!
     
     return evaluator
 
