@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Union, Optional, Dict, Any
 from envelope import Envelope
 from logger import log_clip_warning
-
+import random
 
 @dataclass(frozen=True)
 class ParameterBounds:
@@ -253,7 +253,6 @@ class ParameterEvaluator:
         Returns:
             float: valore con deviazione stocastica, clippato ai bounds
         """
-        import random
         
         bounds = self.BOUNDS.get(param_name)
         if bounds is None:
