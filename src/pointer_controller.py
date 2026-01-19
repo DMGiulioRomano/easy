@@ -217,6 +217,7 @@ class PointerController:
         
         return self.start + sample_position
     
+
     def _apply_loop(
         self,
         linear_pos: float,
@@ -234,9 +235,10 @@ class PointerController:
         if self.loop_dur is not None:
             # loop_dur dinamico (può essere Envelope)
             current_loop_dur = self._evaluator.evaluate(
-                self.loop_dur, elapsed_time, 'loop_dur',
-                max_override=self._sample_dur_sec
+                self.loop_dur, elapsed_time, 'loop_dur'
             )
+            # Limita al massimo della durata del sample
+            current_loop_dur = min(current_loop_dur, self._sample_dur_sec)
         else:
             # loop_end fisso (legacy)
             current_loop_dur = self.loop_end - self.loop_start

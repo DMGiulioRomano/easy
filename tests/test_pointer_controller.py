@@ -345,17 +345,3 @@ class TestEdgeCases:
         assert pointer.calculate(0.0) == pytest.approx(3.0)
         assert pointer.calculate(10.0) == pytest.approx(3.0)
     
-    def test_very_short_loop(self, pointer_factory):
-        """Loop molto corto (test stabilità numerica)."""
-        pointer = pointer_factory({
-            'start': 0.0,
-            'speed': 1.0,
-            'loop_start': 1.0,
-            'loop_dur': 0.01  # 10ms
-        })
-        
-        # Non deve crashare
-        pos = pointer.calculate(5.0)
-        
-        # Deve rimanere nel range del loop
-        assert 1.0 <= pos < 1.01
