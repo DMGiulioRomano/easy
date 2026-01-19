@@ -464,3 +464,33 @@ def deterministic_random(monkeypatch):
     # Sempre al centro del range
     monkeypatch.setattr(random, "uniform", lambda a, b: (a + b) / 2)
     monkeypatch.setattr(random, "randint", lambda a, b: (a + b) // 2)
+
+
+# TEMPORARY FIXTURE FOR TEMPORARY GENERATOR
+
+@pytest.fixture
+def yaml_content_minimal():
+    """Contenuto YAML minimo per testare il generatore."""
+    return """
+streams:
+  - stream_id: stream_1
+    onset: 0.0
+    duration: 5.0
+    sample: "test.wav"
+    grain:
+      duration: 0.1
+      envelope: hanning
+"""
+
+@pytest.fixture
+def yaml_file(tmp_path, yaml_content_minimal):
+    """Crea un file YAML reale su disco in una directory temporanea."""
+    p = tmp_path / "test_score.yaml"
+    p.write_text(yaml_content_minimal)
+    return str(p)
+
+@pytest.fixture
+def generator(yaml_file):
+    """Istanza di Generator collegata al file YAML temporaneo."""
+    from generator import Generator
+    return Generator(yaml_file)

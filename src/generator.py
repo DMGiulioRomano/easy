@@ -2,7 +2,7 @@
 # GENERATOR (gestisce sia Stream che Testina)
 # =============================================================================
 import yaml
-from src.streamOld import Stream
+from stream import Stream
 from testina import Testina
 from envelope import Envelope
 class Generator:
@@ -14,39 +14,39 @@ class Generator:
         self.ftables = {}  # {table_num: (type, path/params)}
         self.next_table_num = 1
 
-
     def _eval_math_expressions(self, obj):
-        """Valuta espressioni matematiche nei valori YAML"""
-        import re
-        import math
-        
-        if isinstance(obj, dict):
-            return {k: self._eval_math_expressions(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._eval_math_expressions(item) for item in obj]
-        elif isinstance(obj, str):
-            pattern = r'\(([0-9+\-*/.() ]+)\)'
-            def evaluate_match(match):
-                expr = match.group(1)
-                try:
-                    safe_dict = {
-                        'abs': abs, 'int': int, 'float': float,
-                        'min': min, 'max': max, 'pow': pow,
-                        'pi': math.pi, 'e': math.e
-                    }
-                    result = eval(expr, {"__builtins__": {}}, safe_dict)
-                    return str(result)
-                except Exception as e:
-                    print(f"⚠️  Warning: impossibile valutare '{expr}': {e}")
-                    return match.group(0)
+            """Valuta espressioni matematiche nei valori YAML"""
+            import re
+            import math
             
-            evaluated = re.sub(pattern, evaluate_match, obj)
-            try:
-                return float(evaluated) if '.' in evaluated else int(evaluated)
-            except ValueError:
-                return evaluated
-        else:
-            return obj
+            if isinstance(obj, dict):
+                return {k: self._eval_math_expressions(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [self._eval_math_expressions(item) for item in obj]
+            elif isinstance(obj, str):
+                # CORREZIONE: Aggiunto a-zA-Z nella regex per supportare costanti (pi, e) e funzioni
+                pattern = r'\(([a-zA-Z0-9+\-*/.() ]+)\)'
+                def evaluate_match(match):
+                    expr = match.group(1)
+                    try:
+                        safe_dict = {
+                            'abs': abs, 'int': int, 'float': float,
+                            'min': min, 'max': max, 'pow': pow,
+                            'pi': math.pi, 'e': math.e
+                        }
+                        result = eval(expr, {"__builtins__": {}}, safe_dict)
+                        return str(result)
+                    except Exception as e:
+                        print(f"⚠️  Warning: impossibile valutare '{expr}': {e}")
+                        return match.group(0)
+                
+                evaluated = re.sub(pattern, evaluate_match, obj)
+                try:
+                    return float(evaluated) if '.' in evaluated else int(evaluated)
+                except ValueError:
+                    return evaluated
+            else:
+                return obj
 
     def _format_param_for_comment(self, param, multiplier=1, unit=''):
         """Formatta un parametro per i commenti SCO (gestisce Envelope e None)"""
