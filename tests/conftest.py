@@ -244,3 +244,43 @@ def density_fill_factor(density_factory):
 def density_explicit(density_factory):
     """DensityController standard in modalità density (10.0)."""
     return density_factory({'density': 10.0})
+
+# =============================================================================
+# FIXTURES VOICE MANAGER
+# =============================================================================
+
+@pytest.fixture
+def voice_manager_factory(mock_evaluator):
+    """
+    Factory per creare VoiceManager usando il MOCK evaluator.
+    
+    Usage:
+        def test_something(voice_manager_factory):
+            manager = voice_manager_factory({'number': 4, 'offset_pitch': 7})
+    """
+    from voice_manager import VoiceManager
+    
+    def _create(voices_params: dict, sample_dur: float = 10.0):
+        return VoiceManager(
+            evaluator=mock_evaluator,
+            voices_params=voices_params,
+            sample_dur_sec=sample_dur
+        )
+    
+    return _create
+
+
+@pytest.fixture
+def voice_manager_single(voice_manager_factory):
+    """VoiceManager con una sola voce (default)."""
+    return voice_manager_factory({'number': 1})
+
+
+@pytest.fixture
+def voice_manager_four_voices(voice_manager_factory):
+    """VoiceManager con 4 voci fisse e offset pitch di 7 semitoni."""
+    return voice_manager_factory({
+        'number': 4,
+        'offset_pitch': 7.0,
+        'pointer_offset': 0.5
+    })
