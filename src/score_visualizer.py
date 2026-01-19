@@ -72,8 +72,9 @@ class ScoreVisualizer:
                 'pointer_speed': (-4.0, 16.0),
                 'fill_factor': (0.1, 20),
                 'distribution': (0, 1),
-                'pitch_semitones': (-36, 36),  # range in envelope_ranges
+                'pitch_semitones': (-36, 36),  
                 'num_voices': (1, 20),
+                'pc_rand_reverse': (0, 100),
             },
             # Colori per ogni tipo di envelope
             'envelope_colors': {
@@ -87,6 +88,7 @@ class ScoreVisualizer:
                 'distribution': '#999999',    # grigio
                 'pitch_semitones': '#9467bd',  # colore viola chiaro in envelope_colors
                 'num_voices': '#e377c2',
+                'pc_rand_reverse': '#17becf',
             },
             'envelope_panel_ratio': 0.3,      # 30% altezza per envelope
         }
@@ -446,15 +448,13 @@ class ScoreVisualizer:
             
             if n_streams_with_env > 0:
                 gap_ratio = 0.02  # piccolo gap tra stream
-                total_gap = gap_ratio * 2 * (n_streams_with_env) if n_streams_with_env > 1 else 0
+                total_gap = gap_ratio * 2 * (n_streams_with_env)
                 env_slot_height = (1.0 - total_gap) / n_streams_with_env
                 
                 slot_idx = 0
                 for stream in active_streams:
                     if self._get_stream_envelopes(stream):
                         # Calcola y_base e y_height per questo stream
-                        y_base = slot_idx * (env_slot_height + gap_ratio) + gap_ratio
-                        y_height = env_slot_height - gap_ratio
 
                         y_single_stream_with_gap=gap_ratio*2+(env_slot_height)
                         y_that_stream=y_single_stream_with_gap*slot_idx
@@ -661,6 +661,7 @@ class ScoreVisualizer:
             ('pitch_semitones', 'pitch_semitones_envelope'),  # nome diverso!
             ('distribution', 'distribution'),
             ('num_voices', 'num_voices'),
+            ('pc_rand_reverse', 'grain_reverse_randomness'),
         ]
         
         for param_name, attr_name in params_to_check:
@@ -702,7 +703,7 @@ class ScoreVisualizer:
         else:
             # Fallback: assume già normalizzato
             return np.clip(value, 0, 1)
-    
+
     def _draw_envelopes(self, ax, stream, y_base, y_height, page_start, page_end):
         """
         Disegna tutti gli envelope dello stream nella sua corsia.
@@ -730,46 +731,102 @@ class ScoreVisualizer:
         if t_start >= t_end:
             return set()
         
-        # Campiona l'envelope
-        num_samples = 500
-        times = np.linspace(t_start, t_end, num_samples)
-        
         for param_name, envelope in envelopes.items():
-            # Calcola valori
-            values = []
-            for t in times:
-                # Tempo relativo all'onset dello stream
-                t_rel = t - stream_start
-                val = envelope.evaluate(t_rel)
-                # Normalizza al range
-                val_norm = self._normalize_envelope_value(param_name, val)
-                values.append(val_norm)
-            
-            values = np.array(values)
-            
-            # Scala Y alla corsia dello stream
-            y_values = y_base + values * y_height
-            
             # Colore
             color = colors.get(param_name, '#333333')
             
-            # Disegna curva
-            ax.plot(times, y_values, color=color, linewidth=1.1, 
-                   alpha=0.8, label=param_name)
+            # ========== GESTIONE DIFFERENZIATA PER TIPO ==========
+            if envelope.type == 'step':
+                # Per envelope STEP: disegna segmenti orizzontali espliciti
+                times = []
+                values = []
+                
+                # Costruisci i punti per creare gradini visibili
+                for i, (t_rel, v) in enumerate(envelope.breakpoints):
+                    t_abs = stream_start + t_rel
+                    
+                    # Salta breakpoint prima della pagina
+                    if t_abs < t_start:
+                        continue
+                    
+                    # Se abbiamo superato la fine, aggiungi punto finale e ferma
+                    if t_abs > t_end:
+                        # Ultimo segmento fino a t_end
+                        if i > 0:
+                            last_value = envelope.breakpoints[i-1][1]
+                            val_norm = self._normalize_envelope_value(param_name, last_value)
+                            y_val = y_base + val_norm * y_height
+                            times.append(t_end)
+                            values.append(y_val)
+                        break
+                    
+                    # Aggiungi punto PRIMA del breakpoint (se non è il primo)
+                    if i > 0:
+                        t_prev_rel, v_prev = envelope.breakpoints[i-1]
+                        val_norm = self._normalize_envelope_value(param_name, v_prev)
+                        y_val = y_base + val_norm * y_height
+                        times.append(t_abs)
+                        values.append(y_val)
+                    
+                    # Aggiungi punto AL breakpoint (con nuovo valore)
+                    val_norm = self._normalize_envelope_value(param_name, v)
+                    y_val = y_base + val_norm * y_height
+                    times.append(t_abs)
+                    values.append(y_val)
+                
+                # Aggiungi ultimo segmento fino a t_end (se necessario)
+                if len(times) > 0 and times[-1] < t_end:
+                    times.append(t_end)
+                    values.append(values[-1])
+                
+                # Aggiungi primo segmento da t_start (se necessario)
+                if len(times) > 0 and times[0] > t_start:
+                    # Valuta il valore all'inizio della pagina
+                    t_rel_start = t_start - stream_start
+                    v_start = envelope.evaluate(t_rel_start)
+                    val_norm = self._normalize_envelope_value(param_name, v_start)
+                    y_start = y_base + val_norm * y_height
+                    times.insert(0, t_start)
+                    values.insert(0, y_start)
+                
+                # Disegna con drawstyle='steps-post' per gradini
+                if len(times) > 0:
+                    ax.plot(times, values, color=color, linewidth=1.1, 
+                        alpha=0.8, label=param_name, drawstyle='steps-post')
+            
+            else:
+                # Per envelope LINEAR e CUBIC: campionamento denso
+                num_samples = 500
+                times = np.linspace(t_start, t_end, num_samples)
+                
+                # Calcola valori
+                values = []
+                for t in times:
+                    # Tempo relativo all'onset dello stream
+                    t_rel = t - stream_start
+                    val = envelope.evaluate(t_rel)
+                    # Normalizza al range
+                    val_norm = self._normalize_envelope_value(param_name, val)
+                    values.append(val_norm)
+                
+                values = np.array(values)
+                
+                # Scala Y alla corsia dello stream
+                y_values = y_base + values * y_height
+                
+                # Disegna curva
+                ax.plot(times, y_values, color=color, linewidth=1.1, 
+                    alpha=0.8, label=param_name)
             
             # === ANNOTAZIONE BREAKPOINT ===
             self._annotate_breakpoints(ax, envelope, param_name, color,
-                                       stream_start, y_base, y_height,
-                                       page_start, page_end)
+                                    stream_start, y_base, y_height,
+                                    page_start, page_end)
             
             drawn_types.add(param_name)
         
-        # Linee orizzontali di riferimento per la corsia
-        #ax.axhline(y=y_base, color='black', linewidth=0.3, alpha=0.3)
-        #ax.axhline(y=y_base + y_height, color='black', linewidth=0.3, alpha=0.3)
-        
-        return drawn_types
-    
+        return drawn_types    
+
     def _annotate_breakpoints(self, ax, envelope, param_name, color,
                                stream_start, y_base, y_height,
                                page_start, page_end):
@@ -788,6 +845,7 @@ class ScoreVisualizer:
             'fill_factor': '',
             'distribution': '',
             'num_voices': ' voci',
+            'pc_rand_reverse': '%',
         }
         
         # Moltiplicatori per visualizzazione leggibile
