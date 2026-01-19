@@ -45,7 +45,7 @@ $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 		--env:INCDIR+=$(PWD_DIR)/$(INCDIR) \
 		--env:SSDIR+=$(PWD_DIR)/$(SSDIR) \
 		--env:SFDIR=$(PWD_DIR)/$(SFDIR) \
-		$(INCDIR)/main.orc $< \
+		$(CSDIR)/main.orc $< \
 		--logfile=$(LOGDIR)/$*.log \
 		-o $@
 	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \

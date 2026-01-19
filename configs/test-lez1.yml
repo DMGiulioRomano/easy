@@ -25,11 +25,12 @@ streams:
   - stream_id: "texture1"
     onset: 0.0
     duration: 39.7
-    sample: "pino.wav"
+    sample: "pino2.wav"
     grain:
       duration: 0.05
     fill_factor: 2
-    pointer:     
+    pointer:  
+    solo:   
       speed: 0.5  #speed_ratio
       #jitter:
         #type: step 

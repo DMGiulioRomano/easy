@@ -6,9 +6,10 @@ PWD_DIR := $(shell pwd)
 GENDIR := generated
 INCDIR := src
 LOGDIR := logs
-SFDIR := output
-SSDIR := refs
-YMLDIR := $(INCDIR)/configs
+CSDIR  := csound
+SFDIR  := output
+SSDIR  := refs
+YMLDIR := configs
 
 # --- Flags configurabili ---
 AUTOKILL ?= true
@@ -22,6 +23,7 @@ include make/test.mk
 include make/utils.mk
 include make/audioFile.mk
 include make/build.mk
+include make/clean.mk
 
 # --- Infrastruttura: creazione directory ---
 $(GENDIR):
