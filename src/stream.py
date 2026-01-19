@@ -14,7 +14,6 @@ Ispirato al DMX-1000 di Barry Truax (1988).
 """
 
 import random
-import soundfile as sf
 from typing import List, Optional, Union
 
 from grain import Grain
@@ -24,20 +23,8 @@ from pointer_controller import PointerController
 from pitch_controller import PitchController
 from density_controller import DensityController
 from voice_manager import VoiceManager
+from utils import *
 
-# Path per i sample audio
-PATHSAMPLES = './refs/'
-
-
-def get_sample_duration(filepath: str) -> float:
-    """Ottiene la durata di un file audio in secondi."""
-    info = sf.info(PATHSAMPLES + filepath)
-    return info.duration
-
-
-def random_percent(percent: float = 90) -> bool:
-    """Ritorna True con probabilità percent%."""
-    return (percent / 100) > random.uniform(0, 1)
 
 
 class Stream:
@@ -85,9 +72,9 @@ class Stream:
         
         # === 5. PARAMETRI DIRETTI (non delegati) ===
         self._init_grain_params(params)
-        self._init_output_params(params)
         self._init_grain_reverse(params)
-        
+        self._init_dephase_params(params)        
+        self._init_output_params(params)
         # === 6. RIFERIMENTI CSOUND (assegnati da Generator) ===
         self.sample_table_num: Optional[int] = None
         self.envelope_table_num: Optional[int] = None
@@ -180,16 +167,32 @@ class Stream:
             self.grain_reverse_mode = grain_params['reverse']
         else:
             self.grain_reverse_mode = 'auto'
-        
-        # Randomness per dephase
-        dephase_params = params.get('dephase', {})
-        default_randomness = 10 if dephase_params else 0
-        
-        self.grain_reverse_randomness = self._evaluator.parse(
-            dephase_params.get('pc_rand_reverse', default_randomness),
-            'grain_reverse_randomness'
-        )
-    
+
+    def _init_dephase_params(self, params: dict) -> None:
+            """
+            Inizializza parametri dephase. 
+            Se mancano nel YAML, restano None (per attivare Scenario A).
+            """
+            dephase_params = params.get('dephase') # Nota: None se manca la chiave 'dephase'
+            
+            if dephase_params is None:
+                # Se manca l'intera sezione, tutto None
+                self.grain_reverse_randomness = None
+                self.grain_duration_randomness = None
+                self.grain_pan_randomness = None
+                self.grain_volume_randomness = None
+                return
+
+            # Helper per parsare solo se presente
+            def parse_opt(key):
+                val = dephase_params.get(key)
+                return self._evaluator.parse(val, key) if val is not None else None
+
+            self.grain_reverse_randomness = parse_opt('pc_rand_reverse')
+            self.grain_duration_randomness = parse_opt('pc_rand_duration')
+            self.grain_pan_randomness = parse_opt('pc_rand_pan')
+            self.grain_volume_randomness = parse_opt('pc_rand_volume')
+            
     # =========================================================================
     # GENERAZIONE GRANI
     # =========================================================================
@@ -225,12 +228,14 @@ class Stream:
             while current_onset < self.duration:
                 elapsed_time = current_onset
                 
-                # 3. Calcola grain_duration (serve per density)
-                grain_dur = self._evaluator.evaluate_with_range(
-                    self.grain_duration,
-                    self.grain_duration_range,
-                    elapsed_time,
-                    'grain_duration'
+                # === 3. CALCOLO DURATA CON DEPHASE ===
+                grain_dur = self._evaluator.evaluate_gated_stochastic(
+                    base_param=self.grain_duration,
+                    range_param=self.grain_duration_range,
+                    prob_param=self.grain_duration_randomness,
+                    default_jitter=0.01,
+                    time=elapsed_time,
+                    param_name='grain_duration'
                 )
                 
                 # 4. Verifica se voice è attiva
@@ -263,50 +268,60 @@ class Stream:
         Args:
             voice_index: indice della voce (0-based)
             elapsed_time: tempo trascorso dall'inizio dello stream
-            grain_dur: durata del grano (già calcolata)
+            grain_dur: durata del grano (già calcolata in generate_grains con eventuale dephase)
         
         Returns:
             Grain: oggetto grano completo
         """
-        # PITCH: base + voice offset
+        # === 1. PITCH ===
+        # Base + Voice Offset
         base_pitch = self._pitch.calculate(elapsed_time)
         voice_pitch_mult = self._voice_manager.get_voice_pitch_multiplier(
             voice_index, elapsed_time
         )
         pitch_ratio = base_pitch * voice_pitch_mult
         
-        # POINTER: base + voice offset + jitter
+        # === 2. POINTER ===
+        # Base + Voice Offset + Jitter Voce
         base_pointer = self._pointer.calculate(elapsed_time)
+        
         voice_pointer_offset = self._voice_manager.get_voice_pointer_offset(
             voice_index, elapsed_time
-        ) * self.sample_dur_sec  # Scala a secondi
+        ) * self.sample_dur_sec  # Scala offset normalizzato in secondi
         
-        # Aggiungi variazione stocastica pointer delle voci
+        # Variazione stocastica specifica per le voci
         voice_ptr_range = self._voice_manager.get_voice_pointer_range(elapsed_time)
         voice_ptr_deviation = random.uniform(-0.5, 0.5) * voice_ptr_range * self.sample_dur_sec
         
         pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
         
-        # VOLUME con range stocastico
-        volume = self._evaluator.evaluate_with_range(
-            self.volume,
-            self.volume_range,
-            elapsed_time,
-            'volume'
+        # === 3. VOLUME (con Dephase) ===
+        # Applica variazione volume_range SOLO se pc_rand_volume lo permette
+        volume = self._evaluator.evaluate_gated_stochastic(
+            base_param=self.volume,
+            range_param=self.volume_range,
+            prob_param=self.grain_volume_randomness,
+            default_jitter=1.5,
+            time=elapsed_time,
+            param_name='volume'
         )
         
-        # PAN con range stocastico
-        pan = self._evaluator.evaluate_with_range(
-            self.pan,
-            self.pan_range,
-            elapsed_time,
-            'pan'
+        # === 4. PAN (con Dephase) ===
+        # Applica variazione pan_range SOLO se pc_rand_pan lo permette
+        pan = self._evaluator.evaluate_gated_stochastic(
+            base_param=self.pan,
+            range_param=self.pan_range,
+            prob_param=self.grain_pan_randomness,
+            default_jitter=15.0,
+            time=elapsed_time,
+            param_name='pan'
         )
         
-        # REVERSE
+        # === 5. REVERSE (con Dephase booleano) ===
+        # Gestito separatamente perché non è un range additivo ma un flip booleano
         grain_reverse = self._calculate_grain_reverse(elapsed_time)
         
-        # Onset assoluto (rispetto all'inizio della composizione)
+        # === 6. ONSET ===
         absolute_onset = self.onset + elapsed_time
         
         return Grain(
@@ -320,7 +335,7 @@ class Stream:
             envelope_table=self.envelope_table_num,
             grain_reverse=grain_reverse
         )
-    
+
     def _calculate_grain_reverse(self, elapsed_time: float) -> bool:
         """
         Calcola se il grano deve essere riprodotto al contrario.
@@ -334,17 +349,42 @@ class Stream:
         else:
             base_reverse = bool(self.grain_reverse_mode)
         
+        if self.grain_reverse_randomness is None:
+            return base_reverse
         # Applica randomness
         randomness = self._evaluator.evaluate(
             self.grain_reverse_randomness,
             elapsed_time,
-            'grain_reverse_randomness'
+            'dephase_prob'
         )
         
         if random_percent(randomness):
             return not base_reverse
         return base_reverse
     
+    def _apply_dephase(self, param_type: str, elapsed_time: float) -> bool:
+        """
+        Determina se applicare dephase per un parametro specifico.
+        
+        Args:
+            param_type: 'duration', 'pan', 'volume', etc.
+            elapsed_time: tempo corrente
+        
+        Returns:
+            bool: True se il dephase deve essere applicato
+        """
+        randomness_attr = f'grain_{param_type}_randomness'
+        
+        if not hasattr(self, randomness_attr):
+            return False
+        
+        randomness = self._evaluator.evaluate(
+            getattr(self, randomness_attr),
+            elapsed_time,
+            randomness_attr
+        )
+        
+        return random_percent(randomness)
     # =========================================================================
     # PROPRIETÀ PER BACKWARD COMPATIBILITY
     # =========================================================================

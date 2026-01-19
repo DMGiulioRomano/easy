@@ -15,6 +15,7 @@ from typing import Union, Optional, Dict, Any
 from envelope import Envelope
 from logger import log_clip_warning
 import random
+from utils import *
 
 @dataclass(frozen=True)
 class ParameterBounds:
@@ -49,10 +50,14 @@ class ParameterEvaluator:
         # Valutazione al tempo t
         value = evaluator.evaluate(density, elapsed_time=2.5, param_name='density')
         
-        # Valutazione con range stocastico
-        volume = evaluator.evaluate_with_range(
-            self.volume, self.volume_range, 
-            elapsed_time=2.5, param_name='volume'
+        # Valutazione stocastica con Dephase (Probability Gate)
+        # Applica deviazione +/- range solo se il "tiro di dadi" (probabilità 0-100) ha successo
+        volume = evaluator.evaluate_gated_stochastic(
+            param=self.volume,
+            param_range=self.volume_range,
+            prob_param=self.grain_volume_randomness,
+            time=2.5,
+            param_name='volume'
         )
     """
     
@@ -95,8 +100,7 @@ class ParameterEvaluator:
         'voice_pointer_range': ParameterBounds(0.0, 1.0),   # normalizzato, scalato runtime
 
         # --- Dephase/Reverse ---
-        'grain_reverse_randomness': ParameterBounds(0.0, 100.0),
-        
+        'dephase_prob': ParameterBounds(0.0, 100.0),
         # --- Loop ---
         'loop_dur': ParameterBounds(0.001, 100.0),  # max dipende da sample, gestito runtime
     }
@@ -188,7 +192,63 @@ class ParameterEvaluator:
             return Envelope(scaled_points)
         
         return Envelope(param)
-    
+
+    def evaluate_gated_stochastic(self, 
+                                  base_param, 
+                                  range_param, 
+                                  prob_param, 
+                                  default_jitter: float,
+                                  time: float, 
+                                  param_name: str) -> float:
+        """
+        Valuta un parametro combinando Range e Dephase Probabilistico.
+        
+        Logica (Scenari):
+        1. Dephase MANCANTE (None) -> Applica sempre il Range (Scenario A).
+        2. Dephase PRESENTE:
+           - Tira il dado (probabilità). Se fallisce -> Valore Base.
+           - Se ha successo:
+             a. Range > 0 -> Usa Range definito (Scenario C).
+             b. Range == 0 -> Usa default_jitter (Scenario B).
+        """
+        bounds = self.BOUNDS.get(param_name)
+        if bounds is None:
+            raise ValueError(f"Bounds non definiti per '{param_name}'")
+
+        # 1. Valuta Base
+        base_value = self.evaluate(base_param, time, param_name)
+        
+        # 2. Valuta Range (serve comunque per capire se è 0)
+        is_range_env = isinstance(range_param, Envelope)
+        range_val = range_param.evaluate(time) if is_range_env else float(range_param)
+        range_val = max(bounds.min_range, min(bounds.max_range, range_val))
+        
+        # 3. Logica Gated
+        should_apply_variation = False
+        
+        if prob_param is None:
+            # SCENARIO A: Dephase non definito -> Range sempre attivo
+            should_apply_variation = True
+        else:
+            # SCENARIO B/C: Dephase definito -> Check probabilità
+            # Nota: qui usiamo un nome fittizio per il log/bounds se necessario, 
+            # oppure assumiamo bounds 0-100 standard
+            prob_val = self.evaluate(prob_param, time, 'dephase_prob')
+            if random_percent(prob_val):
+                should_apply_variation = True
+                
+                # SCENARIO B: Gate aperto ma Range 0 -> Jitter automatico
+                if range_val == 0.0:
+                    range_val = default_jitter
+
+        # 4. Applicazione
+        if should_apply_variation and range_val > 0:
+            deviation = random.uniform(-0.5, 0.5) * range_val
+            final_value = base_value + deviation
+            return max(bounds.min_val, min(bounds.max_val, final_value))
+        
+        return base_value
+
     def evaluate(self, param: Union[float, int, Envelope], time: float, 
                  param_name: str) -> float:
         """
@@ -236,58 +296,6 @@ class ParameterEvaluator:
             )
         
         return clamped
-    
-    def evaluate_with_range(self, param: Union[float, int, Envelope],
-                            param_range: Union[float, int, Envelope],
-                            time: float, param_name: str) -> float:
-        """
-        Valuta parametro con deviazione stocastica da range.
-        
-        Il valore finale è: base ± (random * range/2)
-        
-        Args:
-            param: valore base (numero o Envelope)
-            param_range: ampiezza della variazione (numero o Envelope)
-            time: tempo in secondi
-            param_name: nome del parametro (per bounds)
-            
-        Returns:
-            float: valore con deviazione stocastica, clippato ai bounds
-        """
-        
-        bounds = self.BOUNDS.get(param_name)
-        if bounds is None:
-            raise ValueError(f"Bounds non definiti per '{param_name}'")
-        
-        # Valuta base
-        base_value = self.evaluate(param, time, param_name)
-        
-        # Valuta range (usa i bounds specifici per il range)
-        is_range_envelope = isinstance(param_range, Envelope)
-        range_value = param_range.evaluate(time) if is_range_envelope else float(param_range)
-        range_value = max(bounds.min_range, min(bounds.max_range, range_value))
-        
-        # Applica deviazione bipolare
-        deviation = random.uniform(-0.5, 0.5) * range_value
-        final_value = base_value + deviation
-        
-        # Clip finale ai bounds del parametro base
-        clamped_final = max(bounds.min_val, min(bounds.max_val, final_value))
-        
-        # Log se il risultato finale è stato clippato
-        if final_value != clamped_final:
-            log_clip_warning(
-                self.stream_id,
-                f"{param_name}_final",
-                time,
-                final_value,
-                clamped_final,
-                bounds.min_val,
-                bounds.max_val,
-                is_envelope=False  # è il risultato di un calcolo
-            )
-        
-        return clamped_final
     
     def evaluate_scaled(self, param: Union[float, int, Envelope], time: float,
                         param_name: str, scale: float) -> float:

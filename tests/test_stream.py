@@ -272,42 +272,43 @@ class TestEnvelopeParameters:
 # =============================================================================
 
 class TestGrainReverse:
-    """Test calcolo grain_reverse."""
+    """Test calcolo grain_reverse con nuova logica Dephase."""
     
-    def test_reverse_auto_follows_speed(self, stream_factory):
-        """In modalità 'auto', reverse segue il segno della velocità."""
-        # Velocità positiva → reverse False
-        stream_positive = stream_factory({
-            'stream_id': 'test_positive',
-            'onset': 0.0,
-            'duration': 1.0,
-            'sample': 'test.wav',
-            'grain': {'duration': 0.05, 'envelope': 'hanning', 'reverse': 'auto'},
-            'pointer': {'speed': 1.0}
-        })
-        stream_positive.generate_grains()
-        
-        if stream_positive.grains:
-            # Con randomness 0 e velocità positiva, dovrebbe essere False
-            # (ma potrebbe variare per il randomness default)
-            pass  # Test passa se non crasha
-    
-    def test_reverse_explicit_true(self, stream_factory):
-        """Reverse esplicito True."""
+    def test_reverse_auto_logic(self, stream_factory):
+        """Senza dephase, 'auto' segue rigorosamente la velocità."""
         stream = stream_factory({
-            'stream_id': 'test_reverse',
-            'onset': 0.0,
-            'duration': 1.0,
-            'sample': 'test.wav',
-            'grain': {'duration': 0.05, 'envelope': 'hanning', 'reverse': True}
+            'stream_id': 'rev_auto',
+            'onset': 0.0, 'duration': 0.2, 'sample': 'test.wav',
+            'grain': {'duration': 0.1, 'envelope': 'hanning', 'reverse': 'auto'},
+            'pointer': {'speed': 1.0} # Positiva -> Reverse False
+        })
+        stream.generate_grains()
+        assert stream.grains[0].grain_reverse is False
+
+        stream_neg = stream_factory({
+            'stream_id': 'rev_auto_neg',
+            'onset': 0.0, 'duration': 0.2, 'sample': 'test.wav',
+            'grain': {'duration': 0.1, 'envelope': 'hanning', 'reverse': 'auto'},
+            'pointer': {'speed': -1.0} # Negativa -> Reverse True
+        })
+        stream_neg.generate_grains()
+        assert stream_neg.grains[0].grain_reverse is True
+
+    def test_reverse_dephase_flip(self, stream_factory):
+        """Con dephase reverse 100%, il valore viene invertito."""
+        # Caso: Speed + (False), Dephase 100 -> Diventa True
+        stream = stream_factory({
+            'stream_id': 'rev_flip',
+            'onset': 0.0, 'duration': 0.2, 'sample': 'test.wav',
+            'grain': {'duration': 0.1, 'envelope': 'hanning', 'reverse': 'auto'},
+            'pointer': {'speed': 1.0},
+            'dephase': {'pc_rand_reverse': 100}
         })
         stream.generate_grains()
         
+        # Dovrebbe essere True (False invertito)
         if stream.grains:
-            # Con randomness 0 e reverse=True, tutti dovrebbero essere True
-            # (dipende dalla configurazione dephase)
-            pass  # Test passa se non crasha
-
+            assert stream.grains[0].grain_reverse is True
 
 # =============================================================================
 # 8. TEST EDGE CASES
@@ -331,7 +332,7 @@ class TestEdgeCases:
         assert stream.generated is True
     
     def test_zero_range_parameters(self, stream_factory):
-        """Range a zero = nessuna variazione stocastica."""
+        """Range a zero = nessuna variazione stocastica (Scenario A)."""
         random.seed(42)
         stream = stream_factory({
             'stream_id': 'no_range',
@@ -343,19 +344,20 @@ class TestEdgeCases:
             'volume_range': 0.0,
             'pan': 0.0,
             'pan_range': 0.0
+            # Dephase è implicito None, quindi Scenario A.
+            # Poiché range è 0, il risultato deve essere piatto.
         })
         stream.generate_grains()
         
         if stream.grains:
-            # Con range=0, tutti i grani dovrebbero avere lo stesso volume/pan
             volumes = set(g.volume for g in stream.grains)
             pans = set(g.pan for g in stream.grains)
             
-            # Dovrebbero essere tutti uguali (o quasi, considerando possibili
-            # micro-variazioni da altri controller)
-            assert len(volumes) <= 2  # Piccola tolleranza
-            assert len(pans) <= 2
-
+            # Devono essere esattamente 1 valore unico
+            assert len(volumes) == 1
+            assert len(pans) == 1
+            assert list(volumes)[0] == -6.0
+            assert list(pans)[0] == 0.0
 
 # =============================================================================
 # 9. TEST INTEGRAZIONE CON CONTROLLER
@@ -420,3 +422,80 @@ class TestScoreLineOutput:
             assert 'i "Grain"' in score_line
             assert str(grain.sample_table) in score_line
             assert str(grain.envelope_table) in score_line
+
+# =============================================================================
+# 11. TEST DEPHASE / MICRO-MODULATION
+# =============================================================================
+
+class TestDephaseModulation:
+    """Test della logica Dephase (Micromodulazione) e coesistenza con Range."""
+
+    def test_dephase_inactive_by_default(self, stream_factory):
+        """Se dephase non è specificato, il range funziona normalmente (Scenario A)."""
+        random.seed(42)
+        stream = stream_factory({
+            'stream_id': 'no_dephase',
+            'onset': 0.0, 'duration': 1.0, 'sample': 'test.wav',
+            # Range esplicito, Dephase assente
+            'volume': -6.0, 'volume_range': 6.0 
+        })
+        stream.generate_grains()
+        
+        # Dovremmo vedere variazione di volume dovuta al range
+        volumes = [g.volume for g in stream.grains]
+        assert max(volumes) != min(volumes)
+        # Verifica bounds approssimativi (-9 a -3)
+        assert min(volumes) >= -9.0
+        assert max(volumes) <= -3.0
+
+    def test_dephase_trigger_default_jitter(self, stream_factory):
+        """Se range=0 ma dephase=100, si attiva il default jitter (Scenario B)."""
+        random.seed(42)
+        stream = stream_factory({
+            'stream_id': 'dephase_only',
+            'onset': 0.0, 'duration': 1.0, 'sample': 'test.wav',
+            # Volume fisso, ma dephase attivo al 100%
+            'volume': -6.0, 'volume_range': 0.0,
+            'dephase': {'pc_rand_volume': 100}
+        })
+        stream.generate_grains()
+        
+        # Dovremmo vedere variazione nonostante volume_range=0
+        # grazie al default_jitter (es. 1.5dB definito in _create_grain)
+        volumes = [g.volume for g in stream.grains]
+        unique_volumes = set(volumes)
+        
+        assert len(unique_volumes) > 1
+        
+    def test_dephase_gates_range(self, stream_factory):
+        """Se dephase=0, il range viene ignorato anche se definito (Scenario C - Gate Closed)."""
+        random.seed(42)
+        stream = stream_factory({
+            'stream_id': 'dephase_closed',
+            'onset': 0.0, 'duration': 1.0, 'sample': 'test.wav',
+            # Range enorme, ma Dephase a 0%
+            'volume': -6.0, 'volume_range': 100.0,
+            'dephase': {'pc_rand_volume': 0}
+        })
+        stream.generate_grains()
+        
+        # Tutti i volumi dovrebbero essere uguali al base
+        volumes = {g.volume for g in stream.grains}
+        assert len(volumes) == 1
+        assert list(volumes)[0] == -6.0
+
+    def test_dephase_pan_inversion(self, stream_factory):
+        """Test specifico per inversione di fase del Pan."""
+        # Nota: questo è difficile da testare deterministicamente senza mockare random_percent
+        # Testiamo solo che con dephase attivo succeda qualcosa
+        stream = stream_factory({
+            'stream_id': 'pan_dephase',
+            'onset': 0.0, 'duration': 1.0, 'sample': 'test.wav',
+            'pan': 45.0, 'pan_range': 0.0,
+            'dephase': {'pc_rand_pan': 100} # Sempre attivo
+        })
+        stream.generate_grains()
+        
+        # Con pan 45 e dephase 100, dovremmo avere variazioni (jitter)
+        pans = {g.pan for g in stream.grains}
+        assert len(pans) > 1

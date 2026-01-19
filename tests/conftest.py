@@ -193,8 +193,9 @@ def pitch_semitones_with_range(pitch_factory):
 def mock_evaluator():
     """
     Mock di ParameterEvaluator configurato per i test.
+    Aggiornato per supportare evaluate_gated_stochastic.
     """
-    from parameter_evaluator import ParameterBounds
+    from parameter_evaluator import ParameterBounds, ParameterEvaluator # Assicurati dell'import
     
     evaluator = Mock(spec=ParameterEvaluator)
     
@@ -214,7 +215,13 @@ def mock_evaluator():
             
         return val
     
-    # 3. GET_BOUNDS: Restituisce bounds realistici per i parametri comuni
+    # 3. EVALUATE_GATED_STOCHASTIC (Nuovo!)
+    # Per i test con il mock, ignoriamo la stocasticità e ritorniamo il valore base.
+    # Questo garantisce determinismo nei test dei controller.
+    def evaluate_gated_stochastic_side_effect(base_param, range_param, prob_param, default_jitter, time, param_name):
+        return evaluate_side_effect(base_param, time, param_name)
+    
+    # 4. GET_BOUNDS: Restituisce bounds realistici
     def get_bounds_side_effect(param_name):
         default_bounds = {
             'num_voices': ParameterBounds(1.0, 20.0),
@@ -223,15 +230,19 @@ def mock_evaluator():
             'voice_pointer_range': ParameterBounds(0.0, 1.0),
             'density': ParameterBounds(0.1, 4000.0),
             'effective_density': ParameterBounds(0.1, 4000.0),
+            # Aggiungi bounds se servono per altri test specifici col mock
         }
         return default_bounds.get(param_name)
     
+    # Assegnazione side effects
     evaluator.parse.side_effect = parse_side_effect
     evaluator.evaluate.side_effect = evaluate_side_effect
-    evaluator.get_bounds.side_effect = get_bounds_side_effect  # <-- AGGIUNTO!
+    evaluator.get_bounds.side_effect = get_bounds_side_effect
+    
+    # Sostituiamo il vecchio evaluate_with_range con il nuovo metodo
+    evaluator.evaluate_gated_stochastic.side_effect = evaluate_gated_stochastic_side_effect
     
     return evaluator
-
 @pytest.fixture
 def density_factory(mock_evaluator):  # <--- CAMBIATO QUI: usa mock_evaluator
     """

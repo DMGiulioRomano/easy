@@ -1,6 +1,7 @@
 import pytest
 from envelope import Envelope
 from parameter_evaluator import ParameterEvaluator, ParameterBounds
+from unittest.mock import Mock, patch
 
 # =============================================================================
 # 1. TEST PARSING (Conversione input -> dati utilizzabili)
@@ -104,49 +105,121 @@ def test_missing_bounds_raises_error(evaluator):
     assert "Bounds non definiti" in str(excinfo.value)
 
 # =============================================================================
-# 4. TEST RANGE E RANDOM (Stocastico)
+# 4. TEST GATED STOCHASTIC (Range + Dephase)
 # =============================================================================
 
-def test_evaluate_with_range_logic(evaluator, monkeypatch):
+@patch('parameter_evaluator.random.uniform', return_value=0.5) # Max deviation positiva
+@patch('parameter_evaluator.random_percent')
+def test_evaluate_gated_scenario_A_no_dephase(mock_rand_pct, mock_uniform, evaluator):
     """
-    Testa evaluate_with_range mockando random.uniform.
-    Formula: base + random(-0.5, 0.5) * range
+    SCENARIO A: Dephase non definito (None).
+    Il range deve essere SEMPRE applicato.
     """
-    import random
-    
-    # 1. Mockiamo random.uniform per restituire sempre il valore massimo (0.5)
-    # Questo ci permette di testare la matematica deterministicamente
-    monkeypatch.setattr(random, "uniform", lambda a, b: 0.5)
-    
     # Parametro: pan (Min -3600, Max 3600)
     # Base: 0
     # Range: 100
+    # Dephase: None
     # Expected: 0 + (0.5 * 100) = 50
-    val = evaluator.evaluate_with_range(
-        param=0, 
-        param_range=100, 
+    
+    val = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=100, 
+        prob_param=None,  # SCENARIO A
+        default_jitter=15.0,
         time=0, 
         param_name='pan'
     )
-    assert val == 50.0
-
-def test_evaluate_with_range_clipping(evaluator, monkeypatch):
-    """
-    Se la variazione random spinge il valore fuori dai limiti,
-    deve essere clippato.
-    """
-    import random
-    monkeypatch.setattr(random, "uniform", lambda a, b: 0.5) # Max deviation positiva
     
+    assert val == 50.0
+    # random_percent non deve essere chiamato se prob_param è None
+    mock_rand_pct.assert_not_called()
+
+@patch('parameter_evaluator.random.uniform', return_value=0.5)
+@patch('parameter_evaluator.random_percent')
+def test_evaluate_gated_scenario_B_implicit_jitter(mock_rand_pct, mock_uniform, evaluator):
+    """
+    SCENARIO B: Dephase definito, Range zero.
+    Se il dephase scatta, si applica il default_jitter.
+    """
+    # Configura random_percent per restituire True (Dephase scatta)
+    mock_rand_pct.return_value = True
+    
+    # Base: 100
+    # Range: 0 (esplicito zero)
+    # Dephase: 50% (simulato True)
+    # Default Jitter: 10
+    # Expected: 100 + (0.5 * 10) = 105
+    
+    val = evaluator.evaluate_gated_stochastic(
+        base_param=100, 
+        range_param=0, 
+        prob_param=50, 
+        default_jitter=10.0,
+        time=0, 
+        param_name='pan'
+    )
+    
+    assert val == 105.0
+    mock_rand_pct.assert_called()
+
+@patch('parameter_evaluator.random.uniform', return_value=0.5)
+@patch('parameter_evaluator.random_percent')
+def test_evaluate_gated_scenario_C_gated_range(mock_rand_pct, mock_uniform, evaluator):
+    """
+    SCENARIO C: Dephase definito E Range definito.
+    Il dephase agisce da gate per il range.
+    """
+    # CASO 1: Dephase scatta (True)
+    mock_rand_pct.return_value = True
+    
+    # Base: 0
+    # Range: 100
+    # Dephase: 50% (True)
+    # Expected: 0 + (0.5 * 100) = 50
+    val_hit = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=100, 
+        prob_param=50, 
+        default_jitter=0,
+        time=0, 
+        param_name='pan'
+    )
+    assert val_hit == 50.0
+
+    # CASO 2: Dephase non scatta (False)
+    mock_rand_pct.return_value = False
+    
+    # Expected: 0 (Valore base puro)
+    val_miss = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=100, 
+        prob_param=50, 
+        default_jitter=0,
+        time=0, 
+        param_name='pan'
+    )
+    assert val_miss == 0.0
+
+@patch('parameter_evaluator.random.uniform', return_value=0.5)
+def test_evaluate_gated_clipping(mock_uniform, evaluator):
+    """
+    Verifica che il risultato finale venga clippato ai bounds del parametro.
+    """
     # Density: Max 4000
     # Base: 3950
-    # Range: 200 (Deviazione max = +100)
-    # Calcolo teorico: 3950 + 100 = 4050
-    # Expected: 4000 (clippato)
+    # Range: 200 (Deviazione +100)
+    # Dephase: None (Sempre attivo)
     
-    val = evaluator.evaluate_with_range(3950, 200, 0, 'density')
+    val = evaluator.evaluate_gated_stochastic(
+        base_param=3950,
+        range_param=200,
+        prob_param=None,
+        default_jitter=0,
+        time=0,
+        param_name='density'
+    )
+    
     assert val == 4000.0
-
 # =============================================================================
 # 5. TEST PARAMETRI SCALATI
 # =============================================================================
@@ -184,8 +257,6 @@ def test_evaluate_scaled(evaluator):
     )
     assert val_overflow == 10.0
 
-# Aggiungi in coda a tests/test_parameter_evaluator.py
-
 def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
     """
     FEATURE CRITICA: Il range di randomizzazione è esso stesso un Envelope.
@@ -200,13 +271,34 @@ def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
     range_env = Envelope([[0, 0], [10, 100]])
     
     # T=0: Range è 0. Deviazione = 0.5 * 0 = 0. Risultato 0.
-    val_0 = evaluator.evaluate_with_range(0, range_env, time=0, param_name='pan')
+    val_0 = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=range_env, 
+        prob_param=None, # None = Scenario A: applica sempre il range
+        default_jitter=0,
+        time=0, 
+        param_name='pan'
+    )
     assert val_0 == 0.0
     
     # T=5: Range è 50. Deviazione = 0.5 * 50 = 25. Risultato 25.
-    val_5 = evaluator.evaluate_with_range(0, range_env, time=5, param_name='pan')
+    val_5 = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=range_env, 
+        prob_param=None,
+        default_jitter=0,
+        time=5, 
+        param_name='pan'
+    )
     assert val_5 == 25.0
     
     # T=10: Range è 100. Deviazione = 0.5 * 100 = 50. Risultato 50.
-    val_10 = evaluator.evaluate_with_range(0, range_env, time=10, param_name='pan')
+    val_10 = evaluator.evaluate_gated_stochastic(
+        base_param=0, 
+        range_param=range_env, 
+        prob_param=None,
+        default_jitter=0,
+        time=10, 
+        param_name='pan'
+    )
     assert val_10 == 50.0
