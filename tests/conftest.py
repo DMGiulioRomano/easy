@@ -67,3 +67,49 @@ def env_cubic():
     """
     data = {'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 10], [3, 0]]}
     return Envelope(data)
+
+# =============================================================================
+# FIXTURES POINTER CONTROLLER
+# =============================================================================
+
+@pytest.fixture
+def sample_dur_sec():
+    """Durata sample standard per test (10 secondi)."""
+    return 10.0
+
+@pytest.fixture
+def pointer_factory(evaluator, sample_dur_sec):
+    """
+    Factory per creare PointerController con configurazioni custom.
+    
+    Usage:
+        def test_something(pointer_factory):
+            pointer = pointer_factory({'start': 1.0, 'speed': 2.0})
+            # oppure con override:
+            pointer = pointer_factory({'speed': 0.5}, sample_dur=5.0)
+    """
+    from pointer_controller import PointerController
+    
+    def _create(params: dict, sample_dur: float = None, eval_override = None):
+        return PointerController(
+            params=params,
+            evaluator=eval_override or evaluator,
+            sample_dur_sec=sample_dur or sample_dur_sec
+        )
+    
+    return _create
+
+@pytest.fixture
+def pointer_basic(pointer_factory):
+    """PointerController base: start=0, speed=1, no loop."""
+    return pointer_factory({'start': 0.0, 'speed': 1.0})
+
+@pytest.fixture
+def pointer_with_loop(pointer_factory):
+    """PointerController con loop fisso (2.0 - 4.0)."""
+    return pointer_factory({
+        'start': 0.0,
+        'speed': 1.0,
+        'loop_start': 2.0,
+        'loop_end': 4.0
+    })
