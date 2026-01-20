@@ -56,7 +56,7 @@ help:
 	@echo "  make FILE=nome       - Build singolo file"
 	@echo ""
 	@echo " Testing:"
-	@echo "  make run-unit-tests  - Esegui test"
+	@echo "  make tests  - Esegui test"
 	@echo ""
 	@echo " Utility:"
 	@echo "  make open            - Apri file audio generati"

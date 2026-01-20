@@ -14,7 +14,7 @@ VENV_MARKER := $(VENV_DIR)/.installed
 
 # --- TARGETS ---
 
-.PHONY: venv-setup venv-clean run-unit-tests
+.PHONY: venv-setup venv-clean tests
 
 # Target principale per assicurarsi che l'ambiente sia pronto
 venv-setup: $(VENV_MARKER)
@@ -29,7 +29,7 @@ $(VENV_MARKER): $(REQUIREMENTS)
 	@echo "✅ [VENV] Environment ready."
 
 # Lancia i test usando pytest dentro il venv
-run-unit-tests: venv-setup
+tests: venv-setup
 	@echo "🧪 [TEST] Running pytest..."
 	$(PYTEST_VENV) tests/
 

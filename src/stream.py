@@ -169,29 +169,37 @@ class Stream:
 
     def _init_dephase_params(self, params: dict) -> None:
             """
-            Inizializza parametri dephase. 
-            Se mancano nel YAML, restano None (per attivare Scenario A).
+            Inizializza parametri dephase.
+            
+            Logica:
+            - Se 'dephase:' ASSENTE → tutto None (range al 100% se presente)
+            - Se 'dephase:' PRESENTE (anche vuoto) → prob non specificate = 1%
             """
-            dephase_params = params.get('dephase') # Nota: None se manca la chiave 'dephase'
-            print(f"dephase_param: {dephase_params}")
+            DEFAULT_DEPHASE_PROB = 1.0  # 1% probabilità di default
+            
+            dephase_params = params.get('dephase')
+            
             if dephase_params is None:
-                # Se manca l'intera sezione, tutto None
+                # dephase: ASSENTE → tutto None (Scenari 3, 4)
                 self.grain_reverse_randomness = None
                 self.grain_duration_randomness = None
                 self.grain_pan_randomness = None
                 self.grain_volume_randomness = None
                 return
 
-            # Helper per parsare solo se presente
-            def parse_opt(key):
+            # dephase: PRESENTE (anche se vuoto) → usa default 1% per non specificati
+            def parse_with_default(key):
                 val = dephase_params.get(key)
-                return self._evaluator.parse(val, key) if val is not None else None
-            self.grain_reverse_randomness = parse_opt('pc_rand_reverse')
-            self.grain_duration_randomness = parse_opt('pc_rand_duration')
-            self.grain_pan_randomness = parse_opt('pc_rand_pan')
-            self.grain_volume_randomness = parse_opt('pc_rand_volume')
-            print(f"i parametri random: {self.grain_duration_randomness}, {self.grain_reverse_randomness}, {self.grain_pan_randomness}")
+                if val is not None:
+                    return self._evaluator.parse(val, key)
+                else:
+                    return DEFAULT_DEPHASE_PROB
             
+            self.grain_reverse_randomness = parse_with_default('pc_rand_reverse')
+            self.grain_duration_randomness = parse_with_default('pc_rand_duration')
+            self.grain_pan_randomness = parse_with_default('pc_rand_pan')
+            self.grain_volume_randomness = parse_with_default('pc_rand_volume')
+
     # =========================================================================
     # GENERAZIONE GRANI
     # =========================================================================
