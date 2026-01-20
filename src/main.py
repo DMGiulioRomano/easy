@@ -67,7 +67,6 @@ def main():
             
             viz = ScoreVisualizer(generator, config={
                 'page_duration': 15.0,
-                'pitch_range': (0.5, 2.0),
                 'show_static_params': show_static,
             })
             viz.export_pdf(pdf_file)
