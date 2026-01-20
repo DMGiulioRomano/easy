@@ -32,6 +32,7 @@ class ParameterBounds:
     max_val: float
     min_range: float = 0.0
     max_range: float = 0.0
+    default_jitter: float = 0.0
 
 
 class ParameterEvaluator:
@@ -60,7 +61,11 @@ class ParameterEvaluator:
             param_name='volume'
         )
     """
-    
+
+    # Probabilità di default per il sistema dephase (1%)
+    # Usato quando 'dephase:' è presente ma la probabilità specifica non è definita
+    DEFAULT_DEPHASE_PROB = 1.0
+
     # =========================================================================
     # BOUNDS CENTRALIZZATI
     # =========================================================================
@@ -70,41 +75,178 @@ class ParameterEvaluator:
     # Formato: 'nome_parametro': ParameterBounds(min, max, min_range, max_range)
     # =========================================================================
     
-    BOUNDS: Dict[str, ParameterBounds] = {
-        # --- Density ---
-        'density': ParameterBounds(0.1, 4000.0, 0.0, 100.0),
-        'fill_factor': ParameterBounds(0.001, 50.0, 0.0, 10.0),
-        'distribution': ParameterBounds(0.0, 1.0),
-        'effective_density': ParameterBounds(0.1, 4000.0),         
-        
-        # --- Grain ---
-        'grain_duration': ParameterBounds(0.0001, 10.0, 0.0, 1.0),
-        
-        # --- Pitch ---
-        'pitch_semitones': ParameterBounds(-36.0, 36.0, 0.0, 36.0),
-        'pitch_ratio': ParameterBounds(0.125, 8.0, 0.0, 2.0),
-        
-        # --- Pointer ---
-        'pointer_speed': ParameterBounds(-100.0, 100.0),
-        'pointer_jitter': ParameterBounds(0.0, 10.0),
-        'pointer_offset_range': ParameterBounds(0.0, 1.0),
-        
-        # --- Output ---
-        'volume': ParameterBounds(-120.0, 12.0, 0.0, 12.0),
-        'pan': ParameterBounds(-3600.0, 3600.0, 0.0, 360.0),
-        
-        # --- Voices ---
-        'num_voices': ParameterBounds(1.0, 20.0),
-        'voice_pitch_offset': ParameterBounds(0.0, 24.0),
-        'voice_pointer_offset': ParameterBounds(0.0, 1.0),  # normalizzato, scalato runtime
-        'voice_pointer_range': ParameterBounds(0.0, 1.0),   # normalizzato, scalato runtime
-
-        # --- Dephase/Reverse ---
-        'dephase_prob': ParameterBounds(0.0, 100.0),
-        # --- Loop ---
-        'loop_dur': ParameterBounds(0.001, 100.0),  # max dipende da sample, gestito runtime
-    }
+@dataclass(frozen=True)
+class ParameterBounds:
+    """
+    Definisce i limiti di sicurezza per un parametro.
     
+    Attributes:
+        min_val: valore minimo ammesso
+        max_val: valore massimo ammesso
+        min_range: minimo per il parametro _range associato (default 0)
+        max_range: massimo per il parametro _range associato (default 0)
+        default_jitter: jitter di fallback quando dephase attivo ma range=0
+    """
+    min_val: float
+    max_val: float
+    min_range: float = 0.0
+    max_range: float = 0.0
+    default_jitter: float = 0.0  # ← NUOVO
+
+
+class ParameterEvaluator:
+    """
+    Gestisce parsing, valutazione e validazione dei parametri granulari.
+    
+    Centralizza tutte le costanti STREAM_MIN/MAX_* in un unico dizionario,
+    rendendo facile aggiungere nuovi parametri o modificare i bounds.
+    """
+    
+    # =========================================================================
+    # COSTANTI DI SISTEMA
+    # =========================================================================
+    
+    # Probabilità di default per il sistema dephase (1%)
+    # Usato quando 'dephase:' è presente ma la probabilità specifica non è definita
+    DEFAULT_DEPHASE_PROB = 1.0
+    
+    # =========================================================================
+    # BOUNDS CENTRALIZZATI
+    # =========================================================================
+    # Tutti i limiti di sicurezza in un unico posto.
+    # Per aggiungere un nuovo parametro: aggiungi una riga qui.
+    # 
+    # Formato: 'nome_parametro': ParameterBounds(
+    #     min_val, max_val, min_range, max_range, default_jitter
+    # )
+    # =========================================================================
+    
+    BOUNDS: Dict[str, ParameterBounds] = {
+        # =====================================================================
+        # DENSITY
+        # =====================================================================
+        'density': ParameterBounds(
+            min_val=0.1,
+            max_val=4000.0,
+            min_range=0.0,
+            max_range=100.0,
+            default_jitter=50.0  # ~50 grani/s di variazione implicita
+        ),
+        'fill_factor': ParameterBounds(
+            min_val=0.001,
+            max_val=50.0,
+            min_range=0.0,
+            max_range=10.0
+        ),
+        'distribution': ParameterBounds(
+            min_val=0.0,
+            max_val=1.0
+        ),
+        'effective_density': ParameterBounds(
+            min_val=0.1,
+            max_val=4000.0
+        ),
+        
+        # =====================================================================
+        # GRAIN
+        # =====================================================================
+        'grain_duration': ParameterBounds(
+            min_val=0.0001,
+            max_val=10.0,
+            min_range=0.0,
+            max_range=1.0,
+            default_jitter=0.01  # 10ms di variazione implicita
+        ),
+        
+        # =====================================================================
+        # PITCH
+        # =====================================================================
+        'pitch_semitones': ParameterBounds(
+            min_val=-36.0,
+            max_val=36.0,
+            min_range=0.0,
+            max_range=36.0,
+            default_jitter=0.5  # ~mezzo semitono di microtuning
+        ),
+        'pitch_ratio': ParameterBounds(
+            min_val=0.125,
+            max_val=8.0,
+            min_range=0.0,
+            max_range=2.0,
+            default_jitter=0.02  # ~2% variazione ratio
+        ),
+        
+        # =====================================================================
+        # POINTER
+        # =====================================================================
+        'pointer_speed': ParameterBounds(
+            min_val=-100.0,
+            max_val=100.0
+        ),
+        'pointer_jitter': ParameterBounds(
+            min_val=0.0,
+            max_val=10.0
+        ),
+        'pointer_offset_range': ParameterBounds(
+            min_val=0.0,
+            max_val=1.0
+        ),
+        
+        # =====================================================================
+        # OUTPUT (Volume, Pan)
+        # =====================================================================
+        'volume': ParameterBounds(
+            min_val=-120.0,
+            max_val=12.0,
+            min_range=0.0,
+            max_range=24.0,
+            default_jitter=1.5  # ±0.75 dB di variazione implicita
+        ),
+        'pan': ParameterBounds(
+            min_val=-3600.0,
+            max_val=3600.0,
+            min_range=0.0,
+            max_range=360.0,
+            default_jitter=15.0  # ±7.5° di variazione implicita
+        ),
+        
+        # =====================================================================
+        # VOICES
+        # =====================================================================
+        'num_voices': ParameterBounds(
+            min_val=1.0,
+            max_val=20.0
+        ),
+        'voice_pitch_offset': ParameterBounds(
+            min_val=0.0,
+            max_val=24.0
+        ),
+        'voice_pointer_offset': ParameterBounds(
+            min_val=0.0,
+            max_val=1.0  # Normalizzato, scalato runtime con sample_dur
+        ),
+        'voice_pointer_range': ParameterBounds(
+            min_val=0.0,
+            max_val=1.0  # Normalizzato, scalato runtime con sample_dur
+        ),
+        
+        # =====================================================================
+        # DEPHASE / REVERSE
+        # =====================================================================
+        'dephase_prob': ParameterBounds(
+            min_val=0.0,
+            max_val=100.0
+        ),
+        
+        # =====================================================================
+        # LOOP
+        # =====================================================================
+        'loop_dur': ParameterBounds(
+            min_val=0.001,
+            max_val=100.0  # Max dipende da sample, gestito runtime
+        ),
+    }
+
     def __init__(self, stream_id: str, duration: float, time_mode: str = 'absolute'):
         """
         Inizializza l'evaluator per uno stream specifico.
@@ -193,37 +335,75 @@ class ParameterEvaluator:
         
         return Envelope(param)
 
+    def parse_dephase_param(self, value) -> Union[float, Envelope]:
+        """
+        Parsa un parametro dephase, applicando DEFAULT_DEPHASE_PROB se non specificato.
+        
+        Centralizza la logica:
+        - Se value è definito → parse normale con bounds 'dephase_prob'
+        - Se value è None → ritorna DEFAULT_DEPHASE_PROB
+        
+        Args:
+            value: valore dal YAML (numero, lista breakpoints, o None)
+            
+        Returns:
+            float o Envelope: probabilità parsata o default
+            
+        Example:
+            # Nel YAML: pc_rand_volume: 50
+            prob = evaluator.parse_dephase_param(50)  # → 50.0
+            
+            # Nel YAML: pc_rand_volume non presente
+            prob = evaluator.parse_dephase_param(None)  # → 1.0 (default)
+            
+            # Nel YAML: pc_rand_volume: [[0, 0], [10, 100]]
+            prob = evaluator.parse_dephase_param([[0, 0], [10, 100]])  # → Envelope
+        """
+        if value is not None:
+            return self.parse(value, 'dephase_prob')
+        return self.DEFAULT_DEPHASE_PROB
+
     def evaluate_gated_stochastic(self, 
-                                  base_param, 
-                                  range_param, 
-                                  prob_param, 
-                                  default_jitter: float,
-                                  time: float, 
-                                  param_name: str) -> float:
+                                base_param, 
+                                range_param, 
+                                prob_param, 
+                                time: float, 
+                                param_name: str) -> float:
         """
         Valuta un parametro combinando Range e Dephase Probabilistico.
         
         Logica (Scenari):
-        1. Dephase MANCANTE (None) -> Applica sempre il Range (Scenario A).
-        2. Dephase PRESENTE:
-           - Tira il dado (probabilità). Se fallisce -> Valore Base.
-           - Se ha successo:
-             a. Range > 0 -> Usa Range definito (Scenario C).
-             b. Range == 0 -> Usa default_jitter (Scenario B).
+        A. Dephase MANCANTE (None) -> Applica sempre il Range
+        B. Dephase PRESENTE, Range == 0 -> Usa default_jitter dai BOUNDS
+        C. Dephase PRESENTE, Range > 0 -> Usa Range come gate probabilistico
+        
+        Args:
+            base_param: valore base (numero o Envelope)
+            range_param: range di variazione (numero o Envelope)
+            prob_param: probabilità dephase 0-100 (numero, Envelope, o None)
+            time: tempo in secondi
+            param_name: nome parametro per lookup BOUNDS
+            
+        Returns:
+            float: valore finale clippato ai bounds
+            
+        Raises:
+            ValueError: se param_name non ha bounds definiti
         """
+        # 1. Recupera i bounds (che ora contengono tutto)
         bounds = self.BOUNDS.get(param_name)
         if bounds is None:
             raise ValueError(f"Bounds non definiti per '{param_name}'")
-
-        # 1. Valuta Base
+        
+        # 2. Valuta Base
         base_value = self.evaluate(base_param, time, param_name)
         
-        # 2. Valuta Range (serve comunque per capire se è 0)
+        # 3. Valuta Range
         is_range_env = isinstance(range_param, Envelope)
         range_val = range_param.evaluate(time) if is_range_env else float(range_param)
         range_val = max(bounds.min_range, min(bounds.max_range, range_val))
         
-        # 3. Logica Gated
+        # 4. Logica Gated
         should_apply_variation = False
         
         if prob_param is None:
@@ -231,17 +411,15 @@ class ParameterEvaluator:
             should_apply_variation = True
         else:
             # SCENARIO B/C: Dephase definito -> Check probabilità
-            # Nota: qui usiamo un nome fittizio per il log/bounds se necessario, 
-            # oppure assumiamo bounds 0-100 standard
             prob_val = self.evaluate(prob_param, time, 'dephase_prob')
             if random_percent(prob_val):
                 should_apply_variation = True
                 
-                # SCENARIO B: Gate aperto ma Range 0 -> Jitter automatico
+                # SCENARIO B: Gate aperto ma Range 0 -> Jitter dai bounds
                 if range_val == 0.0:
-                    range_val = default_jitter
-
-        # 4. Applicazione
+                    range_val = bounds.default_jitter
+        
+        # 5. Applicazione variazione
         if should_apply_variation and range_val > 0:
             deviation = random.uniform(-0.5, 0.5) * range_val
             final_value = base_value + deviation

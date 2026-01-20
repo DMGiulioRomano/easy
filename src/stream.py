@@ -168,37 +168,41 @@ class Stream:
             self.grain_reverse_mode = 'auto'
 
     def _init_dephase_params(self, params: dict) -> None:
-            """
-            Inizializza parametri dephase.
-            
-            Logica:
-            - Se 'dephase:' ASSENTE → tutto None (range al 100% se presente)
-            - Se 'dephase:' PRESENTE (anche vuoto) → prob non specificate = 1%
-            """
-            DEFAULT_DEPHASE_PROB = 1.0  # 1% probabilità di default
-            
-            dephase_params = params.get('dephase')
-            
-            if dephase_params is None:
-                # dephase: ASSENTE → tutto None (Scenari 3, 4)
-                self.grain_reverse_randomness = None
-                self.grain_duration_randomness = None
-                self.grain_pan_randomness = None
-                self.grain_volume_randomness = None
-                return
-
-            # dephase: PRESENTE (anche se vuoto) → usa default 1% per non specificati
-            def parse_with_default(key):
-                val = dephase_params.get(key)
-                if val is not None:
-                    return self._evaluator.parse(val, key)
-                else:
-                    return DEFAULT_DEPHASE_PROB
-            
-            self.grain_reverse_randomness = parse_with_default('pc_rand_reverse')
-            self.grain_duration_randomness = parse_with_default('pc_rand_duration')
-            self.grain_pan_randomness = parse_with_default('pc_rand_pan')
-            self.grain_volume_randomness = parse_with_default('pc_rand_volume')
+        """
+        Inizializza parametri dephase.
+        
+        Logica:
+        - Se 'dephase:' ASSENTE → tutto None (Scenario A: range sempre attivo)
+        - Se 'dephase:' PRESENTE (anche vuoto) → prob non specificate = DEFAULT_DEPHASE_PROB
+        
+        I valori None indicano "nessun gate probabilistico" → il range viene
+        sempre applicato (se definito). I valori numerici/Envelope indicano
+        la probabilità (0-100) che il range venga applicato per ogni grano.
+        """
+        dephase_params = params.get('dephase')
+        
+        if dephase_params is None:
+            # dephase: ASSENTE → tutto None (Scenari 3, 4)
+            # None significa: "applica sempre il range definito"
+            self.grain_reverse_randomness = None
+            self.grain_duration_randomness = None
+            self.grain_pan_randomness = None
+            self.grain_volume_randomness = None
+            return
+        # dephase: PRESENTE (anche se vuoto {}) → usa metodo helper
+        # Il metodo applica DEFAULT_DEPHASE_PROB per valori non specificati
+        self.grain_reverse_randomness = self._evaluator.parse_dephase_param(
+            dephase_params.get('pc_rand_reverse')
+        )
+        self.grain_duration_randomness = self._evaluator.parse_dephase_param(
+            dephase_params.get('pc_rand_duration')
+        )
+        self.grain_pan_randomness = self._evaluator.parse_dephase_param(
+            dephase_params.get('pc_rand_pan')
+        )
+        self.grain_volume_randomness = self._evaluator.parse_dephase_param(
+            dephase_params.get('pc_rand_volume')
+        )
 
     # =========================================================================
     # GENERAZIONE GRANI
@@ -240,7 +244,6 @@ class Stream:
                     base_param=self.grain_duration,
                     range_param=self.grain_duration_range,
                     prob_param=self.grain_duration_randomness,
-                    default_jitter=0.05,
                     time=elapsed_time,
                     param_name='grain_duration'
                 )
@@ -308,7 +311,6 @@ class Stream:
             base_param=self.volume,
             range_param=self.volume_range,
             prob_param=self.grain_volume_randomness,
-            default_jitter=24,
             time=elapsed_time,
             param_name='volume'
         )
@@ -319,7 +321,6 @@ class Stream:
             base_param=self.pan,
             range_param=self.pan_range,
             prob_param=self.grain_pan_randomness,
-            default_jitter=180.0,
             time=elapsed_time,
             param_name='pan'
         )

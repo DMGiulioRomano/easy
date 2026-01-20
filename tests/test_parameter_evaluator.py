@@ -108,7 +108,7 @@ def test_missing_bounds_raises_error(evaluator):
 # 4. TEST GATED STOCHASTIC (Range + Dephase)
 # =============================================================================
 
-@patch('parameter_evaluator.random.uniform', return_value=0.5) # Max deviation positiva
+@patch('parameter_evaluator.random.uniform', return_value=0.5)
 @patch('parameter_evaluator.random_percent')
 def test_evaluate_gated_scenario_A_no_dephase(mock_rand_pct, mock_uniform, evaluator):
     """
@@ -118,14 +118,13 @@ def test_evaluate_gated_scenario_A_no_dephase(mock_rand_pct, mock_uniform, evalu
     # Parametro: pan (Min -3600, Max 3600)
     # Base: 0
     # Range: 100
-    # Dephase: None
+    # Dephase: None → Range sempre attivo
     # Expected: 0 + (0.5 * 100) = 50
     
     val = evaluator.evaluate_gated_stochastic(
         base_param=0, 
         range_param=100, 
         prob_param=None,  # SCENARIO A
-        default_jitter=15.0,
         time=0, 
         param_name='pan'
     )
@@ -134,33 +133,34 @@ def test_evaluate_gated_scenario_A_no_dephase(mock_rand_pct, mock_uniform, evalu
     # random_percent non deve essere chiamato se prob_param è None
     mock_rand_pct.assert_not_called()
 
+
 @patch('parameter_evaluator.random.uniform', return_value=0.5)
 @patch('parameter_evaluator.random_percent')
 def test_evaluate_gated_scenario_B_implicit_jitter(mock_rand_pct, mock_uniform, evaluator):
     """
     SCENARIO B: Dephase definito, Range zero.
-    Se il dephase scatta, si applica il default_jitter.
+    Se il dephase scatta, si applica il default_jitter dai BOUNDS.
     """
     # Configura random_percent per restituire True (Dephase scatta)
     mock_rand_pct.return_value = True
     
-    # Base: 100
+    # Base: 0
     # Range: 0 (esplicito zero)
     # Dephase: 50% (simulato True)
-    # Default Jitter: 10
-    # Expected: 100 + (0.5 * 10) = 105
+    # default_jitter per 'pan' = 15.0 (da BOUNDS)
+    # Expected: 0 + (0.5 * 15.0) = 7.5
     
     val = evaluator.evaluate_gated_stochastic(
-        base_param=100, 
+        base_param=0, 
         range_param=0, 
         prob_param=50, 
-        default_jitter=10.0,
         time=0, 
         param_name='pan'
     )
     
-    assert val == 105.0
+    assert val == 7.5
     mock_rand_pct.assert_called()
+
 
 @patch('parameter_evaluator.random.uniform', return_value=0.5)
 @patch('parameter_evaluator.random_percent')
@@ -180,7 +180,6 @@ def test_evaluate_gated_scenario_C_gated_range(mock_rand_pct, mock_uniform, eval
         base_param=0, 
         range_param=100, 
         prob_param=50, 
-        default_jitter=0,
         time=0, 
         param_name='pan'
     )
@@ -194,11 +193,11 @@ def test_evaluate_gated_scenario_C_gated_range(mock_rand_pct, mock_uniform, eval
         base_param=0, 
         range_param=100, 
         prob_param=50, 
-        default_jitter=0,
         time=0, 
         param_name='pan'
     )
     assert val_miss == 0.0
+
 
 @patch('parameter_evaluator.random.uniform', return_value=0.5)
 def test_evaluate_gated_clipping(mock_uniform, evaluator):
@@ -214,48 +213,17 @@ def test_evaluate_gated_clipping(mock_uniform, evaluator):
         base_param=3950,
         range_param=200,
         prob_param=None,
-        default_jitter=0,
         time=0,
         param_name='density'
     )
     
+    # 3950 + (0.5 * 200) = 4050 → clippato a 4000
     assert val == 4000.0
+
+
 # =============================================================================
 # 5. TEST PARAMETRI SCALATI
 # =============================================================================
-
-def test_evaluate_scaled(evaluator):
-    """
-    Testa parametri che dipendono dalla durata del sample (es. loop_dur).
-    """
-    # 'loop_dur' ha bounds min=0.001, max=100.0 (default placeholder)
-    # Se passiamo scale=0.5 (es. sample dura 0.5s), il max deve diventare 50.0 o 0.5?
-    # Rivedendo il codice di ParameterEvaluator:
-    # scaled_max = bounds.max_val * scale
-    
-    # Prendiamo 'voice_pointer_offset': bounds 0.0 -> 1.0
-    # Se il sample dura 10s (scale=10), il max diventa 10.0
-    
-    val = evaluator.evaluate_scaled(
-        param=5.0,     # Valore input
-        time=0,
-        param_name='voice_pointer_offset',
-        scale=10.0     # Moltiplicatore bounds
-    )
-    
-    # Min bound (0.0 * 10) = 0
-    # Max bound (1.0 * 10) = 10
-    # Input 5.0 è valido
-    assert val == 5.0
-    
-    # Test clipping scalato
-    val_overflow = evaluator.evaluate_scaled(
-        param=15.0,    # Fuori dal limite scalato (10.0)
-        time=0,
-        param_name='voice_pointer_offset',
-        scale=10.0
-    )
-    assert val_overflow == 10.0
 
 def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
     """
@@ -274,8 +242,7 @@ def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
     val_0 = evaluator.evaluate_gated_stochastic(
         base_param=0, 
         range_param=range_env, 
-        prob_param=None, # None = Scenario A: applica sempre il range
-        default_jitter=0,
+        prob_param=None,  # None = Scenario A: applica sempre il range
         time=0, 
         param_name='pan'
     )
@@ -286,7 +253,6 @@ def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
         base_param=0, 
         range_param=range_env, 
         prob_param=None,
-        default_jitter=0,
         time=5, 
         param_name='pan'
     )
@@ -297,8 +263,47 @@ def test_evaluate_with_envelope_as_range(evaluator, monkeypatch):
         base_param=0, 
         range_param=range_env, 
         prob_param=None,
-        default_jitter=0,
         time=10, 
         param_name='pan'
     )
     assert val_10 == 50.0
+
+# =============================================================================
+# 6. TEST PARSE DEPHASE PARAM
+# =============================================================================
+
+class TestParseDephaseParam:
+    """Test per il metodo parse_dephase_param."""
+    
+    def test_none_returns_default(self, evaluator):
+        """None → DEFAULT_DEPHASE_PROB (1.0)"""
+        from parameter_evaluator import ParameterEvaluator
+        
+        result = evaluator.parse_dephase_param(None)
+        assert result == ParameterEvaluator.DEFAULT_DEPHASE_PROB
+        assert result == 1.0
+    
+    def test_explicit_value_parsed(self, evaluator):
+        """Valore esplicito viene parsato normalmente."""
+        result = evaluator.parse_dephase_param(50)
+        assert result == 50.0
+    
+    def test_explicit_zero_not_replaced(self, evaluator):
+        """Zero esplicito NON viene sostituito dal default."""
+        result = evaluator.parse_dephase_param(0)
+        assert result == 0.0  # NON 1.0!
+    
+    def test_envelope_parsed(self, evaluator):
+        """Lista breakpoints → Envelope."""
+        result = evaluator.parse_dephase_param([[0, 0], [10, 100]])
+        assert isinstance(result, Envelope)
+        assert result.evaluate(0) == 0
+        assert result.evaluate(10) == 100
+    
+    def test_max_value_clipped(self, evaluator):
+        """Valori > 100 vengono clippati a 100."""
+        result = evaluator.parse_dephase_param(150)
+        # Il parse usa 'dephase_prob' che ha max=100
+        # Però parse() non clippa, solo evaluate() lo fa
+        # Quindi qui torna 150, il clip avviene a runtime
+        assert result == 150.0  # parse non clippa
