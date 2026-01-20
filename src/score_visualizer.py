@@ -39,6 +39,8 @@ class ScoreVisualizer:
         
         # Configurazione con defaults
         default_config = {
+            # Se True, mostra anche i valori costanti
+            'show_static_params': False,
             # Paginazione
             'page_duration': 30.0,           # secondi per pagina
             'page_size': (420, 297),         # A3 in mm
@@ -653,7 +655,9 @@ class ScoreVisualizer:
         from envelope import Envelope
         
         envelopes = {}
-        
+
+        show_static = self.config.get('show_static_params', False)
+
         # Lista dei parametri da controllare
         # (nome_visualizzazione, nome_attributo)
         params_to_check = [
@@ -680,7 +684,20 @@ class ScoreVisualizer:
                     # Salta envelope costanti (un solo punto)
                     if len(value.breakpoints) > 1:
                         envelopes[param_name] = value
-        
+
+                    # Se ha 1 punto è statico -> Lo prendiamo solo se richiesto
+                    elif show_static and len(value.breakpoints) == 1:
+                        val = value.breakpoints[0][1]
+                        # Creiamo un envelope fittizio che copre la durata dello stream
+                        # [tempo 0, valore], [tempo durata, valore]
+                        envelopes[param_name] = Envelope([[0, val], [stream.duration, val]])
+
+                # Caso B: È un numero (float/int) ed è statico
+                elif isinstance(value, (int, float)) and show_static:
+                    # Escludiamo i None
+                    if value is not None:
+                        # Creiamo envelope fittizio costante
+                        envelopes[param_name] = Envelope([[0, value], [stream.duration, value]])        
         return envelopes
     
 

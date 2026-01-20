@@ -15,6 +15,7 @@ YMLDIR := configs
 AUTOKILL ?= true
 AUTOPEN ?= true
 AUTOVISUAL ?= true
+SHOWSTATIC ?= true
 FILE ?= test-lez
 TEST ?= false
 

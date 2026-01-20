@@ -11,11 +11,16 @@ AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 .SECONDARY: $(SCO_FILES)
 
 # --- Logica condizionale per flags ---
+PYFLAGS :=
 
+# 1. Se AUTOVISUAL è true, aggiungi --visualize
 ifeq ($(AUTOVISUAL), true)
-PYFLAG = --visualize
-else
-PYFLAG =
+PYFLAGS += --visualize
+endif
+
+# 2. Se SHOWSTATIC è true, aggiungi --show-static
+ifeq ($(SHOWSTATIC), true)
+PYFLAGS += --show-static
 endif
 
 ifeq ($(AUTOKILL),true)
@@ -37,7 +42,7 @@ endif
 
 # YAML → SCO (Python)
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES) | $(GENDIR)
-	python3.11 $(INCDIR)/main.py $< $@ $(PYFLAG)
+	python3.11 $(INCDIR)/main.py $< $@ $(PYFLAGS)
 
 # SCO → AIF (Csound)
 $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)

@@ -28,12 +28,13 @@ def main():
     import os
     # Verifica argomenti
     if len(sys.argv) < 2:
-        print("Uso: python main.py <file.yml> [output.sco]")
+        print("Uso: python main.py <file.yml> [output.sco] [--visualize] [--show-static]")
         sys.exit(1)
     
     yaml_file = sys.argv[1]
     output_file = sys.argv[2] if len(sys.argv) > 2 else 'output.sco'
     do_visualize = '--visualize' in sys.argv or '-v' in sys.argv
+    show_static = '--show-static' in sys.argv or '-s' in sys.argv
     yaml_basename = os.path.splitext(os.path.basename(yaml_file))[0]
     configure_clip_logger(
     console_enabled=False,
@@ -62,11 +63,12 @@ def main():
             print("\nGenerazione partitura grafica...")
             
             # Crea il nome del PDF dal nome dello score
-            pdf_file = output_file.rsplit('.', 1)[0] + '_score.pdf'
+            pdf_file = output_file.rsplit('.', 1)[0] + '.pdf'
             
             viz = ScoreVisualizer(generator, config={
                 'page_duration': 15.0,
                 'pitch_range': (0.5, 2.0),
+                'show_static_params': show_static,
             })
             viz.export_pdf(pdf_file)
 
