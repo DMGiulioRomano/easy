@@ -1,0 +1,11 @@
+composition:
+  title: "test"
+
+streams:
+  - stream_id: "minimal"
+    onset: 0.0
+    duration: 10.0
+    sample: "pino2.wav"
+    pointer:     
+      speed: 0.5  #speed_ratio
+    fill_factor: 2

@@ -12,7 +12,6 @@ Fase 6 del refactoring: questa classe coordina i controller specializzati:
 Mantiene backward compatibility con Generator e ScoreVisualizer.
 Ispirato al DMX-1000 di Barry Truax (1988).
 """
-
 import random
 from typing import List, Optional, Union
 
@@ -187,7 +186,6 @@ class Stream:
             def parse_opt(key):
                 val = dephase_params.get(key)
                 return self._evaluator.parse(val, key) if val is not None else None
-
             self.grain_reverse_randomness = parse_opt('pc_rand_reverse')
             self.grain_duration_randomness = parse_opt('pc_rand_duration')
             self.grain_pan_randomness = parse_opt('pc_rand_pan')
