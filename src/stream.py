@@ -173,7 +173,7 @@ class Stream:
             Se mancano nel YAML, restano None (per attivare Scenario A).
             """
             dephase_params = params.get('dephase') # Nota: None se manca la chiave 'dephase'
-            
+            print(f"dephase_param: {dephase_params}")
             if dephase_params is None:
                 # Se manca l'intera sezione, tutto None
                 self.grain_reverse_randomness = None
@@ -190,6 +190,7 @@ class Stream:
             self.grain_duration_randomness = parse_opt('pc_rand_duration')
             self.grain_pan_randomness = parse_opt('pc_rand_pan')
             self.grain_volume_randomness = parse_opt('pc_rand_volume')
+            print(f"i parametri random: {self.grain_duration_randomness}, {self.grain_reverse_randomness}, {self.grain_pan_randomness}")
             
     # =========================================================================
     # GENERAZIONE GRANI
@@ -231,7 +232,7 @@ class Stream:
                     base_param=self.grain_duration,
                     range_param=self.grain_duration_range,
                     prob_param=self.grain_duration_randomness,
-                    default_jitter=0.01,
+                    default_jitter=0.05,
                     time=elapsed_time,
                     param_name='grain_duration'
                 )
@@ -299,7 +300,7 @@ class Stream:
             base_param=self.volume,
             range_param=self.volume_range,
             prob_param=self.grain_volume_randomness,
-            default_jitter=1.5,
+            default_jitter=24,
             time=elapsed_time,
             param_name='volume'
         )
@@ -310,7 +311,7 @@ class Stream:
             base_param=self.pan,
             range_param=self.pan_range,
             prob_param=self.grain_pan_randomness,
-            default_jitter=15.0,
+            default_jitter=180.0,
             time=elapsed_time,
             param_name='pan'
         )

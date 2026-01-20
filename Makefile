@@ -15,8 +15,8 @@ YMLDIR := configs
 AUTOKILL ?= true
 AUTOPEN ?= true
 AUTOVISUAL ?= true
-FILE ?= testLoop
-TEST ?= true
+FILE ?= test-lez
+TEST ?= false
 
 # Include moduli
 include make/test.mk

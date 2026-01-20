@@ -75,6 +75,9 @@ class ScoreVisualizer:
                 'pitch_semitones': (-36, 36),  
                 'num_voices': (1, 20),
                 'pc_rand_reverse': (0, 100),
+                'pc_rand_duration': (0, 100),
+                'pc_rand_pan': (0, 100),
+                'pc_rand_volume': (0, 100),
             },
             # Colori per ogni tipo di envelope
             'envelope_colors': {
@@ -89,6 +92,9 @@ class ScoreVisualizer:
                 'pitch_semitones': '#9467bd',  # colore viola chiaro in envelope_colors
                 'num_voices': '#e377c2',
                 'pc_rand_reverse': '#17becf',
+                'pc_rand_duration': '#bcbd22',  # giallo-verde
+                'pc_rand_pan': '#7f7f7f',       # grigio scuro
+                'pc_rand_volume': '#d62728', 
             },
             'envelope_panel_ratio': 0.3,      # 30% altezza per envelope
         }
@@ -662,6 +668,9 @@ class ScoreVisualizer:
             ('distribution', 'distribution'),
             ('num_voices', 'num_voices'),
             ('pc_rand_reverse', 'grain_reverse_randomness'),
+            ('pc_rand_duration', 'grain_duration_randomness'),
+            ('pc_rand_pan', 'grain_pan_randomness'),
+            ('pc_rand_volume', 'grain_volume_randomness'),
         ]
         
         for param_name, attr_name in params_to_check:
