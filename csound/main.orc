@@ -37,7 +37,7 @@ instr Grain
     ; GRAIN REVERSE: se flag=1, inverte direzione lettura campioni
     ; ═══════════════════════════════════════════════════════════════════
     if iGrainReverse == 1 then
-        iFreq = 0-iFreq  ; frequenza NEGATIVA → lettura BACKWARD
+        iFreq = 0-iFreq  ; frequenza NEGATIVA -> lettura BACKWARD
         iStartNorm = ( iStart + p3 ) / iSampleLen
     endif
     iAmp = ampdb(iVolume)
@@ -46,9 +46,9 @@ instr Grain
     ; AUDIO PROCESSING
     ;-------------------------------------------------------------------------
     ; Genera envelope del grano
-    aEnv = poscil:a(iAmp, 1/p3, iEnvTable)
+    aEnv = poscil3:a(iAmp, 1/p3, iEnvTable)
     ; Leggi il sample con la velocità specificata
-    aSound = poscil:a(aEnv, iFreq, iSampleTable, iStartNorm)
+    aSound = poscil3:a(aEnv, iFreq, iSampleTable, iStartNorm)
     ; Calcola panning (constant power)
     aMid = aSound*cos(irad)
     aSide = aSound*sin(irad)
