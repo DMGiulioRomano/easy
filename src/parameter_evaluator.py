@@ -86,12 +86,13 @@ class ParameterBounds:
         min_range: minimo per il parametro _range associato (default 0)
         max_range: massimo per il parametro _range associato (default 0)
         default_jitter: jitter di fallback quando dephase attivo ma range=0
+        variation_mode: strategia di variazione ('additive' o 'invert')  
     """
     min_val: float
     max_val: float
     min_range: float = 0.0
     max_range: float = 0.0
-    default_jitter: float = 0.0  # ← NUOVO
+    default_jitter: float = 0.0 
 
 
 class ParameterEvaluator:
@@ -156,8 +157,16 @@ class ParameterEvaluator:
             min_range=0.0,
             max_range=1.0,
             default_jitter=0.01  # 10ms di variazione implicita
+        ),        
+        # REVERSE (Boolean parameter con inversione probabilistica)
+        'reverse': ParameterBounds(
+            min_val=0,
+            max_val=1,
+            min_range=0,
+            max_range=1,
+            default_jitter=0,
+            variation_mode='invert'
         ),
-        
         # =====================================================================
         # PITCH
         # =====================================================================
@@ -363,71 +372,139 @@ class ParameterEvaluator:
             return self.parse(value, 'dephase_prob')
         return self.DEFAULT_DEPHASE_PROB
 
-    def evaluate_gated_stochastic(self, 
-                                base_param, 
-                                range_param, 
-                                prob_param, 
-                                time: float, 
-                                param_name: str) -> float:
+    def evaluate_gated_stochastic(self, base_param, range_param, prob_param,
+                                time: float, param_name: str) -> float:
         """
-        Valuta un parametro combinando Range e Dephase Probabilistico.
+        Valuta parametro con variazione probabilistica gated.
         
-        Logica (Scenari):
-        A. Dephase MANCANTE (None) -> Applica sempre il Range
-        B. Dephase PRESENTE, Range == 0 -> Usa default_jitter dai BOUNDS
-        C. Dephase PRESENTE, Range > 0 -> Usa Range come gate probabilistico
-        
-        Args:
-            base_param: valore base (numero o Envelope)
-            range_param: range di variazione (numero o Envelope)
-            prob_param: probabilità dephase 0-100 (numero, Envelope, o None)
-            time: tempo in secondi
-            param_name: nome parametro per lookup BOUNDS
-            
-        Returns:
-            float: valore finale clippato ai bounds
-            
-        Raises:
-            ValueError: se param_name non ha bounds definiti
+        Orchestrates:
+        1. Evaluation di base parameter
+        2. Gate probabilistico check (semantica differenziata per invert/additive)
+        3. Range resolution (con fallback a default_jitter, skip per invert)
+        4. Application della variation strategy (flip per invert, deviation per additive)
         """
-        # 1. Recupera i bounds (che ora contengono tutto)
+        # Bounds lookup
         bounds = self.BOUNDS.get(param_name)
         if bounds is None:
             raise ValueError(f"Bounds non definiti per '{param_name}'")
         
-        # 2. Valuta Base
-        base_value = self.evaluate(base_param, time, param_name)
+        # 1. Valuta base
+        base_value = self._evaluate(base_param, time, param_name)
         
-        # 3. Valuta Range
+        # 2. Check gate (con semantica differenziata!)
+        gate_open = self._should_apply_variation(prob_param, bounds, time)
+        if not gate_open:
+            return base_value
+        
+        # 3. Risolvi range (considera SCENARIO B, skip per invert)
+        range_val = self._resolve_variation_range(
+            range_param, bounds, time, gate_open
+        )
+        
+        # 4. Applica variazione (biforcazione additive/invert)
+        return self._apply_variation(base_value, range_val, bounds)
+
+    def _should_apply_variation(self, prob_param, bounds: ParameterBounds, time: float) -> bool:
+        """
+        Determina se il gate probabilistico è aperto.
+        
+        SEMANTICA DIFFERENZIATA:
+        - 'additive' mode: prob=None → gate APERTO (applica sempre range)
+        - 'invert' mode: prob=None → gate CHIUSO (non flipare mai)
+        
+        Args:
+            prob_param: probabilità 0-100 (numero, Envelope, o None)
+            bounds: ParameterBounds con variation_mode
+            time: tempo in secondi
+            
+        Returns:
+            True se variazione deve essere applicata
+        """
+        # Semantica differenziata per prob_param=None
+        if prob_param is None:
+            if bounds.variation_mode == 'invert':
+                # Boolean: None significa "NON flipare mai"
+                return False
+            else:
+                # Continuous: None significa "applica sempre range" (Scenario A)
+                return True
+        
+        # Se prob_param è definito, check probabilità standard
+        prob_val = self._evaluate(prob_param, time, 'dephase_prob')
+        return random_percent(prob_val)
+
+    def _resolve_variation_range(self, range_param, bounds: ParameterBounds, 
+                                time: float, gate_open: bool) -> float:
+        """
+        Risolve il range effettivo considerando:
+        - Evaluation di range_param
+        - Clipping ai bounds
+        - SCENARIO B: default_jitter se range==0 con gate aperto
+        - Skip logica per 'invert' mode (non usa range)
+        
+        Args:
+            range_param: valore range (numero o Envelope)
+            bounds: ParameterBounds con min/max_range
+            time: tempo in secondi
+            gate_open: True se gate probabilistico è aperto
+            
+        Returns:
+            Range effettivo da usare (0 se gate chiuso, 1.0 dummy per invert)
+        """
+        if not gate_open:
+            return 0.0
+        
+        # Invert mode non usa range (boolean flip diretto)
+        if bounds.variation_mode == 'invert':
+            return 1.0  # Dummy value (non usato in _apply_variation per invert)
+        
+        # Additive mode: valuta e clippa range
         is_range_env = isinstance(range_param, Envelope)
         range_val = range_param.evaluate(time) if is_range_env else float(range_param)
         range_val = max(bounds.min_range, min(bounds.max_range, range_val))
         
-        # 4. Logica Gated
-        should_apply_variation = False
+        # SCENARIO B: Gate aperto ma Range 0 → usa default_jitter
+        if range_val == 0.0:
+            return bounds.default_jitter
         
-        if prob_param is None:
-            # SCENARIO A: Dephase non definito -> Range sempre attivo
-            should_apply_variation = True
-        else:
-            # SCENARIO B/C: Dephase definito -> Check probabilità
-            prob_val = self.evaluate(prob_param, time, 'dephase_prob')
-            if random_percent(prob_val):
-                should_apply_variation = True
-                
-                # SCENARIO B: Gate aperto ma Range 0 -> Jitter dai bounds
-                if range_val == 0.0:
-                    range_val = bounds.default_jitter
-        
-        # 5. Applicazione variazione
-        if should_apply_variation and range_val > 0:
-            deviation = random.uniform(-0.5, 0.5) * range_val
-            final_value = base_value + deviation
-            return max(bounds.min_val, min(bounds.max_val, final_value))
-        
-        return base_value
+        return range_val
 
-    def evaluate(self, param: Union[float, int, Envelope], time: float, 
+    def _apply_variation(self, base_value: float, range_val: float, 
+                        bounds: ParameterBounds) -> float:
+        """
+        Applica variazione secondo variation_mode.
+        
+        Strategies:
+        - 'invert': boolean flip (1.0 - value)
+        - 'additive': random deviation ±range/2
+        
+        Args:
+            base_value: valore base (0.0-1.0 per invert, qualsiasi per additive)
+            range_val: ampiezza variazione (ignorato per invert)
+            bounds: ParameterBounds con variation_mode e min/max
+            
+        Returns:
+            Valore finale clippato ai bounds
+        """
+        if bounds.variation_mode == 'invert':
+            # Boolean flip: inverte 0↔1
+            return 1.0 - base_value
+        
+        elif bounds.variation_mode == 'additive':
+            # Continuous variation: addizione casuale
+            if range_val > 0:
+                deviation = random.uniform(-0.5, 0.5) * range_val
+                final_value = base_value + deviation
+                return max(bounds.min_val, min(bounds.max_val, final_value))
+            return base_value
+        
+        else:
+            raise ValueError(
+                f"Unknown variation_mode '{bounds.variation_mode}' "
+                f"for parameter. Supported: 'additive', 'invert'"
+            )
+
+    def _evaluate(self, param: Union[float, int, Envelope], time: float, 
                  param_name: str) -> float:
         """
         Valuta un parametro al tempo dato con safety bounds.
@@ -474,64 +551,6 @@ class ParameterEvaluator:
             )
         
         return clamped
-    
-    def evaluate_scaled(self, param: Union[float, int, Envelope], time: float,
-                        param_name: str, scale: float) -> float:
-        """
-        Valuta un parametro con bounds scalati dinamicamente.
-        
-        Utile per parametri come voice_pointer_offset dove il max
-        dipende dalla durata del sample.
-        
-        Args:
-            param: valore da valutare
-            time: tempo in secondi
-            param_name: nome parametro per bounds base
-            scale: fattore di scala per i bounds
-            
-        Returns:
-            float: valore clippato ai bounds scalati
-        """
-        bounds = self.BOUNDS.get(param_name)
-        if bounds is None:
-            raise ValueError(f"Bounds non definiti per '{param_name}'")
-        
-        # Scala i bounds
-        scaled_min = bounds.min_val * scale
-        scaled_max = bounds.max_val * scale
-        
-        # Valuta
-        is_envelope = isinstance(param, Envelope)
-        value = param.evaluate(time) if is_envelope else float(param)
-        
-        # Clip
-        clamped = max(scaled_min, min(scaled_max, value))
-        
-        if value != clamped:
-            log_clip_warning(
-                self.stream_id,
-                f"{param_name}_scaled",
-                time,
-                value,
-                clamped,
-                scaled_min,
-                scaled_max,
-                is_envelope
-            )
-        
-        return clamped
-    
-    def get_bounds(self, param_name: str) -> Optional[ParameterBounds]:
-        """
-        Ritorna i bounds per un parametro (utile per debug/visualizzazione).
-        
-        Args:
-            param_name: nome del parametro
-            
-        Returns:
-            ParameterBounds o None se non definito
-        """
-        return self.BOUNDS.get(param_name)
     
     def __repr__(self):
         return (f"ParameterEvaluator(stream_id='{self.stream_id}', "

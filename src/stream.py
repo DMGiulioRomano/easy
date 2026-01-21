@@ -136,7 +136,7 @@ class Stream:
             grain_params.get('duration_range', 0.0),
             'grain_duration'  # usa stessi bounds
         )
-        self.grain_envelope = grain_params.get('envelope', 'hanning')
+        self.grain_envelope = grain_params.get('envelope', 'gaussian')
     
     def _init_output_params(self, params: dict) -> None:
         """Inizializza parametri di output (volume, pan)."""
@@ -344,55 +344,44 @@ class Stream:
             grain_reverse=grain_reverse
         )
 
+
     def _calculate_grain_reverse(self, elapsed_time: float) -> bool:
         """
         Calcola se il grano deve essere riprodotto al contrario.
         
-        - 'auto': segue il segno di pointer_speed
+        Usa evaluate_gated_stochastic con variation_mode='invert':
+        - 'auto': base_reverse segue pointer_speed
         - True/False: valore esplicito
-        - Con randomness: può invertire casualmente
-        """
-        if self.grain_reverse_mode == 'auto':
-            base_reverse = self._pointer.get_speed(elapsed_time) < 0
-        else:
-            base_reverse = bool(self.grain_reverse_mode)
-        
-        if self.grain_reverse_randomness is None:
-            return base_reverse
-        # Applica randomness
-        randomness = self._evaluator.evaluate(
-            self.grain_reverse_randomness,
-            elapsed_time,
-            'dephase_prob'
-        )
-        
-        if random_percent(randomness):
-            return not base_reverse
-        return base_reverse
-    
-    def _apply_dephase(self, param_type: str, elapsed_time: float) -> bool:
-        """
-        Determina se applicare dephase per un parametro specifico.
+        - grain_reverse_randomness: probabilità di flip (0-100)
+        - grain_reverse_randomness=None: nessun flip (mantiene base)
         
         Args:
-            param_type: 'duration', 'pan', 'volume', etc.
-            elapsed_time: tempo corrente
-        
+            elapsed_time: tempo trascorso dall'inizio dello stream
+            
         Returns:
-            bool: True se il dephase deve essere applicato
+            bool: True se grano deve essere riprodotto al contrario
         """
-        randomness_attr = f'grain_{param_type}_randomness'
+        # 1. Determina base value come float (0.0 o 1.0)
+        if self.grain_reverse_mode == 'auto':
+            base_reverse = 1.0 if self._pointer.get_speed(elapsed_time) < 0 else 0.0
+        else:
+            base_reverse = 1.0 if bool(self.grain_reverse_mode) else 0.0
         
-        if not hasattr(self, randomness_attr):
-            return False
-        
-        randomness = self._evaluator.evaluate(
-            getattr(self, randomness_attr),
-            elapsed_time,
-            randomness_attr
+        # 2. Usa evaluate_gated_stochastic con variation_mode='invert'
+        #    - prob_param=None → gate chiuso (nessun flip)
+        #    - prob_param=70 → 70% chance di flip
+        reverse_value = self._evaluator.evaluate_gated_stochastic(
+            base_param=base_reverse,
+            range_param=0,  # Ignorato per 'invert' mode
+            prob_param=self.grain_reverse_randomness,
+            time=elapsed_time,
+            param_name='reverse'
         )
         
-        return random_percent(randomness)
+        # 3. Converti float → boolean (soglia a 0.5)
+        return reverse_value > 0.5
+
+
     # =========================================================================
     # PROPRIETÀ PER BACKWARD COMPATIBILITY
     # =========================================================================
