@@ -93,7 +93,7 @@ class ParameterBounds:
     min_range: float = 0.0
     max_range: float = 0.0
     default_jitter: float = 0.0 
-
+    variation_mode: str = 'additive'
 
 class ParameterEvaluator:
     """
@@ -551,7 +551,20 @@ class ParameterEvaluator:
             )
         
         return clamped
-    
+
+    def __call__(self, param, time: float, param_name: str) -> float:
+        """
+        Evaluation semplice: param → valore con bounds.
+        
+        Per parametri SENZA variazione stocastica:
+        - pointer.start
+        - loop bounds
+        - density base
+        - fill_factor
+        - ecc.
+        """
+        return self._evaluate(param, time, param_name)
+        
     def __repr__(self):
         return (f"ParameterEvaluator(stream_id='{self.stream_id}', "
                 f"duration={self.duration}, time_mode='{self.time_mode}')")

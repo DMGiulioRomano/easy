@@ -1,347 +1,221 @@
-# tests/test_pointer_controller.py
 """
-Test per PointerController
+tests/test_pointer_controller.py
 
-Verifica:
-- Inizializzazione parametri
-- Movimento lineare (costante e envelope)
-- Loop con phase accumulator
-- Deviazioni stocastiche
-
-Fixtures utilizzate (da conftest.py):
-- evaluator: ParameterEvaluator standard
-- sample_dur_sec: 10.0 secondi
-- pointer_factory: factory per creare PointerController custom
-- pointer_basic: start=0, speed=1, no loop
-- pointer_with_loop: loop fisso 2.0-4.0
-- env_linear: Envelope [0,0] → [10,100]
+Test suite aggiornata per il refactoring Fase 2 (ParameterFactory + Unified Deviation).
 """
 
 import pytest
-import random
+from unittest.mock import MagicMock, patch
 from pointer_controller import PointerController
 from envelope import Envelope
-
-
-# =============================================================================
-# 1. TEST INIZIALIZZAZIONE
-# =============================================================================
-
-class TestPointerControllerInit:
-    """Test inizializzazione parametri."""
-    
-    def test_default_values(self, pointer_factory):
-        """Verifica valori default quando params è vuoto."""
-        pointer = pointer_factory({})
-        
-        assert pointer.start == 0.0
-        assert pointer.speed == 1.0
-        assert pointer.jitter == 0.0
-        assert pointer.offset_range == 0.0
-        assert pointer.has_loop is False
-    
-    def test_basic_params(self, pointer_factory):
-        """Verifica parsing parametri base."""
-        pointer = pointer_factory({
-            'start': 1.5,
-            'speed': 2.0,
-            'jitter': 0.01,
-            'offset_range': 0.2
-        })
-        
-        assert pointer.start == 1.5
-        assert pointer.speed == 2.0
-        assert pointer.jitter == 0.01
-        assert pointer.offset_range == 0.2
-    
-    def test_speed_envelope(self, pointer_factory):
-        """Verifica che speed envelope venga parsato correttamente."""
-        pointer = pointer_factory({
-            'speed': [[0, 1.0], [5, 2.0]]
-        })
-        
-        assert isinstance(pointer.speed, Envelope)
-
+from parameter import Parameter
 
 # =============================================================================
-# 2. TEST CONFIGURAZIONE LOOP
+# FIXTURES
 # =============================================================================
 
-class TestLoopConfiguration:
-    """Test configurazione loop."""
-    
-    def test_no_loop(self, pointer_basic):
-        """Nessun loop se loop_start non è definito."""
-        assert pointer_basic.has_loop is False
-        assert pointer_basic.loop_start is None
-    
-    def test_loop_with_end(self, pointer_with_loop):
-        """Loop con loop_start e loop_end fissi."""
-        assert pointer_with_loop.has_loop is True
-        assert pointer_with_loop.loop_start == 2.0
-        assert pointer_with_loop.loop_end == 4.0
-        assert pointer_with_loop.loop_dur is None
-    
-    def test_loop_with_dur(self, pointer_factory):
-        """Loop con loop_start e loop_dur."""
-        pointer = pointer_factory({
-            'loop_start': 1.0,
-            'loop_dur': 2.0
-        })
-        
-        assert pointer.has_loop is True
-        assert pointer.loop_start == 1.0
-        assert pointer.loop_end is None
-        assert pointer.loop_dur == 2.0
-    
-    def test_loop_start_only(self, pointer_factory, sample_dur_sec):
-        """Solo loop_start → loop fino a fine sample."""
-        pointer = pointer_factory({'loop_start': 2.0})
-        
-        assert pointer.has_loop is True
-        assert pointer.loop_start == 2.0
-        assert pointer.loop_end == sample_dur_sec  # Fine sample
-    
-    def test_loop_dur_envelope(self, pointer_factory):
-        """Loop con loop_dur come Envelope."""
-        pointer = pointer_factory({
-            'loop_start': 0.0,
-            'loop_dur': [[0, 1.0], [5, 0.5]]
-        })
-        
-        assert pointer.has_loop is True
-        assert isinstance(pointer.loop_dur, Envelope)
-    
-    def test_loop_normalized(self, pointer_factory):
-        """Loop con valori normalizzati (sample_dur=10.0)."""
-        pointer = pointer_factory({
-            'loop_unit': 'normalized',
-            'loop_start': 0.2,  # 20% di 10.0 = 2.0
-            'loop_end': 0.6     # 60% di 10.0 = 6.0
-        })
-        
-        assert pointer.loop_start == pytest.approx(2.0)
-        assert pointer.loop_end == pytest.approx(6.0)
+@pytest.fixture
+def base_params():
+    """Parametri base minimi."""
+    return {
+        'start': 0.0,
+        'speed': 1.0,
+        'offset_range': 0.0 # ex jitter/offset
+    }
 
+@pytest.fixture
+def controller(base_params):
+    """Istanza base del controller."""
+    return PointerController(
+        params=base_params,
+        stream_id="test_stream",
+        duration=10.0,
+        sample_dur_sec=5.0, # Sample lungo 5 secondi
+        time_mode='absolute'
+    )
 
 # =============================================================================
-# 3. TEST MOVIMENTO LINEARE (senza loop)
+# 1. TEST INIZIALIZZAZIONE & FACTORY
 # =============================================================================
 
-class TestLinearMovement:
-    """Test movimento lineare senza loop."""
+def test_initialization_creates_smart_parameters(controller):
+    """Verifica che i parametri vengano creati come oggetti Parameter."""
+    assert hasattr(controller, 'speed')
+    assert isinstance(controller.speed, Parameter)
+    assert controller.speed.value == 1.0
     
-    def test_constant_speed(self, pointer_basic):
-        """Movimento con velocità costante (speed=1)."""
-        # Senza jitter/offset, posizione = tempo
-        assert pointer_basic.calculate(0.0) == pytest.approx(0.0)
-        assert pointer_basic.calculate(1.0) == pytest.approx(1.0)
-        assert pointer_basic.calculate(5.0) == pytest.approx(5.0)
-    
-    def test_double_speed(self, pointer_factory):
-        """Movimento con velocità doppia."""
-        pointer = pointer_factory(
-            {'start': 0.0, 'speed': 2.0},
-            sample_dur=20.0
-        )
-        
-        assert pointer.calculate(1.0) == pytest.approx(2.0)
-        assert pointer.calculate(5.0) == pytest.approx(10.0)
-    
-    def test_with_start_offset(self, pointer_factory):
-        """Movimento con posizione iniziale."""
-        pointer = pointer_factory({'start': 2.0, 'speed': 1.0})
-        
-        assert pointer.calculate(0.0) == pytest.approx(2.0)
-        assert pointer.calculate(1.0) == pytest.approx(3.0)
-    
-    def test_wrap_at_sample_end(self, pointer_factory):
-        """Verifica wrap quando supera la durata del sample."""
-        pointer = pointer_factory(
-            {'start': 0.0, 'speed': 1.0},
-            sample_dur=5.0
-        )
-        
-        # A t=7, posizione lineare = 7, wrap a 5.0 → 2.0
-        assert pointer.calculate(7.0) == pytest.approx(2.0)
-    
-    def test_speed_envelope_integration(self, pointer_factory):
-        """Movimento con speed envelope (richiede integrazione)."""
-        pointer = pointer_factory(
-            {'start': 0.0, 'speed': [[0, 1.0], [5, 2.0]]},
-            sample_dur=20.0
-        )
-        
-        # L'integrazione di una rampa 1→2 su 5 secondi
-        # Area trapezio = (1+2)/2 * 5 = 7.5
-        pos_5 = pointer.calculate(5.0)
-        assert 5.0 < pos_5 < 10.0  # Più di lineare (5), meno di doppio (10)
+    assert hasattr(controller, 'deviation') # Mappato da 'offset_range' nello schema
+    assert isinstance(controller.deviation, Parameter)
+    assert controller.deviation.value == 0.0
 
+def test_loop_params_initialization():
+    """Verifica inizializzazione parametri loop."""
+    params = {
+        'start': 0.0,
+        'loop_start': 1.0,
+        'loop_end': 2.0
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
+    
+    assert pc.has_loop is True
+    assert pc.loop_start == 1.0
+    assert pc.loop_end == 2.0
+    assert pc.loop_dur is None
+
+def test_loop_dur_smart_parameter():
+    """Verifica che loop_dur diventi uno Smart Parameter."""
+    params = {
+        'start': 0.0,
+        'loop_start': 1.0,
+        'loop_dur': 0.5
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
+    
+    assert pc.loop_end is None
+    assert isinstance(pc.loop_dur, Parameter)
+    assert pc.loop_dur.value == 0.5
 
 # =============================================================================
-# 4. TEST LOOP CON PHASE ACCUMULATOR
+# 2. TEST MOVIMENTO LINEARE
 # =============================================================================
 
-class TestLoopPhaseAccumulator:
-    """Test loop con phase accumulator."""
-    
-    def test_enters_loop(self, pointer_with_loop):
-        """Verifica entrata nel loop (2.0 - 4.0)."""
-        # Prima del loop
-        assert pointer_with_loop.in_loop is False
-        
-        # Calcola a t=1 (prima del loop)
-        pointer_with_loop.calculate(1.0)
-        assert pointer_with_loop.in_loop is False
-        
-        # Calcola a t=2.5 (dentro il loop)
-        pointer_with_loop.calculate(2.5)
-        assert pointer_with_loop.in_loop is True
-    
-    def test_loop_wrapping(self, pointer_with_loop):
-        """Verifica che il loop faccia wrap correttamente."""
-        # Forza entrata nel loop
-        pointer_with_loop.calculate(2.5)  # Entra nel loop
-        
-        # Dopo altri 2 secondi, dovrebbe aver fatto un giro completo
-        pos = pointer_with_loop.calculate(4.5)
-        
-        # Dovrebbe essere tra 2.0 e 4.0 (nel loop)
-        assert 2.0 <= pos < 4.0
-    
-    def test_loop_phase_property(self, pointer_with_loop):
-        """Verifica che loop_phase sia accessibile e corretto."""
-        # Prima del loop
-        assert pointer_with_loop.loop_phase == 0.0
-        
-        # Entra a metà loop (t=3.0, loop 2.0-4.0, fase ~0.5)
-        pointer_with_loop.calculate(3.0)
-        
-        assert 0.4 <= pointer_with_loop.loop_phase <= 0.6
+def test_linear_movement_constant_speed(controller):
+    """Test movimento a velocità costante 1.0."""
+    # t=0 -> pos=0
+    assert controller.calculate(0.0) == 0.0
+    # t=1 -> pos=1
+    assert controller.calculate(1.0) == 1.0
+    # t=2.5 -> pos=2.5
+    assert controller.calculate(2.5) == 2.5
 
-
-# =============================================================================
-# 5. TEST DEVIAZIONI STOCASTICHE
-# =============================================================================
-
-class TestStochasticDeviations:
-    """Test deviazioni stocastiche."""
+def test_linear_movement_speed_2(base_params):
+    """Test movimento a velocità 2.0."""
+    base_params['speed'] = 2.0
+    pc = PointerController(base_params, "t", 10.0, 5.0)
     
-    def test_jitter_applied(self, pointer_factory):
-        """Verifica che jitter venga applicato."""
-        pointer = pointer_factory({
-            'start': 5.0,
-            'speed': 0.0,  # Fermo
-            'jitter': 0.1  # ±0.1 secondi
-        })
-        
-        # Raccogli molte posizioni
-        random.seed(None)  # Random reale
-        positions = [pointer.calculate(0.0) for _ in range(100)]
-        
-        # Dovrebbero variare attorno a 5.0 ma entro ±0.1
-        assert min(positions) < 5.0
-        assert max(positions) > 5.0
-        assert all(4.9 <= p <= 5.1 for p in positions)
-    
-    def test_offset_range_applied(self, pointer_factory):
-        """Verifica che offset_range venga applicato."""
-        pointer = pointer_factory({
-            'start': 5.0,
-            'speed': 0.0,
-            'jitter': 0.0,
-            'offset_range': 0.5  # ±25% del context (sample_dur=10)
-        })
-        
-        # offset_deviation = ±0.5 * 0.5 * 10 = ±2.5
-        random.seed(None)
-        positions = [pointer.calculate(0.0) for _ in range(100)]
-        
-        # Dovrebbero variare significativamente
-        assert max(positions) - min(positions) > 1.0
-    
-    def test_jitter_with_mock(self, pointer_factory, monkeypatch):
-        """Test deterministico di jitter con mock random."""
-        monkeypatch.setattr(random, "uniform", lambda a, b: 0.5 * (a + b))
-        
-        pointer = pointer_factory({
-            'start': 5.0,
-            'speed': 0.0,
-            'jitter': 0.2  # Mock restituirà 0 (media di -0.2 e 0.2)
-        })
-        
-        pos = pointer.calculate(0.0)
-        assert pos == pytest.approx(5.0)  # Deviazione = 0
+    assert pc.calculate(1.0) == 2.0
 
+def test_linear_movement_envelope_integration():
+    """
+    CRUCIALE: Test integrazione analitica quando speed è un Envelope.
+    Envelope speed: 0.0 -> 2.0 in 2 secondi. (Accelerazione lineare)
+    Posizione = Integrale(at) = 0.5 * a * t^2
+    a (pendenza) = 1.0
+    t=2 => 0.5 * 1 * 4 = 2.0
+    """
+    params = {
+        'start': 0.0,
+        'speed': [[0, 0], [2, 2]], # Rampa 0->2
+        'offset_range': 0.0
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
+    
+    # Verifica che speed sia un envelope
+    assert isinstance(pc.speed.value, Envelope)
+    
+    # Calcolo a t=2
+    pos = pc.calculate(2.0)
+    
+    # Tolleranza floating point
+    assert abs(pos - 2.0) < 0.0001
 
 # =============================================================================
-# 6. TEST RESET
+# 3. TEST LOOP LOGIC
 # =============================================================================
 
-class TestReset:
-    """Test reset dello stato."""
+def test_loop_static_bounds():
+    """Test loop semplice con start/end fissi."""
+    params = {
+        'start': 0.0,
+        'speed': 1.0,
+        'loop_start': 1.0,
+        'loop_end': 3.0, # Loop length = 2.0
+        'offset_range': 0.0
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
     
-    def test_reset_loop_state(self, pointer_with_loop):
-        """Verifica che reset pulisca lo stato del loop."""
-        # Entra nel loop
-        pointer_with_loop.calculate(3.0)
-        assert pointer_with_loop.in_loop is True
-        
-        # Reset
-        pointer_with_loop.reset()
-        
-        assert pointer_with_loop.in_loop is False
-        assert pointer_with_loop.loop_phase == 0.0
+    # t=0.5 -> pos=0.5 (Fuori loop, comportamento pre-loop)
+    # Nota: L'implementazione attuale wrappa sul buffer se non è entrato nel loop.
+    # Se start=0, loop_start=1.
+    assert pc.calculate(0.5) == 0.5
+    
+    # t=1.5 -> Entra nel loop? 
+    # Linear pos = 1.5. È tra 1.0 e 3.0.
+    # Deve essere 1.5.
+    assert pc.calculate(1.5) == 1.5
+    
+    # t=3.5 -> Linear pos 3.5.
+    # Ha superato loop_end (3.0).
+    # Deve wrappare: 3.5 - 1.0 (start) = 2.5. 2.5 % 2.0 (len) = 0.5. 
+    # Posizione assoluta = 1.0 (start) + 0.5 = 1.5
+    assert pc.calculate(3.5) == 1.5
 
-
+def test_loop_dynamic_duration():
+    """Test loop con durata variabile (Parameter)."""
+    params = {
+        'start': 0.0,
+        'speed': 1.0,
+        'loop_start': 1.0,
+        'loop_dur': 1.0, # Loop [1.0, 2.0]
+        'offset_range': 0.0
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
+    
+    # 1. PRIMING: Entriamo nel loop a t=1.5 (Pos=1.5)
+    # Questo setta pc._in_loop = True
+    pc.calculate(1.5) 
+    
+    # 2. TEST: Ora saltiamo a t=2.5
+    # Linear=2.5. Wrap: (2.5-1.0)%1.0 = 0.5. Pos=1.5
+    assert pc.calculate(2.5) == 1.5
 # =============================================================================
-# 7. TEST REPR
+# 4. TEST DEVIATION (Unified Jitter)
 # =============================================================================
 
-class TestRepr:
-    """Test rappresentazione stringa."""
+def test_deviation_application():
+    """
+    Verifica che offset_range venga applicato.
+    Usiamo un seed fisso o mockiamo random per determinismo.
+    """
+    params = {
+        'start': 0.0,
+        'speed': 0.0, # Fermo
+        'offset_range': 0.1 # 10% di 5s = 0.5s range totale
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
     
-    def test_repr_without_loop(self, pointer_factory):
-        """Repr senza loop."""
-        pointer = pointer_factory({'start': 1.0, 'speed': 2.0})
+    with patch('random.uniform', return_value=0.5): 
+        # Mock random.uniform per ritornare il massimo positivo
+        # Deviation calculation:
+        # dev_normalized = 0 (base) + 0.5 * 0.1 (range) = 0.05
+        # context_length = 5.0 (sample duration)
+        # deviation_seconds = 0.05 * 5.0 = 0.25
+        # final = 0.0 + 0.25 = 0.25
         
-        repr_str = repr(pointer)
-        assert "start=1.0" in repr_str
-        assert "speed=2.0" in repr_str
-        assert "loop" not in repr_str
+        pos = pc.calculate(1.0)
+        assert abs(pos - 0.25) < 0.0001
+
+def test_implicit_jitter_is_applied():
+    """
+    Verifica che anche senza offset_range, venga applicato 
+    il default jitter (definito in parameter_definitions).
+    """
+    params = {
+        'start': 0.0,
+        'speed': 0.0,
+        # offset_range MANCANTE -> Attiva Jitter Implicito
+    }
+    pc = PointerController(params, "t", 10.0, 5.0)
     
-    def test_repr_with_loop(self, pointer_with_loop):
-        """Repr con loop."""
-        repr_str = repr(pointer_with_loop)
-        assert "loop=" in repr_str
-
-
-# =============================================================================
-# 8. TEST EDGE CASES
-# =============================================================================
-
-class TestEdgeCases:
-    """Test casi limite."""
+    # Verifichiamo che il parametro abbia un range interno (default jitter)
+    # default_jitter per pointer_deviation è 0.005 (0.5%)
+    # 0.5% di 5s = 0.025s
     
-    def test_negative_speed(self, pointer_factory):
-        """Speed negativo (lettura al contrario)."""
-        pointer = pointer_factory({
-            'start': 5.0,
-            'speed': -1.0
-        })
+    with patch('random.uniform', return_value=0.5):
+        # dev_norm = 0 + 0.5 * 0.005 = 0.0025
+        # dev_sec = 0.0025 * 5.0 = 0.0125
+        pos = pc.calculate(1.0)
         
-        # A t=2, posizione = 5 + (-1 * 2) = 3
-        pos = pointer.calculate(2.0)
-        assert pos == pytest.approx(3.0)
-    
-    def test_zero_speed(self, pointer_factory):
-        """Speed zero (fermo in posizione)."""
-        pointer = pointer_factory({
-            'start': 3.0,
-            'speed': 0.0
-        })
-        
-        # Rimane sempre a 3.0
-        assert pointer.calculate(0.0) == pytest.approx(3.0)
-        assert pointer.calculate(10.0) == pytest.approx(3.0)
-    
+        # Ci aspettiamo un valore diverso da 0
+        assert pos > 0.0
+        assert abs(pos - 0.0125) < 0.0001

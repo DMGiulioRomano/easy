@@ -15,6 +15,7 @@ Ispirato al DMX-1000 di Barry Truax (1988).
 import random
 from typing import List, Optional, Union
 
+from parameter_factory import ParameterFactory
 from grain import Grain
 from envelope import Envelope
 from parameter_evaluator import ParameterEvaluator
@@ -23,6 +24,7 @@ from pitch_controller import PitchController
 from density_controller import DensityController
 from voice_manager import VoiceManager
 from utils import *
+from parameter_schema import STREAM_PARAMETER_SCHEMA
 
 
 
@@ -65,24 +67,46 @@ class Stream:
             duration=self.duration,
             time_mode=self.time_mode
         )
-        
-        # === 4. CONTROLLER ===
-        self._init_controllers(params)
-        
-        # === 5. PARAMETRI DIRETTI (non delegati) ===
-        self._init_grain_params(params)
+        # === 4. PARAMETRI DIRETTI (Data-Driven) ===
+        self._init_stream_parameters(params)
+        # === 5. PARAMETRI SPECIALI (logica custom) ===
         self._init_grain_reverse(params)
-        self._init_dephase_params(params)        
-        self._init_output_params(params)
-        # === 6. RIFERIMENTI CSOUND (assegnati da Generator) ===
+        # === 6. CONTROLLER ===
+        self._init_controllers(params)
+        # === 7. RIFERIMENTI CSOUND (assegnati da Generator) ===
         self.sample_table_num: Optional[int] = None
         self.envelope_table_num: Optional[int] = None
-        
-        # === 7. STATO ===
+        # === 8. STATO ===
         self.voices: List[List[Grain]] = []
         self.grains: List[Grain] = []  # backward compatibility
         self.generated = False
-    
+
+    # =========================================================================
+    # PARAMETRI DIRETTI (non delegati ai controller)
+    # =========================================================================
+
+    def _init_stream_parameters(self, params: dict) -> None:
+        """
+        Inizializza parametri diretti di Stream usando ParameterFactory.
+        
+        Design Pattern: Data-Driven Configuration
+        - Lo schema STREAM_PARAMETER_SCHEMA definisce COSA caricare
+        - ParameterFactory sa COME crearlo
+        - Stream riceve i Parameter già pronti        
+        """
+        factory = ParameterFactory(
+            stream_id=self.stream_id,
+            duration=self.duration,
+            time_mode=self.time_mode
+        )
+        
+        # Crea tutti i parametri definiti nello schema
+        parameters = factory.create_all_parameters(params, schema=STREAM_PARAMETER_SCHEMA)
+        
+        # Assegna dinamicamente come attributi
+        for name, param in parameters.items():
+            setattr(self, name, param)
+
     # =========================================================================
     # INIZIALIZZAZIONE CONTROLLER
     # =========================================================================
@@ -94,7 +118,7 @@ class Stream:
         pointer_params = params.get('pointer', {})
         self._pointer = PointerController(
             params=pointer_params,
-            evaluator=self._evaluator,
+            stream_id=self.stream_id,
             sample_dur_sec=self.sample_dur_sec,
             time_mode=self.time_mode
         )
@@ -120,89 +144,49 @@ class Stream:
             sample_dur_sec=self.sample_dur_sec
         )
     
-    # =========================================================================
-    # PARAMETRI DIRETTI (non delegati ai controller)
-    # =========================================================================
-    
-    def _init_grain_params(self, params: dict) -> None:
-        """Inizializza parametri del grano (duration, envelope)."""
-        grain_params = params.get('grain', {})
-        
-        self.grain_duration = self._evaluator.parse(
-            grain_params.get('duration', 0.05),
-            'grain_duration'
-        )
-        self.grain_duration_range = self._evaluator.parse(
-            grain_params.get('duration_range', 0.0),
-            'grain_duration'  # usa stessi bounds
-        )
-        self.grain_envelope = grain_params.get('envelope', 'gaussian')
-    
-    def _init_output_params(self, params: dict) -> None:
-        """Inizializza parametri di output (volume, pan)."""
-        self.volume = self._evaluator.parse(
-            params.get('volume', -6.0),
-            'volume'
-        )
-        self.volume_range = self._evaluator.parse(
-            params.get('volume_range', 0.0),
-            'volume'
-        )
-        self.pan = self._evaluator.parse(
-            params.get('pan', 0.0),
-            'pan'
-        )
-        self.pan_range = self._evaluator.parse(
-            params.get('pan_range', 0.0),
-            'pan'
-        )
-    
+            
     def _init_grain_reverse(self, params: dict) -> None:
-        """Inizializza parametri reverse del grano."""
+        """
+        Inizializza parametri reverse del grano.
+        
+        Semantica YAML RISTRETTA:
+        - Chiave ASSENTE → 'auto' (segue pointer_speed)
+        - Chiave PRESENTE (reverse:) → DEVE essere vuota, significa True (forzato reverse)
+        - reverse: true/false/auto → ERRORE! Non accettati
+        
+        Examples YAML validi:
+            grain:
+            # reverse assente → auto mode
+            
+            grain:
+            reverse:  # ← Unico modo per forzare reverse
+        
+        Examples YAML INVALIDI:
+            grain:
+            reverse: true    # ❌ ERRORE
+            reverse: false   # ❌ ERRORE
+            reverse: 'auto'  # ❌ ERRORE
+        """
         grain_params = params.get('grain', {})
         
-        # Modalità reverse: 'auto', True, o False
         if 'reverse' in grain_params:
-            self.grain_reverse_mode = grain_params['reverse']
+            # Validazione: se la chiave è presente, DEVE essere None (vuota)
+            with grain_params['reverse'] as value:
+                if value is not None:
+                    raise ValueError(
+                        f"Stream '{self.stream_id}': grain.reverse deve essere lasciato vuoto.\n"
+                        f"  Trovato: reverse: {value}\n"
+                        f"  Sintassi corretta:\n"
+                        f"    grain:\n"
+                        f"      reverse:  # ← senza valore\n"
+                        f"  Per seguire pointer_speed, ometti completamente la chiave 'reverse'."
+                    )
+            
+            # Chiave presente e vuota → reverse forzato
+            self.grain_reverse_mode = True
         else:
+            # Chiave assente → auto mode (segue speed)
             self.grain_reverse_mode = 'auto'
-
-    def _init_dephase_params(self, params: dict) -> None:
-        """
-        Inizializza parametri dephase.
-        
-        Logica:
-        - Se 'dephase:' ASSENTE → tutto None (Scenario A: range sempre attivo)
-        - Se 'dephase:' PRESENTE (anche vuoto) → prob non specificate = DEFAULT_DEPHASE_PROB
-        
-        I valori None indicano "nessun gate probabilistico" → il range viene
-        sempre applicato (se definito). I valori numerici/Envelope indicano
-        la probabilità (0-100) che il range venga applicato per ogni grano.
-        """
-        dephase_params = params.get('dephase')
-        
-        if dephase_params is None:
-            # dephase: ASSENTE → tutto None (Scenari 3, 4)
-            # None significa: "applica sempre il range definito"
-            self.grain_reverse_randomness = None
-            self.grain_duration_randomness = None
-            self.grain_pan_randomness = None
-            self.grain_volume_randomness = None
-            return
-        # dephase: PRESENTE (anche se vuoto {}) → usa metodo helper
-        # Il metodo applica DEFAULT_DEPHASE_PROB per valori non specificati
-        self.grain_reverse_randomness = self._evaluator.parse_dephase_param(
-            dephase_params.get('pc_rand_reverse')
-        )
-        self.grain_duration_randomness = self._evaluator.parse_dephase_param(
-            dephase_params.get('pc_rand_duration')
-        )
-        self.grain_pan_randomness = self._evaluator.parse_dephase_param(
-            dephase_params.get('pc_rand_pan')
-        )
-        self.grain_volume_randomness = self._evaluator.parse_dephase_param(
-            dephase_params.get('pc_rand_volume')
-        )
 
     # =========================================================================
     # GENERAZIONE GRANI
@@ -238,15 +222,8 @@ class Stream:
             # Loop temporale per questa voice
             while current_onset < self.duration:
                 elapsed_time = current_onset
-                
-                # === 3. CALCOLO DURATA CON DEPHASE ===
-                grain_dur = self._evaluator.evaluate_gated_stochastic(
-                    base_param=self.grain_duration,
-                    range_param=self.grain_duration_range,
-                    prob_param=self.grain_duration_randomness,
-                    time=elapsed_time,
-                    param_name='grain_duration'
-                )
+
+                grain_dur = self.grain_duration.get_value(elapsed_time)
                 
                 # 4. Verifica se voice è attiva
                 if self._voice_manager.is_voice_active(voice_index, elapsed_time):
@@ -305,25 +282,11 @@ class Stream:
         
         pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
         
-        # === 3. VOLUME (con Dephase) ===
-        # Applica variazione volume_range SOLO se pc_rand_volume lo permette
-        volume = self._evaluator.evaluate_gated_stochastic(
-            base_param=self.volume,
-            range_param=self.volume_range,
-            prob_param=self.grain_volume_randomness,
-            time=elapsed_time,
-            param_name='volume'
-        )
+        volume = self.volume.get_value(elapsed_time)
         
-        # === 4. PAN (con Dephase) ===
-        # Applica variazione pan_range SOLO se pc_rand_pan lo permette
-        pan = self._evaluator.evaluate_gated_stochastic(
-            base_param=self.pan,
-            range_param=self.pan_range,
-            prob_param=self.grain_pan_randomness,
-            time=elapsed_time,
-            param_name='pan'
-        )
+        # === 4. PAN (REFACTOR) ===
+        # Parameter gestisce base, range e dephase interna
+        pan = self.pan.get_value(elapsed_time)
         
         # === 5. REVERSE (con Dephase booleano) ===
         # Gestito separatamente perché non è un range additivo ma un flip booleano
@@ -351,7 +314,6 @@ class Stream:
         
         Usa evaluate_gated_stochastic con variation_mode='invert':
         - 'auto': base_reverse segue pointer_speed
-        - True/False: valore esplicito
         - grain_reverse_randomness: probabilità di flip (0-100)
         - grain_reverse_randomness=None: nessun flip (mantiene base)
         
@@ -363,24 +325,27 @@ class Stream:
         """
         # 1. Determina base value come float (0.0 o 1.0)
         if self.grain_reverse_mode == 'auto':
-            base_reverse = 1.0 if self._pointer.get_speed(elapsed_time) < 0 else 0.0
+            # Se la testina va indietro, il grano è reverse di base
+            is_reverse_base = (self._pointer.get_speed(elapsed_time) < 0)
         else:
-            base_reverse = 1.0 if bool(self.grain_reverse_mode) else 0.0
+            # Se forzato da YAML, usiamo il valore caricato nel parametro
+            # Nota: self.reverse._value può essere un numero o un Envelope
+            val = self.reverse._value
+            if hasattr(val, 'evaluate'):
+                val = val.evaluate(elapsed_time)
+            is_reverse_base = (val > 0.5)
         
-        # 2. Usa evaluate_gated_stochastic con variation_mode='invert'
-        #    - prob_param=None → gate chiuso (nessun flip)
-        #    - prob_param=70 → 70% chance di flip
-        reverse_value = self._evaluator.evaluate_gated_stochastic(
-            base_param=base_reverse,
-            range_param=0,  # Ignorato per 'invert' mode
-            prob_param=self.grain_reverse_randomness,
-            time=elapsed_time,
-            param_name='reverse'
-        )
+        # FASE 2: Controlliamo se dobbiamo FLIPPARE (Dephase/Probabilità)
+        # Usiamo il metodo interno del parametro per vedere se il "dado" vince
+        # Nota: Qui stiamo "rubando" la logica probabilistica all'oggetto Parameter
+        should_flip = self.reverse._check_probability(elapsed_time)
         
-        # 3. Converti float → boolean (soglia a 0.5)
-        return reverse_value > 0.5
-
+        # FASE 3: Applichiamo il flip
+        # Se should_flip è True, invertiamo la decisione di base
+        if should_flip:
+            return not is_reverse_base
+            
+        return is_reverse_base
 
     # =========================================================================
     # PROPRIETÀ PER BACKWARD COMPATIBILITY

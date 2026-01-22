@@ -152,7 +152,7 @@ class PitchController:
         4. Converte a ratio
         """
         # Base semitones
-        base_semitones = self._evaluator.evaluate(
+        base_semitones = self._evaluator(
             self._base_semitones,
             elapsed_time,
             'pitch_semitones'
@@ -183,7 +183,7 @@ class PitchController:
         3. Ritorna ratio finale
         """
         # Base ratio
-        base_ratio = self._evaluator.evaluate(
+        base_ratio = self._evaluator(
             self._base_ratio,
             elapsed_time,
             'pitch_ratio'

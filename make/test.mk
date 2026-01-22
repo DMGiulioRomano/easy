@@ -8,7 +8,7 @@ PYTHON_VENV := $(VENV_DIR)/bin/python3
 PIP_VENV := $(VENV_DIR)/bin/pip
 PYTEST_VENV := $(VENV_DIR)/bin/pytest
 REQUIREMENTS := requirements.txt
-
+FILE ?= tests/
 # File marker per evitare di reinstallare se non cambia nulla
 VENV_MARKER := $(VENV_DIR)/.installed
 
@@ -31,7 +31,7 @@ $(VENV_MARKER): $(REQUIREMENTS)
 # Lancia i test usando pytest dentro il venv
 tests: venv-setup
 	@echo "🧪 [TEST] Running pytest..."
-	$(PYTEST_VENV) tests/
+	$(PYTEST_VENV) $(FILE)
 
 # Pulisce l'ambiente virtuale
 venv-clean:

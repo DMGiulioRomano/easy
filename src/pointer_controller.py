@@ -14,8 +14,9 @@ Ispirato al DMX-1000 di Barry Truax (1988)
 from typing import Union, Optional, Callable
 import random
 from envelope import Envelope
-from parameter_evaluator import ParameterEvaluator
-
+from parameter_factory import ParameterFactory
+from parameter import Parameter
+from parameter_schema import POINTER_PARAMETER_SCHEMA, get_parameter_spec
 
 class PointerController:
     """
@@ -42,7 +43,8 @@ class PointerController:
     def __init__(
         self,
         params: dict,
-        evaluator: ParameterEvaluator,
+        stream_id: str,          
+        duration: float, 
         sample_dur_sec: float,
         time_mode: str = 'absolute'
     ):
@@ -55,9 +57,9 @@ class PointerController:
             sample_dur_sec: durata del sample in secondi
             time_mode: 'absolute' o 'normalized' (default per envelope)
         """
-        self._evaluator = evaluator
         self._sample_dur_sec = sample_dur_sec
         self._time_mode = time_mode
+        self._factory = ParameterFactory(stream_id, duration, time_mode)
         
         self._init_params(params)
         self._init_loop_state()
@@ -68,24 +70,26 @@ class PointerController:
     
     def _init_params(self, params: dict) -> None:
         """
-        Inizializza parametri pointer dal dict YAML.
-        
-        Parametri:
-        - start: posizione iniziale (secondi)
-        - speed: velocità di scansione (supporta Envelope)
-        - jitter: micro-variazione bipolare (0.001-0.01 sec tipico)
-        - offset_range: macro-variazione bipolare (0-1, normalizzato su durata)
-        - loop_start: inizio loop (opzionale, secondi) - FISSO
-        - loop_end: fine loop (opzionale) - FISSO (mutualmente esclusivo con loop_dur)
-        - loop_dur: durata loop (opzionale) - SUPPORTA ENVELOPE
+        Inizializzazione dinamica con mappatura nomi e gestione eccezioni.
         """
-        # --- Parametri base ---
-        self.start = params.get('start', 0.0)
-        self.speed = self._evaluator.parse(params.get('speed', 1.0), "pointer.speed")
-        self.jitter = self._evaluator.parse(params.get('jitter', 0.0), "pointer.jitter")
-        self.offset_range = self._evaluator.parse(params.get('offset_range', 0.0), "pointer.offset_range")
+        # 1. Carica TUTTO usando lo schema specifico
+        # Questo crea: 'pointer_speed', 'pointer_jitter', 'pointer_offset_range', 
+        # 'pointer_start', 'loop_dur' (non scalato!)
+        all_params = self._factory.create_all_parameters(params, schema=POINTER_PARAMETER_SCHEMA)
         
-        # --- Loop configuration ---
+        # 2. Assegna dinamicamente rimuovendo il prefisso 'pointer_'
+        for name, param_obj in all_params.items():
+            
+            # CASO SPECIALE: loop_dur lo saltiamo qui, lo gestisce _init_loop_params
+            if name == 'loop_dur': continue
+                
+            # Rimuovi prefisso 'pointer_' se presente per avere self.speed invece di self.pointer_speed
+            attr_name = name.replace('pointer_', '')
+            
+            # Assegna (self.speed = param_obj)
+            setattr(self, attr_name, param_obj)
+            
+        # 3. Gestione Loop (che gestisce loop_dur manualmente con lo scaling)
         self._init_loop_params(params)
     
     def _init_loop_params(self, params: dict) -> None:
@@ -117,8 +121,12 @@ class PointerController:
             elif raw_dur is not None:
                 # Modalità loop_dur (può essere Envelope!)
                 self.loop_end = None
-                self.loop_dur = self._parse_scaled_loop_dur(raw_dur, scale, loop_mode)
-                
+                scaled_dur_raw = self._scale_loop_dur_raw(raw_dur, scale, loop_mode)
+                # Crea il parametro usando la factory. Passiamo un dict fittizio perché create_single_parameter si aspetta la struttura YAML completa
+                # ma noi gli diamo il valore già estratto e scalato.
+                # Trucco: create_single_parameter cerca 'loop_dur' nel dict.
+                fake_params = {'loop_dur': scaled_dur_raw}
+                self.loop_dur = self._factory.create_single_parameter('loop_dur', fake_params)                
             else:
                 # Solo loop_start → loop fino a fine sample
                 self.loop_end = self._sample_dur_sec
@@ -131,35 +139,34 @@ class PointerController:
             self.loop_end = None
             self.loop_dur = None
             self.has_loop = False
-    
-    def _parse_scaled_loop_dur(
-        self,
-        raw_dur,
-        scale: float,
-        loop_mode: str
-    ) -> Union[float, Envelope]:
+
+    def _scale_loop_dur_raw(self, raw_dur, scale: float, loop_mode: str):
         """
-        Parsa loop_dur con scaling per modalità normalizzata.
-        
-        Se loop_dur è un Envelope e loop_mode è 'normalized',
-        scala i valori Y dei breakpoints.
+        Scala i valori raw di loop_dur PRIMA di creare il Parameter.
+        Necessario perché ParameterFactory scala il Tempo (X), ma qui dobbiamo
+        scalare il Valore (Y) se siamo in normalized mode su sample duration.
         """
+        if scale == 1.0:
+            return raw_dur
+            
         if isinstance(raw_dur, (int, float)):
             return raw_dur * scale
         
-        # È un envelope/lista - scala i valori Y se normalized
-        if loop_mode == 'normalized':
-            if isinstance(raw_dur, dict):
-                scaled_points = [[x, y * scale] for x, y in raw_dur['points']]
-                raw_dur = {
-                    'type': raw_dur.get('type', 'linear'),
-                    'points': scaled_points
-                }
-            elif isinstance(raw_dur, list):
-                raw_dur = [[x, y * scale] for x, y in raw_dur]
-        
-        return self._evaluator.parse(raw_dur, "pointer.loop_dur")
-    
+        # Envelope Dict
+        if isinstance(raw_dur, dict):
+            points = raw_dur.get('points', [])
+            scaled_points = [[x, y * scale] for x, y in points]
+            # Ritorniamo una copia modificata
+            new_dur = raw_dur.copy()
+            new_dur['points'] = scaled_points
+            return new_dur
+            
+        # Envelope List
+        if isinstance(raw_dur, list):
+            return [[x, y * scale] for x, y in raw_dur]
+            
+        return raw_dur    
+
     def _init_loop_state(self) -> None:
         """Inizializza stato del phase accumulator per loop."""
         self._in_loop = False
@@ -167,7 +174,7 @@ class PointerController:
         self._last_linear_pos = None     # Per calcolare delta movimento
     
     # =========================================================================
-    # MAIN CALCULATION
+    # CALCULATION
     # =========================================================================
     
     def calculate(self, elapsed_time: float) -> float:
@@ -196,13 +203,12 @@ class PointerController:
             context_length = self._sample_dur_sec
             wrap_fn = lambda p: p % self._sample_dur_sec
         
-        # 3. Deviazioni stocastiche
-        final_pos = self._apply_stochastic_deviations(
-            base_pos, context_length, elapsed_time, wrap_fn
-        )
-        
-        return final_pos
+        dev_normalized = self.deviation.get_value(elapsed_time)
+        deviation_seconds = dev_normalized * context_length
+        final_pos = base_pos + deviation_seconds
+        return wrap_fn(final_pos)        
     
+
     def _calculate_linear_position(self, elapsed_time: float) -> float:
         """
         Calcola posizione lineare da speed (con integrazione per envelope).
@@ -210,11 +216,11 @@ class PointerController:
         Se speed è un Envelope, integra per ottenere la posizione.
         Altrimenti: position = start + time * speed
         """
-        if isinstance(self.speed, Envelope):
-            sample_position = self.speed.integrate(0, elapsed_time)
+        internal_val = self.speed.value
+        if isinstance(internal_val, Envelope):
+            sample_position = internal_val.integrate(0, elapsed_time)
         else:
-            sample_position = elapsed_time * self.speed
-        
+            sample_position = elapsed_time * float(internal_val)
         return self.start + sample_position
     
 
@@ -234,11 +240,8 @@ class PointerController:
         
         if self.loop_dur is not None:
             # loop_dur dinamico (può essere Envelope)
-            current_loop_dur = self._evaluator.evaluate(
-                self.loop_dur, elapsed_time, 'loop_dur'
-            )
-            # Limita al massimo della durata del sample
-            current_loop_dur = min(current_loop_dur, self._sample_dur_sec)
+            current_dur = self.loop_dur.get_value(elapsed_time)
+            current_loop_dur = min(current_dur, self._sample_dur_sec)
         else:
             # loop_end fisso (legacy)
             current_loop_dur = self.loop_end - self.loop_start
@@ -257,61 +260,26 @@ class PointerController:
                 self._last_linear_pos = linear_pos
         
         if self._in_loop:
-            # Calcola delta movimento dall'ultimo grano
             if self._last_linear_pos is not None:
                 delta_pos = linear_pos - self._last_linear_pos
-                # Converti in incremento di fase (normalizzato su loop corrente)
                 delta_phase = delta_pos / loop_length
                 self._loop_phase += delta_phase
-                
-                # Wrap fase (gestisce anche speed negativi e multi-giri)
                 self._loop_phase = self._loop_phase % 1.0
             
             self._last_linear_pos = linear_pos
-            
-            # Converti fase in posizione assoluta
             base_pos = current_loop_start + self._loop_phase * loop_length
             context_length = loop_length
             
-            # Wrap function per deviazioni stocastiche
             def wrap_fn(pos: float) -> float:
                 rel = pos - current_loop_start
                 return current_loop_start + (rel % loop_length)
         else:
-            # Prima del loop: wrap sul buffer intero
             base_pos = linear_pos % self._sample_dur_sec
             context_length = self._sample_dur_sec
             wrap_fn = lambda p: p % self._sample_dur_sec
         
         return base_pos, context_length, wrap_fn
-    
-    def _apply_stochastic_deviations(
-        self,
-        base_pos: float,
-        context_length: float,
-        elapsed_time: float,
-        wrap_fn: Callable[[float], float]
-    ) -> float:
-        """
-        Applica deviazioni stocastiche (jitter + offset_range).
         
-        - jitter: micro-variazione bipolare in secondi
-        - offset_range: macro-variazione normalizzata su context_length
-        """
-        jitter_amount = self._evaluator.evaluate(
-            self.jitter, elapsed_time, 'pointer_jitter'
-        )
-        offset_range_amount = self._evaluator.evaluate(
-            self.offset_range, elapsed_time, 'pointer_offset_range'
-        )
-        
-        jitter_deviation = random.uniform(-jitter_amount, jitter_amount)
-        offset_deviation = random.uniform(-0.5, 0.5) * offset_range_amount * context_length
-        
-        # Posizione finale con wrap
-        final_pos = base_pos + jitter_deviation + offset_deviation
-        return wrap_fn(final_pos)
-    
     # =========================================================================
     # STATE MANAGEMENT
     # =========================================================================
@@ -323,12 +291,10 @@ class PointerController:
     def get_speed(self, elapsed_time: float) -> float:
         """
         Ritorna la velocità istantanea al tempo specificato.
-        Utile per determinare la direzione (reverse) in Stream.
+        CORRETTO: Delega al Parameter.
         """
-        if isinstance(self.speed, Envelope):
-            return self.speed.evaluate(elapsed_time)
-        return float(self.speed)
-    
+        return self.speed.get_value(elapsed_time)
+        
     # =========================================================================
     # PROPERTIES (Read-only access)
     # =========================================================================
@@ -354,4 +320,4 @@ class PointerController:
     
     def __repr__(self) -> str:
         loop_info = f", loop={self.loop_start:.3f}-{self.loop_end or 'dynamic'}" if self.has_loop else ""
-        return f"PointerController(start={self.start}, speed={self.speed}{loop_info})"
+        return f"PointerController(start={self.start}, speed={self.speed._value}{loop_info})"
