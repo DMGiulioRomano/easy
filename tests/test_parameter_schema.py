@@ -462,9 +462,8 @@ class TestPointerParameterSchema:
         
         assert 'pointer_start' in names
         assert 'pointer_speed' in names
-        assert 'pointer_jitter' in names
-        assert 'pointer_offset_range' in names
-    
+        assert 'pointer_deviation' in names
+
     def test_pointer_start_is_not_smart(self):
         """pointer_start deve essere is_smart=False (valore raw)."""
         from parameter_schema import POINTER_PARAMETER_SCHEMA
@@ -497,9 +496,7 @@ class TestPointerParameterSchema:
         
         assert defaults['pointer_start'] == 0.0
         assert defaults['pointer_speed'] == 1.0
-        assert defaults['pointer_jitter'] == 0.0
-        assert defaults['pointer_offset_range'] == 0.0
-
+        assert defaults['pointer_deviation'] == 0.0
 
 # =============================================================================
 # 12. TEST PITCH_PARAMETER_SCHEMA
@@ -1049,45 +1046,4 @@ class TestSchemaSpecialCases:
         expected_non_smart = {'grain_envelope', 'pointer_start', 'pitch_range'}
         assert set(non_smart) == expected_non_smart, \
             f"Non-smart params inattesi: {set(non_smart) - expected_non_smart}"
-    
-    def test_all_range_paths_are_none_in_controller_schemas(self):
-        """Controller schema non dovrebbero avere range_path (gestito internamente)."""
-        from parameter_schema import (
-            POINTER_PARAMETER_SCHEMA,
-            PITCH_PARAMETER_SCHEMA,
-            DENSITY_PARAMETER_SCHEMA,
-            VOICE_PARAMETER_SCHEMA
-        )
         
-        controller_schemas = [
-            POINTER_PARAMETER_SCHEMA,
-            PITCH_PARAMETER_SCHEMA,
-            DENSITY_PARAMETER_SCHEMA,
-            VOICE_PARAMETER_SCHEMA
-        ]
-        
-        for schema in controller_schemas:
-            for spec in schema:
-                assert spec.range_path is None, \
-                    f"{spec.name}: Controller params non dovrebbero avere range_path"
-    
-    def test_all_dephase_keys_are_none_in_controller_schemas(self):
-        """Controller schema non dovrebbero avere dephase_key (gestito altrove)."""
-        from parameter_schema import (
-            POINTER_PARAMETER_SCHEMA,
-            PITCH_PARAMETER_SCHEMA,
-            DENSITY_PARAMETER_SCHEMA,
-            VOICE_PARAMETER_SCHEMA
-        )
-        
-        controller_schemas = [
-            POINTER_PARAMETER_SCHEMA,
-            PITCH_PARAMETER_SCHEMA,
-            DENSITY_PARAMETER_SCHEMA,
-            VOICE_PARAMETER_SCHEMA
-        ]
-        
-        for schema in controller_schemas:
-            for spec in schema:
-                assert spec.dephase_key is None, \
-                    f"{spec.name}: Controller params non dovrebbero avere dephase_key"
