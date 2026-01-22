@@ -69,6 +69,7 @@ def env_cubic():
     data = {'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 10], [3, 0]]}
     return Envelope(data)
 
+
 # =============================================================================
 # FIXTURES POINTER CONTROLLER
 # =============================================================================
@@ -78,10 +79,22 @@ def sample_dur_sec():
     """Durata sample standard per test (10 secondi)."""
     return 10.0
 
+
 @pytest.fixture
-def pointer_factory(evaluator, sample_dur_sec):
+def stream_duration():
+    """Durata stream standard per test (10 secondi)."""
+    return 10.0
+
+
+@pytest.fixture
+def pointer_factory(sample_dur_sec, stream_duration):
     """
     Factory per creare PointerController con configurazioni custom.
+    
+    NUOVA FIRMA dopo refactoring:
+    - PointerController ora usa ParameterFactory internamente
+    - Non richiede più un evaluator esterno
+    - Parametri: params, stream_id, duration, sample_dur_sec, time_mode
     
     Usage:
         def test_something(pointer_factory):
@@ -91,29 +104,64 @@ def pointer_factory(evaluator, sample_dur_sec):
     """
     from pointer_controller import PointerController
     
-    def _create(params: dict, sample_dur: float = None, eval_override = None):
+    def _create(
+        params: dict, 
+        sample_dur: float = None,
+        duration: float = None,
+        stream_id: str = "test_stream",
+        time_mode: str = 'absolute'
+    ):
         return PointerController(
             params=params,
-            evaluator=eval_override or evaluator,
-            sample_dur_sec=sample_dur or sample_dur_sec
+            stream_id=stream_id,
+            duration=duration or stream_duration,
+            sample_dur_sec=sample_dur or sample_dur_sec,
+            time_mode=time_mode
         )
     
     return _create
 
+
 @pytest.fixture
 def pointer_basic(pointer_factory):
-    """PointerController base: start=0, speed=1, no loop."""
-    return pointer_factory({'start': 0.0, 'speed': 1.0})
+    """
+    PointerController base: start=0, speed=1, no loop, no deviation.
+    
+    NOTA: offset_range=0.0 disabilita la deviazione stocastica,
+    rendendo i test deterministici.
+    """
+    return pointer_factory({
+        'start': 0.0, 
+        'speed': 1.0,
+        'offset_range': 0.0  # Disabilita jitter per determinismo
+    })
+
 
 @pytest.fixture
 def pointer_with_loop(pointer_factory):
-    """PointerController con loop fisso (2.0 - 4.0)."""
+    """
+    PointerController con loop fisso (2.0 - 4.0).
+    
+    offset_range=0.0 per determinismo nei test.
+    """
     return pointer_factory({
         'start': 0.0,
         'speed': 1.0,
         'loop_start': 2.0,
-        'loop_end': 4.0
+        'loop_end': 4.0,
+        'offset_range': 0.0  # Disabilita jitter per determinismo
     })
+
+
+@pytest.fixture
+def pointer_with_deviation(pointer_factory):
+    """PointerController con deviazione attiva per test stocastici."""
+    return pointer_factory({
+        'start': 0.0,
+        'speed': 1.0,
+        'offset_range': 0.1  # 10% di deviazione
+    })
+
 
 # =============================================================================
 # FIXTURES PITCH CONTROLLER
