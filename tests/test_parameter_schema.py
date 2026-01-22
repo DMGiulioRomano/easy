@@ -498,6 +498,13 @@ class TestPointerParameterSchema:
         assert defaults['pointer_speed'] == 1.0
         assert defaults['pointer_deviation'] == 0.0
 
+    def test_pointer_deviation_has_range_path_and_dephase(self):
+        """pointer_deviation deve avere range_path e dephase_key."""
+        from parameter_schema import POINTER_PARAMETER_SCHEMA
+        spec = next(s for s in POINTER_PARAMETER_SCHEMA if s.name == 'pointer_deviation')
+        
+        assert spec.range_path == 'offset_range'
+        assert spec.dephase_key == 'pc_rand_pointer'
 # =============================================================================
 # 12. TEST PITCH_PARAMETER_SCHEMA
 # =============================================================================
