@@ -551,6 +551,16 @@ class ParameterEvaluator:
             )
         
         return clamped
+    
+    def get_bounds(self, param_name: str) -> ParameterBounds:
+        """
+        Recupera i bounds per un parametro specifico.
+        Necessario per VoiceManager e PitchController.
+        """
+        if param_name not in self.BOUNDS:
+            raise ValueError(f"Bounds non definiti per '{param_name}'")
+        return self.BOUNDS[param_name]
+
 
     def __call__(self, param, time: float, param_name: str) -> float:
         """

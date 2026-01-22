@@ -67,10 +67,10 @@ class Stream:
             duration=self.duration,
             time_mode=self.time_mode
         )
-        # === 4. PARAMETRI DIRETTI (Data-Driven) ===
-        self._init_stream_parameters(params)
         # === 5. PARAMETRI SPECIALI (logica custom) ===
         self._init_grain_reverse(params)
+        # === 4. PARAMETRI DIRETTI (Data-Driven) ===
+        self._init_stream_parameters(params)
         # === 6. CONTROLLER ===
         self._init_controllers(params)
         # === 7. RIFERIMENTI CSOUND (assegnati da Generator) ===
@@ -119,6 +119,7 @@ class Stream:
         self._pointer = PointerController(
             params=pointer_params,
             stream_id=self.stream_id,
+            duration=self.duration,
             sample_dur_sec=self.sample_dur_sec,
             time_mode=self.time_mode
         )
@@ -127,7 +128,9 @@ class Stream:
         pitch_params = params.get('pitch', {})
         self._pitch = PitchController(
             params=pitch_params,
-            evaluator=self._evaluator
+            stream_id=self.stream_id,
+            duration=self.duration,
+            time_mode=self.time_mode
         )
         
         # DENSITY CONTROLLER
@@ -171,16 +174,16 @@ class Stream:
         
         if 'reverse' in grain_params:
             # Validazione: se la chiave è presente, DEVE essere None (vuota)
-            with grain_params['reverse'] as value:
-                if value is not None:
-                    raise ValueError(
-                        f"Stream '{self.stream_id}': grain.reverse deve essere lasciato vuoto.\n"
-                        f"  Trovato: reverse: {value}\n"
-                        f"  Sintassi corretta:\n"
-                        f"    grain:\n"
-                        f"      reverse:  # ← senza valore\n"
-                        f"  Per seguire pointer_speed, ometti completamente la chiave 'reverse'."
-                    )
+            value = grain_params['reverse']
+            if value is not None:
+                raise ValueError(
+                    f"Stream '{self.stream_id}': grain.reverse deve essere lasciato vuoto.\n"
+                    f"  Trovato: reverse: {value}\n"
+                    f"  Sintassi corretta:\n"
+                    f"    grain:\n"
+                    f"      reverse:  # ← senza valore\n"
+                    f"  Per seguire pointer_speed, ometti completamente la chiave 'reverse'."
+                )
             
             # Chiave presente e vuota → reverse forzato
             self.grain_reverse_mode = True
@@ -333,7 +336,7 @@ class Stream:
             val = self.reverse._value
             if hasattr(val, 'evaluate'):
                 val = val.evaluate(elapsed_time)
-            is_reverse_base = (val > 0.5)
+            is_reverse_base = (val > 0.5) if val is not None else True
         
         # FASE 2: Controlliamo se dobbiamo FLIPPARE (Dephase/Probabilità)
         # Usiamo il metodo interno del parametro per vedere se il "dado" vince

@@ -110,7 +110,7 @@ class DensityController:
         
         # 2. Usa Evaluator per Safety Clamp e Logging
         # 'effective_density' deve essere definito nei BOUNDS dell'Evaluator
-        effective_density = self.evaluator.evaluate(
+        effective_density = self.evaluator(
             raw_density, 
             elapsed_time, 
             'effective_density'
@@ -120,7 +120,7 @@ class DensityController:
         avg_inter_onset = 1.0 / effective_density
         
         # 4. Valuta distribution
-        distribution = self.evaluator.evaluate(
+        distribution = self.evaluator(
             self.distribution,
             elapsed_time,
             'distribution'
@@ -141,7 +141,7 @@ class DensityController:
     ) -> float:
         """Calcola la densità grezza prima del clamping in base alla modalità."""
         if self._mode == 'fill_factor':
-            ff = self.evaluator.evaluate(
+            ff = self.evaluator(
                 self.fill_factor,
                 elapsed_time,
                 'fill_factor'
@@ -151,7 +151,7 @@ class DensityController:
                 current_grain_duration = 0.001
             return ff / current_grain_duration
         else:
-            return self.evaluator.evaluate(
+            return self.evaluator(
                 self.density,
                 elapsed_time,
                 'density'
@@ -160,7 +160,7 @@ class DensityController:
     def get_density_value(self, elapsed_time: float) -> Optional[float]:
         """Ritorna il valore di density se in modalità density (per debug)."""
         if self._mode == 'density':
-            return self.evaluator.evaluate(
+            return self.evaluator(
                 self.density, elapsed_time, 'density'
             )
         return None
@@ -168,13 +168,13 @@ class DensityController:
     def get_fill_factor_value(self, elapsed_time: float) -> Optional[float]:
         """Ritorna il valore di fill_factor se in modalità fill_factor (per debug)."""
         if self._mode == 'fill_factor':
-            return self.evaluator.evaluate(
+            return self.evaluator(
                 self.fill_factor, elapsed_time, 'fill_factor'
             )
         return None
     
     def get_distribution_value(self, elapsed_time: float) -> float:
         """Ritorna il valore corrente di distribution."""
-        return self.evaluator.evaluate(
+        return self.evaluator(
             self.distribution, elapsed_time, 'distribution'
         )

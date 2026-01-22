@@ -5,6 +5,8 @@ import yaml
 from stream import Stream
 from testina import Testina
 from envelope import Envelope
+from parameter import Parameter
+
 class Generator:
     def __init__(self, yaml_path):
         self.yaml_path = yaml_path
@@ -50,14 +52,22 @@ class Generator:
 
     def _format_param_for_comment(self, param, multiplier=1, unit=''):
         """Formatta un parametro per i commenti SCO (gestisce Envelope e None)"""
+        if isinstance(param, Parameter):
+            param = param.value
+            
         if param is None:
             return "N/A"
         elif isinstance(param, Envelope):
             return "dynamic (envelope)"
         else:
-            value = param * multiplier
-            return f"{value:.1f}{unit}"
-                        
+            try:
+                # Tenta conversione a float per la moltiplicazione
+                value = float(param) * multiplier
+                return f"{value:.1f}{unit}"
+            except (ValueError, TypeError):
+                # Fallback se non è un numero
+                return str(param)
+                                    
     def load_yaml(self):
         """Carica e parsa il file YAML"""
         with open(self.yaml_path, 'r') as f:

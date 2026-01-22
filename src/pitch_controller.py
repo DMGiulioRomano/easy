@@ -11,35 +11,89 @@ Supporta range stocastico in entrambe le modalità.
 Ispirato al DMX-1000 di Barry Truax (1988)
 """
 
-from typing import Union
-import random
-from envelope import Envelope
-from parameter_evaluator import ParameterEvaluator
+import math
+from typing import Union, Optional
+from parameter_factory import ParameterFactory
+from parameter import Parameter
+from parameter_schema import PITCH_PARAMETER_SCHEMA
+
 
 
 class PitchController:
     """
     Gestisce la trasposizione del pitch per i grani.
-    
     Responsabilità:
-    - Parsing parametri pitch da YAML
-    - Due modalità: semitoni (shift_semitones) o ratio diretto
-    - Deviazione stocastica basata su range
-    - Conversione finale in ratio
+    1. Inizializzare i parametri corretti (Ratio vs Semitoni).
+    2. Fornire un unico metodo `calculate(t)` che restituisce sempre un Ratio.
+    """    
     
-    Il controller usa un ParameterEvaluator per:
-    - parse(): conversione YAML → numero/Envelope
-    - evaluate(): valutazione con bounds safety
-    - evaluate_with_range(): valutazione con deviazione stocastica
-    
-    Usage:
-        evaluator = ParameterEvaluator("stream1", duration, time_mode)
-        pitch = PitchController(params['pitch'], evaluator)
+    def __init__(
+        self,
+        params: dict,
+        stream_id: str,
+        duration: float,
+        time_mode: str = 'absolute'
+    ):
+        """
+        Inizializza il controller.
         
-        # Nel loop di generazione grani:
-        ratio = pitch.calculate(elapsed_time)
-    """
+        Args:
+            params: dict con configurazione pitch da YAML (sotto 'pitch' key)
+        """
+        self._factory = ParameterFactory(stream_id, duration, time_mode)
+        self._loaded_params = self._factory.create_all_parameters(
+            params, 
+            schema=PITCH_PARAMETER_SCHEMA
+        )
+        # Strategy Selection (Mode)
+        self._init_strategy(params)
+
+    def _init_strategy(self, params: dict) -> None:
+        """
+        Determina la strategia di calcolo (Ratio vs Semitoni).
+        """
+        # Se 'shift_semitones' è esplicitamente nel YAML, vince lui.
+        if 'shift_semitones' in params:
+            self._mode = 'semitones'
+            self._active_param: Parameter = self._loaded_params['pitch_semitones']
+            # Backward compatibility properties
+            self._base_semitones = self._active_param.value
+            self._base_ratio = None
+        else:
+            self._mode = 'ratio'
+            self._active_param: Parameter = self._loaded_params['pitch_ratio']
+            # Backward compatibility properties
+            self._base_ratio = self._active_param.value
+            self._base_semitones = None
+            
+        # Conserviamo il valore raw del range solo per debug/visualizzazione
+        # (Il calcolo reale avviene dentro _active_param)
+        self._range_raw = params.get('range', 0.0)
+
     
+    # =========================================================================
+    # CALCULATION
+    # =========================================================================
+    
+    def calculate(self, elapsed_time: float) -> float:
+        """
+        Calcola il pitch ratio finale al tempo t.
+        
+        Il metodo .get_value() del parametro gestisce internamente:
+        - Valore base (fisso o Envelope)
+        - Range stocastico (Additive o Quantized)
+        - Dephase probability
+        - Clipping ai bounds di sicurezza
+        """
+        # 1. Ottieni il valore "sporco" (base + jitter)
+        raw_val = self._active_param.get_value(elapsed_time)
+        
+        # 2. Adatta il valore al dominio richiesto (Ratio)
+        if self._mode == 'semitones':
+            return self.semitones_to_ratio(raw_val)
+        else:
+            return raw_val
+        
     # =========================================================================
     # STATIC METHODS
     # =========================================================================
@@ -56,184 +110,43 @@ class PitchController:
             
         Returns:
             float: ratio di frequenza
-            
-        Examples:
-            >>> PitchController.semitones_to_ratio(0)
-            1.0
-            >>> PitchController.semitones_to_ratio(12)
-            2.0
-            >>> PitchController.semitones_to_ratio(-12)
-            0.5
         """
         return pow(2.0, semitones / 12.0)
-    
-    # =========================================================================
-    # INITIALIZATION
-    # =========================================================================
-    
-    def __init__(
-        self,
-        params: dict,
-        evaluator: ParameterEvaluator
-    ):
-        """
-        Inizializza il controller.
-        
-        Args:
-            params: dict con configurazione pitch da YAML (sotto 'pitch' key)
-            evaluator: ParameterEvaluator per parsing e valutazione
-        """
-        self._evaluator = evaluator
-        self._init_params(params)
-    
-    def _init_params(self, params: dict) -> None:
-        """
-        Inizializza parametri pitch dal dict YAML.
-        
-        Due modalità mutuamente esclusive:
-        1. SEMITONI: se 'shift_semitones' presente → converte a ratio alla fine
-        2. RATIO: altrimenti → usa ratio direttamente (default 1.0)
-        
-        In entrambe le modalità, 'range' applica deviazione stocastica.
-        """
-        if 'shift_semitones' in params:
-            # === Modalità SEMITONI ===
-            self._mode = 'semitones'
-            self._base_semitones = self._evaluator.parse(
-                params['shift_semitones'], 
-                'pitch.shift_semitones'
-            )
-            self._base_ratio = None  # marker: usa semitoni
-        else:
-            # === Modalità RATIO (default) ===
-            self._mode = 'ratio'
-            self._base_ratio = self._evaluator.parse(
-                params.get('ratio', 1.0),
-                'pitch.ratio'
-            )
-            self._base_semitones = None
-        
-        # Range: sempre presente, interpretazione dipende dalla modalità
-        self._range = self._evaluator.parse(
-            params.get('range', 0.0),
-            'pitch.range'
-        )
-    
-    # =========================================================================
-    # CALCULATION
-    # =========================================================================
-    
-    def calculate(self, elapsed_time: float) -> float:
-        """
-        Calcola pitch ratio al tempo specificato.
-        
-        Applica la logica appropriata in base alla modalità:
-        - Semitoni: valuta semitoni base + range, converte a ratio
-        - Ratio: valuta ratio base + range (opzionale conversione semitoni)
-        
-        Args:
-            elapsed_time: tempo relativo all'onset dello stream
-            
-        Returns:
-            float: pitch ratio finale (sempre > 0)
-        """
-        if self._mode == 'semitones':
-            return self._calculate_semitones_mode(elapsed_time)
-        else:
-            return self._calculate_ratio_mode(elapsed_time)
-    
-    def _calculate_semitones_mode(self, elapsed_time: float) -> float:
-        """
-        Calcola pitch in modalità semitoni.
-        
-        1. Valuta semitoni base dall'envelope
-        2. Valuta range (in semitoni)
-        3. Applica deviazione stocastica
-        4. Converte a ratio
-        """
-        # Base semitones
-        base_semitones = self._evaluator(
-            self._base_semitones,
-            elapsed_time,
-            'pitch_semitones'
-        )
-        
-        # Range (in semitoni) - usa i bounds del range semitoni
-        # Nota: usiamo i bounds min_range/max_range di pitch_semitones
-        bounds = self._evaluator.get_bounds('pitch_semitones')
-        is_envelope = isinstance(self._range, Envelope)
-        range_value = self._range.evaluate(elapsed_time) if is_envelope else float(self._range)
-        range_value = max(bounds.min_range, min(bounds.max_range, range_value))
-        
-        # Deviazione stocastica (intero per semitoni, come nell'originale)
-        pitch_deviation = random.randint(
-            int(-range_value * 0.5), 
-            int(range_value * 0.5)
-        )
-        
-        final_semitones = base_semitones + pitch_deviation
-        return self.semitones_to_ratio(final_semitones)
-    
-    def _calculate_ratio_mode(self, elapsed_time: float) -> float:
-        """
-        Calcola pitch in modalità ratio diretta.
-        
-        1. Valuta ratio base dall'envelope
-        2. Se range > 0: applica deviazione (in ratio, non semitoni)
-        3. Ritorna ratio finale
-        """
-        # Base ratio
-        base_ratio = self._evaluator(
-            self._base_ratio,
-            elapsed_time,
-            'pitch_ratio'
-        )
-        
-        # Range (in ratio)
-        bounds = self._evaluator.get_bounds('pitch_ratio')
-        is_envelope = isinstance(self._range, Envelope)
-        range_value = self._range.evaluate(elapsed_time) if is_envelope else float(self._range)
-        range_value = max(bounds.min_range, min(bounds.max_range, range_value))
-        
-        if range_value > 0:
-            pitch_deviation = random.uniform(-0.5, 0.5) * range_value
-            return base_ratio + pitch_deviation
-        else:
-            return base_ratio
-    
+
     # =========================================================================
     # PROPERTIES (Read-only access)
     # =========================================================================
     
     @property
     def mode(self) -> str:
-        """Modalità corrente: 'semitones' o 'ratio'."""
         return self._mode
     
     @property
-    def base_semitones(self) -> Union[float, Envelope, None]:
-        """Valore base semitoni (None se in modalità ratio)."""
+    def base_semitones(self):
+        """Valore base semitoni (o Envelope) senza jitter."""
         return self._base_semitones
     
     @property
-    def base_ratio(self) -> Union[float, Envelope, None]:
-        """Valore base ratio (None se in modalità semitoni)."""
+    def base_ratio(self):
+        """Valore base ratio (o Envelope) senza jitter."""
         return self._base_ratio
-    
+
     @property
-    def range(self) -> Union[float, Envelope]:
-        """Valore range per deviazione stocastica."""
-        return self._range
-    
+    def range(self):
+        """
+        Valore del range (o Envelope). 
+        Attenzione: questo è il valore raw, non l'oggetto Parameter.
+        """
+        # Ricostruiamo un parametro dummy se serve il valore calcolato, 
+        # oppure ritorniamo il raw value/envelope.
+        # Per semplicità ritorniamo l'oggetto Envelope o il float.
+        if hasattr(self._active_param, '_mod_range') and self._active_param._mod_range is not None:
+             return self._active_param._mod_range
+        return 0.0
+
     # =========================================================================
     # REPR
     # =========================================================================
     
     def __repr__(self) -> str:
-        if self._mode == 'semitones':
-            base_info = f"semitones={self._base_semitones}"
-        else:
-            base_info = f"ratio={self._base_ratio}"
-        
-        range_info = f", range={self._range}" if self._range != 0 else ""
-        return f"PitchController({base_info}{range_info})"
+        return f"PitchController(mode={self._mode}, param='{self._active_param.name}')"    

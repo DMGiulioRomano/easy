@@ -127,7 +127,7 @@ class VoiceManager:
         Returns:
             int: Numero di voci attive (1 <= n <= max_voices)
         """
-        raw_value = self._evaluator.evaluate(
+        raw_value = self._evaluator(
             self.num_voices, 
             elapsed_time, 
             'num_voices'
@@ -188,7 +188,7 @@ class VoiceManager:
         Returns:
             float: Offset in semitoni (può essere negativo)
         """
-        base_offset = self._evaluator.evaluate(
+        base_offset = self._evaluator(
             self.voice_pitch_offset,
             elapsed_time,
             'voice_pitch_offset'
@@ -236,7 +236,7 @@ class VoiceManager:
             float: Offset pointer in secondi (può essere negativo)
         """
         # NOTA: voice_pointer_offset è normalizzato (0-1), viene scalato esternamente
-        base_offset = self._evaluator.evaluate(
+        base_offset = self._evaluator(
             self.voice_pointer_offset,
             elapsed_time,
             'voice_pointer_offset'
@@ -253,7 +253,7 @@ class VoiceManager:
         Returns:
             float: Range per variazione stocastica (già scalato se necessario)
         """
-        return self._evaluator.evaluate(
+        return self._evaluator(
             self.voice_pointer_range,
             elapsed_time,
             'voice_pointer_range'

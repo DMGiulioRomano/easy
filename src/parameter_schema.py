@@ -154,18 +154,16 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ParameterSpec(
         name='pitch_ratio',
         yaml_path='ratio',
-        default=1.0
+        default=1.0,
+        range_path='range',
+        dephase_key='pc_rand_pitch' 
     ),
     ParameterSpec(
         name='pitch_semitones',
         yaml_path='shift_semitones',
-        default=None  # None = non presente, usa ratio
-    ),
-    ParameterSpec(
-        name='pitch_range',
-        yaml_path='range',
-        default=0.0,
-        is_smart=False  # Gestito internamente da PitchController
+        default=None,
+        range_path='range',
+        dephase_key='pc_rand_pitch' 
     ),
 ]
 
