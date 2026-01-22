@@ -111,8 +111,7 @@ class TestRegistryCompleteness:
         'pitch_ratio',
         # Pointer
         'pointer_speed',
-        'pointer_jitter',
-        'pointer_offset_range',
+        'pointer_deviation',
         'loop_dur',
         # Output
         'volume',
