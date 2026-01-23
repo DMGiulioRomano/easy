@@ -8,8 +8,10 @@ Implementa il modello Truax per la distribuzione temporale:
 """
 
 import random
-from typing import Optional
-from parameter_evaluator import ParameterEvaluator
+from typing import Optional, Union
+from parameter_factory import ParameterFactory
+from parameter import Parameter
+from parameter_schema import DENSITY_PARAMETER_SCHEMA
 
 
 class DensityController:
@@ -26,155 +28,119 @@ class DensityController:
     
     def __init__(
         self,
-        evaluator: ParameterEvaluator,
-        params: dict
+        params: dict,
+        stream_id: str,
+        duration: float,
+        time_mode: str = 'absolute'
     ):
         """
         Inizializza il controller di densità.
-        
-        Args:
-            evaluator: ParameterEvaluator per parsing e valutazione
-            params: dizionario parametri YAML
         """
-        self.evaluator = evaluator
-        
-        # Determina modalità e inizializza parametri
-        self._init_density_mode(params)
-        self._init_distribution(params)
+        self._factory = ParameterFactory(stream_id, duration, time_mode)
+        self._params = self._factory.create_all_parameters(
+            params,
+            schema=DENSITY_PARAMETER_SCHEMA
+        )
+
+        self.distribution_param: Parameter = self._params['distribution']
+        # 2. Determina modalità (Fill Factor vs Density)
+        self._init_mode()
     
-    def _init_density_mode(self, params: dict) -> None:
+    def _init_mode(self) -> None:
         """
-        Determina la modalità di calcolo densità.
-        Priorità: fill_factor > density > default (fill_factor=2.0).
+        Determina la modalità operativa e il parametro attivo.
+        Priorità: Fill Factor > Density > Default (Fill Factor 2.0).
         """
-        if 'fill_factor' in params:
-            # Modalità FILL_FACTOR esplicita
-            self.fill_factor = self.evaluator.parse(
-                params['fill_factor'], 
-                'fill_factor'
-            )
-            self.density = None
+        ff_param = self._params['fill_factor']
+        dens_param = self._params['density']
+        
+        # Controlliamo il valore 'base' (senza calcolarlo al tempo t) per decidere la strategia
+        if ff_param.value is not None:
             self._mode = 'fill_factor'
+            self._active_density_param = ff_param
+            # Alias per compatibilità
+            self.fill_factor = ff_param 
+            self.density = None
             
-        elif 'density' in params:
-            # Modalità DENSITY diretta
-            self.fill_factor = None
-            self.density = self.evaluator.parse(
-                params['density'],
-                'density'
-            )
+        elif dens_param.value is not None:
             self._mode = 'density'
+            self._active_density_param = dens_param
+            self.fill_factor = None
+            self.density = dens_param
             
         else:
-            # DEFAULT: fill_factor = 2.0 (Roads: "covered/packed")
-            self.fill_factor = 2.0
-            self.density = None
+            # Fallback Default: Fill Factor = 2.0
             self._mode = 'fill_factor'
-    
-    def _init_distribution(self, params: dict) -> None:
-        """
-        Inizializza il parametro distribution.
-        0.0 = sincrono, 1.0 = asincrono.
-        """
-        self.distribution = self.evaluator.parse(
-            params.get('distribution', 0.0),
-            'distribution'
-        )
-    
-    @property
-    def mode(self) -> str:
-        """Ritorna la modalità corrente: 'fill_factor' o 'density'."""
-        return self._mode
-    
+            # Creiamo un parametro default on-the-fly usando la factory per coerenza
+            self._active_density_param = self._factory.create_single_parameter(
+                'fill_factor', {'fill_factor': 2.0}
+            )
+            self.fill_factor = self._active_density_param
+            self.density = None
+
     def calculate_inter_onset(
         self,
         elapsed_time: float,
         current_grain_duration: float
     ) -> float:
         """
-        Calcola l'inter-onset time per il prossimo grano usando il modello Truax.
-        Usa l'Evaluator per validare e clippare la densità effettiva.
+        Calcola il tempo fino al prossimo onset (IOT) basandosi sul modello Truax.
         
         Args:
-            elapsed_time: tempo trascorso dall'onset dello stream
-            current_grain_duration: durata del grano corrente
-            
-        Returns:
-            float: tempo in secondi fino al prossimo onset
+            elapsed_time: Tempo corrente nello stream.
+            current_grain_duration: Durata del grano corrente (necessaria per Fill Factor).
         """
-        # 1. Calcola density grezza (raw)
-        raw_density = self._calculate_raw_density(
-            elapsed_time, 
-            current_grain_duration
-        )
+        # 1. Ottieni il valore di controllo (Density o Fill Factor)
+        # Il metodo .get_value() gestisce internamente: Envelope, Jitter, Probabilità, Bounds.
+        control_value = self._active_density_param.get_value(elapsed_time)
         
-        # 2. Usa Evaluator per Safety Clamp e Logging
-        # 'effective_density' deve essere definito nei BOUNDS dell'Evaluator
-        effective_density = self.evaluator(
-            raw_density, 
-            elapsed_time, 
-            'effective_density'
-        )
-        
-        # 3. Calcola inter-onset medio
-        avg_inter_onset = 1.0 / effective_density
-        
-        # 4. Valuta distribution
-        distribution = self.evaluator(
-            self.distribution,
-            elapsed_time,
-            'distribution'
-        )
-        
-        # 5. Calcola inter-onset finale (blend sincrono/asincrono)
-        if distribution == 0.0:
-            return avg_inter_onset
-        else:
-            sync_value = avg_inter_onset
-            async_value = random.uniform(0.0, 2.0 * avg_inter_onset)
-            return (1.0 - distribution) * sync_value + distribution * async_value
-    
-    def _calculate_raw_density(
-        self,
-        elapsed_time: float,
-        current_grain_duration: float
-    ) -> float:
-        """Calcola la densità grezza prima del clamping in base alla modalità."""
+        # 2. Converti in Effective Density (Grani al secondo)
         if self._mode == 'fill_factor':
-            ff = self.evaluator(
-                self.fill_factor,
-                elapsed_time,
-                'fill_factor'
-            )
-            # Evita divisione per zero
-            if current_grain_duration <= 1e-6:
-                current_grain_duration = 0.001
-            return ff / current_grain_duration
+            # fill_factor = density * grain_dur  =>  density = fill_factor / grain_dur
+            safe_dur = max(0.0001, current_grain_duration)
+            effective_density = control_value / safe_dur
         else:
-            return self.evaluator(
-                self.density,
-                elapsed_time,
-                'density'
-            )
+            effective_density = control_value
+            
+        # Hard Safety Clamp (limite fisico del motore audio, es. 4000hz)
+        # Nota: effective_density è un valore calcolato, quindi lo clippiamo qui per sicurezza finale
+        effective_density = max(0.1, min(4000.0, effective_density))
+        
+        # 3. Calcola Average Inter-Onset Time (IOT)
+        avg_iot = 1.0 / effective_density
+        
+        # 4. Ottieni valore di Distribuzione (0=Sync, 1=Async)
+        dist_val = self.distribution_param.get_value(elapsed_time)
+        
+        # 5. Applica Modello Truax (Blending temporale)
+        if dist_val <= 0.0:
+            # Sync: Metronomo perfetto
+            return avg_iot
+        else:
+            # Async: Processo di Poisson approssimato (random 0..2*avg)
+            async_iot = random.uniform(0.0, 2.0 * avg_iot)
+            
+            # Interpolazione lineare tra Sync e Async
+            return (1.0 - dist_val) * avg_iot + dist_val * async_iot
+
     
+    @property
+    def mode(self) -> str:
+        return self._mode
+    
+    @property
+    def distribution(self):
+        """Espone l'oggetto parametro distribution."""
+        return self.distribution_param
+
     def get_density_value(self, elapsed_time: float) -> Optional[float]:
-        """Ritorna il valore di density se in modalità density (per debug)."""
+        """Per visualizzatore/debug."""
         if self._mode == 'density':
-            return self.evaluator(
-                self.density, elapsed_time, 'density'
-            )
+            return self._active_density_param.get_value(elapsed_time)
         return None
     
     def get_fill_factor_value(self, elapsed_time: float) -> Optional[float]:
-        """Ritorna il valore di fill_factor se in modalità fill_factor (per debug)."""
+        """Per visualizzatore/debug."""
         if self._mode == 'fill_factor':
-            return self.evaluator(
-                self.fill_factor, elapsed_time, 'fill_factor'
-            )
+            return self._active_density_param.get_value(elapsed_time)
         return None
-    
-    def get_distribution_value(self, elapsed_time: float) -> float:
-        """Ritorna il valore corrente di distribution."""
-        return self.evaluator(
-            self.distribution, elapsed_time, 'distribution'
-        )

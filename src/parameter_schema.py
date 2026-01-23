@@ -179,18 +179,28 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ParameterSpec(
         name='fill_factor',
         yaml_path='fill_factor',
-        default=None  # None = non presente, controlla density
+        default=None,  
+        range_path='fill_factor_range',
+        dephase_key='pc_rand_density'
     ),
     ParameterSpec(
         name='density',
         yaml_path='density',
-        default=None  # None = non presente, usa fill_factor default
+        default=None,  # None = non presente, usa fill_factor default
+        range_path='density_range',      # <--- NUOVO: Supporto jitter densità
+        dephase_key='pc_rand_density'
     ),
     ParameterSpec(
         name='distribution',
         yaml_path='distribution',
         default=0.0
     ),
+    ParameterSpec(
+        name='effective_density',
+        yaml_path='_internal_calc_', # Non esiste nel YAML
+        default=0.0,
+        is_smart=False
+    )
 ]
 
 

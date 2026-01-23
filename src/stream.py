@@ -135,8 +135,10 @@ class Stream:
         
         # DENSITY CONTROLLER
         self._density = DensityController(
-            evaluator=self._evaluator,
-            params=params
+            params=params,
+            stream_id=self.stream_id,
+            duration=self.duration,
+            time_mode=self.time_mode
         )
         
         # VOICE MANAGER
