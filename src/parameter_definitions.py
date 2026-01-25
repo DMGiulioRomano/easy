@@ -82,7 +82,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
     ),
     
     'effective_density': ParameterBounds(
-        min_val=0.1,
+        min_val=0.01,
         max_val=4000.0
     ),
 
@@ -104,7 +104,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         min_range=0,
         max_range=1,
         default_jitter=0,
-        variation_mode='invert'  # <--- NOTA: Modalità Invert (Boolean Flip)
+        variation_mode='invert'  # <--- NOTA: (Boolean Flip)
     ),
 
     # =========================================================================
@@ -125,7 +125,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         min_range=0.0,
         max_range=2.0,
         default_jitter=0.02,
-        variation_mode='additive'   # <--- NOTA: Variazione continua (uniform)
+        variation_mode='additive'   
     ),
 
     # =========================================================================

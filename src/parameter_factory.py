@@ -14,11 +14,10 @@ Design Pattern:
 """
 
 from typing import Any, Dict, Optional, Union
-
+from exclusive_selector import ExclusiveGroupSelector
 from parameter import Parameter
 from parser import GranularParser
 from parameter_schema import STREAM_PARAMETER_SCHEMA, ParameterSpec
-# IMPORTA LA COSTANTE DAL REGISTRY
 from parameter_definitions import IMPLICIT_JITTER_PROB 
 
 
@@ -74,17 +73,19 @@ class ParameterFactory:
         """
         result = {}
         dephase = yaml_data.get('dephase')  
-        
-        # Se schema è None, usa quello di default (Stream)
         target_schema = schema if schema is not None else STREAM_PARAMETER_SCHEMA
+        
+        # 1. SELEZIONE PARAMETRI (gestisce mutua esclusività)
+        selected_specs, _ = ExclusiveGroupSelector.select_parameters(
+            target_schema, yaml_data
+        )
 
-
-        for spec in target_schema:
+        for spec_name, spec in selected_specs.items():
             if spec.is_smart:
-                result[spec.name] = self._create_smart_parameter(spec, yaml_data, dephase)
+                result[spec_name] = self._create_smart_parameter(spec, yaml_data, dephase)
             else:
-                result[spec.name] = self._extract_raw_value(spec, yaml_data)
-
+                result[spec_name] = self._extract_raw_value(spec, yaml_data)
+        
         return result
     
     def create_single_parameter(

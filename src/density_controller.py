@@ -42,9 +42,20 @@ class DensityController:
             schema=DENSITY_PARAMETER_SCHEMA
         )
 
-        self.distribution_param: Parameter = self._params['distribution']
-        # 2. Determina modalità (Fill Factor vs Density)
-        self._init_mode()
+        # Determinazione modalità (SEMPLICE!)
+        if 'fill_factor' in self._params:
+            self._mode = 'fill_factor'
+            self._active_density_param = self._params['fill_factor']
+            self.fill_factor = self._active_density_param
+            self.density = None
+        else:
+            self._mode = 'density'
+            self._active_density_param = self._params['density']
+            self.fill_factor = None
+            self.density = self._active_density_param
+        
+        self.distribution_param = self._params['distribution']
+
     
     def _init_mode(self) -> None:
         """

@@ -18,7 +18,6 @@ NOTA: I parametri dei Controller (pointer_speed, pitch_ratio, etc.) NON sono qui
 from dataclasses import dataclass
 from typing import Optional, Any, List
 
-
 @dataclass(frozen=True)
 class ParameterSpec:
     """
@@ -40,8 +39,9 @@ class ParameterSpec:
     default: Any
     range_path: Optional[str] = None
     dephase_key: Optional[str] = None
-    is_smart: bool = True  # True = Parameter object, False = raw value
-
+    is_smart: bool = True
+    exclusive_group: Optional[str] = None
+    group_priority: int = 99  
 
 # =============================================================================
 # STREAM PARAMETER SCHEMA
@@ -141,7 +141,6 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ),
 ]
 
-
 # =============================================================================
 # PITCH PARAMETER SCHEMA
 # =============================================================================
@@ -156,14 +155,18 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='ratio',
         default=1.0,
         range_path='range',
-        dephase_key='pc_rand_pitch' 
+        dephase_key='pc_rand_pitch', 
+        exclusive_group='pitch_mode', 
+        group_priority=1  
     ),
     ParameterSpec(
         name='pitch_semitones',
-        yaml_path='shift_semitones',
+        yaml_path='semitones',
         default=None,
         range_path='range',
-        dephase_key='pc_rand_pitch' 
+        dephase_key='pc_rand_pitch' ,
+        exclusive_group='pitch_mode', 
+        group_priority=2  
     ),
 ]
 
@@ -179,30 +182,34 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ParameterSpec(
         name='fill_factor',
         yaml_path='fill_factor',
-        default=None,  
+        default=2,  # Default non-None
         range_path='fill_factor_range',
-        dephase_key='pc_rand_density'
+        dephase_key='pc_rand_density',
+        exclusive_group='density_mode',  # <--- NUOVO GRUPPO
+        group_priority=1  # <--- PRIORITÀ PIÙ ALTA
     ),
     ParameterSpec(
         name='density',
         yaml_path='density',
-        default=None,  # None = non presente, usa fill_factor default
-        range_path='density_range',      # <--- NUOVO: Supporto jitter densità
-        dephase_key='pc_rand_density'
+        default=None,  # None = non presente di default
+        range_path='density_range',
+        dephase_key='pc_rand_density',
+        exclusive_group='density_mode',  # <--- STESSO GRUPPO
+        group_priority=2  # <--- PRIORITÀ PIÙ BASSA
     ),
     ParameterSpec(
         name='distribution',
         yaml_path='distribution',
-        default=0.0
+        default=0.0,
+        is_smart=True  # Non è nel gruppo esclusivo!
     ),
     ParameterSpec(
         name='effective_density',
-        yaml_path='_internal_calc_', # Non esiste nel YAML
+        yaml_path='_internal_calc_',
         default=0.0,
         is_smart=False
     )
 ]
-
 
 # =============================================================================
 # VOICE PARAMETER SCHEMA

@@ -2,7 +2,6 @@
 """
 PointerController - Gestione posizionamento testina di lettura
 
-Estratto da Stream come parte del refactoring Fase 2.
 Gestisce la posizione di lettura nel sample con:
 - Movimento lineare con integrazione envelope
 - Loop con phase accumulator per durata dinamica
@@ -79,13 +78,10 @@ class PointerController:
         
         # 2. Assegna dinamicamente rimuovendo il prefisso 'pointer_'
         for name, param_obj in all_params.items():
-            
             # CASO SPECIALE: loop_dur lo saltiamo qui, lo gestisce _init_loop_params
-            if name == 'loop_dur': continue
-                
+            if name == 'loop_dur': continue 
             # Rimuovi prefisso 'pointer_' se presente per avere self.speed invece di self.pointer_speed
             attr_name = name.replace('pointer_', '')
-            
             # Assegna (self.speed = param_obj)
             setattr(self, attr_name, param_obj)
             

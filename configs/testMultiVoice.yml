@@ -33,7 +33,7 @@ streams:
     #pan_range: [[0,10],[.5,180],[1,0]]
     volume: -6
     pitch:
-      shift_semitones: 0
+      semitones: 0
       #range: [[0, 0], [1, 24]] 
   - stream_id: "texture1-1"
     onset: 25.0
@@ -55,5 +55,5 @@ streams:
         type: cubic
         points: [[0, .1], [1, .01]]
     pitch:
-      shift_semitones: 8
+      semitones: 8
       range: [[0, 0], [1, 8]] 

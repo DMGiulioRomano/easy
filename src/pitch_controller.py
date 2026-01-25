@@ -45,35 +45,18 @@ class PitchController:
             params, 
             schema=PITCH_PARAMETER_SCHEMA
         )
-        # Strategy Selection (Mode)
-        self._init_strategy(params)
-
-    def _init_strategy(self, params: dict) -> None:
-        """
-        Determina la strategia di calcolo (Ratio vs Semitoni).
-        """
-        # Se 'shift_semitones' è esplicitamente nel YAML, vince lui.
-        if 'shift_semitones' in params:
+    
+        # Determinazione modalità (SEMPLICE!)
+        if 'pitch_semitones' in self._loaded_params:
             self._mode = 'semitones'
-            self._active_param: Parameter = self._loaded_params['pitch_semitones']
-            # Backward compatibility properties
-            self._base_semitones = self._active_param.value
-            self._base_ratio = None
+            self._active_param = self._loaded_params['pitch_semitones']
         else:
             self._mode = 'ratio'
-            self._active_param: Parameter = self._loaded_params['pitch_ratio']
-            # Backward compatibility properties
-            self._base_ratio = self._active_param.value
-            self._base_semitones = None
-            
-        # Conserviamo il valore raw del range solo per debug/visualizzazione
-        # (Il calcolo reale avviene dentro _active_param)
-        self._range_raw = params.get('range', 0.0)
+            self._active_param = self._loaded_params['pitch_ratio']
+        # Backward compatibility
+        self._base_semitones = self._active_param.value if self._mode == 'semitones' else None
+        self._base_ratio = self._active_param.value if self._mode == 'ratio' else None
 
-    
-    # =========================================================================
-    # CALCULATION
-    # =========================================================================
     
     def calculate(self, elapsed_time: float) -> float:
         """
