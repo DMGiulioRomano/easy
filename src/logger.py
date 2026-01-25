@@ -14,6 +14,7 @@ CLIP_LOG_CONFIG = {
     'file_enabled': True,               # Scrive su file
     'log_dir': './logs',                # Directory per i file di log
     'log_filename': None,               # None = auto-genera con timestamp
+    'validation_mode': 'strict',
 }
 
 _clip_logger = None
@@ -143,7 +144,6 @@ def get_clip_log_path():
             return handler.baseFilename
     return None
 
-
 def log_clip_warning(stream_id, param_name, time, raw_value, clipped_value, 
                      min_val, max_val, is_envelope=False):
     """
@@ -185,3 +185,45 @@ def log_clip_warning(stream_id, param_name, time, raw_value, clipped_value,
         f"({source_type})"
     )
     
+
+def log_config_warning(stream_id: str, param_name: str, 
+                    raw_value: float, clipped_value: float,
+                    min_val: float, max_val: float,
+                    value_type: str = "value"):
+    """
+    Logga un warning per un valore di configurazione fuori bounds.
+    
+    Usato al momento della creazione del Parameter per segnalare
+    valori iniziali che violano i bounds.
+    
+    Args:
+        stream_id: ID dello stream
+        param_name: nome del parametro
+        raw_value: valore originale dallo YAML
+        clipped_value: valore clippato ai bounds
+        min_val: limite minimo
+        max_val: limite massimo
+        value_type: 'value', 'range', o 'probability'
+    """
+    logger = get_clip_logger()
+    
+    if logger is None:
+        return
+    
+    # Calcola bound violato
+    if raw_value < min_val:
+        deviation = raw_value - min_val
+        bound_type = "MIN"
+        bound_value = min_val
+    else:
+        deviation = raw_value - max_val
+        bound_type = "MAX"
+        bound_value = max_val
+    
+    # Tag diverso per config
+    logger.warning(
+        f"[CONFIG] [{stream_id}] {param_name:<20} | "
+        f"{value_type}: raw={raw_value:>12.6f} → clip={clipped_value:>12.6f} | "
+        f"{bound_type}={bound_value:>10.4f} | "
+        f"Δ={deviation:>+10.6f}"
+    )

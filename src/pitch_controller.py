@@ -16,7 +16,7 @@ from typing import Union, Optional
 from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
-
+from strategy_registry import StrategyFactory
 
 
 class PitchController:
@@ -38,7 +38,6 @@ class PitchController:
         Inizializza il controller.
         
         Args:
-            params: dict con configurazione pitch da YAML (sotto 'pitch' key)
         """
         self._factory = ParameterFactory(stream_id, duration, time_mode)
         self._loaded_params = self._factory.create_all_parameters(
@@ -46,64 +45,27 @@ class PitchController:
             schema=PITCH_PARAMETER_SCHEMA
         )
     
-        # Determinazione modalità (SEMPLICE!)
+        selected_param_name = self._determine_active_param()
+        param_obj = self._loaded_params[selected_param_name]
+        self._strategy = StrategyFactory.create_pitch_strategy(
+            selected_param_name, 
+            param_obj, 
+            self._loaded_params
+        )
+
+    def _determine_active_param(self) -> str:
+        """Logica di selezione separata e testabile."""
         if 'pitch_semitones' in self._loaded_params:
-            self._mode = 'semitones'
-            self._active_param = self._loaded_params['pitch_semitones']
-        else:
-            self._mode = 'ratio'
-            self._active_param = self._loaded_params['pitch_ratio']
-        # Backward compatibility
-        self._base_semitones = self._active_param.value if self._mode == 'semitones' else None
-        self._base_ratio = self._active_param.value if self._mode == 'ratio' else None
-
-        
-    def calculate(self, elapsed_time: float) -> float:
-        """
-        Calcola il pitch ratio finale al tempo t.
-        
-        Il metodo .get_value() del parametro gestisce internamente:
-        - Valore base (fisso o Envelope)
-        - Range stocastico (Additive o Quantized)
-        - Dephase probability
-        - Clipping ai bounds di sicurezza
-        """
-        # 1. Ottieni il valore "sporco" (base + jitter)
-        raw_val = self._active_param.get_value(elapsed_time)
-        
-        # 2. Adatta il valore al dominio richiesto (Ratio)
-        if self._mode == 'semitones':
-            return self.semitones_to_ratio(raw_val)
-        else:
-            return raw_val
-        
-    # =========================================================================
-    # STATIC METHODS
-    # =========================================================================
+            return 'pitch_semitones'
+        return 'pitch_ratio'
     
-    @staticmethod
-    def semitones_to_ratio(semitones: float) -> float:
-        """
-        Converte semitoni in ratio di frequenza.
-        
-        Formula: ratio = 2^(semitones/12)
-        
-        Args:
-            semitones: trasposizione in semitoni (positivi = up, negativi = down)
-            
-        Returns:
-            float: ratio di frequenza
-        """
-        return pow(2.0, semitones / 12.0)
-
-    # =========================================================================
-    # PROPERTIES (Read-only access)
-    # =========================================================================
+    def calculate(self, elapsed_time: float) -> float:
+        """Delega COMPLETAMENTE alla strategy."""
+        return self._strategy.calculate(elapsed_time)
     
     @property
     def mode(self) -> str:
-        return self._mode
-    
+        return self._strategy.name    
     @property
     def base_semitones(self):
         """Valore base semitoni (o Envelope) senza jitter."""

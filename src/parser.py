@@ -70,13 +70,40 @@ class GranularParser:
         clean_range = self._parse_input(range_raw, f"{name}.range")
         clean_prob = self._parse_input(prob_raw, f"{name}.probability")
 
-        # 3. Assembla e restituisce l'oggetto Smart Parameter
+
+        # 3. VALIDAZIONE E CLIPPING (NUOVO!)
+        validated_value = self._validate_and_clip(
+            clean_value,
+            bounds.min_val,
+            bounds.max_val,
+            name,
+            value_type='value'
+        )
+        
+        validated_range = self._validate_and_clip(
+            clean_range,
+            bounds.min_range,
+            bounds.max_range,
+            name,
+            value_type='range'
+        ) if clean_range is not None else None
+        
+        # Probability ha bounds fissi [0, 100]
+        validated_prob = self._validate_and_clip(
+            clean_prob,
+            0.0,
+            100.0,
+            name,
+            value_type='probability'
+        ) if clean_prob is not None else None
+
+        # 4. Assembla e restituisce l'oggetto Smart Parameter
         return Parameter(
             name=name,
-            value=clean_value,
+            value=validated_value,
             bounds=bounds,
-            mod_range=clean_range,
-            mod_prob=clean_prob,
+            mod_range=validated_range,
+            mod_prob=validated_prob,
             owner_id=self.stream_id
         )
 
@@ -151,3 +178,123 @@ class GranularParser:
             return Envelope({'type': env_type, 'points': final_points})
         else:
             return Envelope(final_points)
+
+
+    def _validate_and_clip(
+        self,
+        param: Optional[ParamInput],
+        min_bound: float,
+        max_bound: float,
+        param_name: str,
+        value_type: str
+    ) -> Optional[ParamInput]:
+        """
+        Valida parametro con policy configurabile:
+        - STRICT: solleva ValueError se fuori bounds
+        - PERMISSIVE: logga warning e clippa        
+        Gestisce sia numeri che Envelope. Per Envelope, valida ogni breakpoint Y.
+        
+        Args:
+            param: numero, Envelope, o None
+            min_bound: limite minimo
+            max_bound: limite massimo
+            param_name: nome parametro (per logging)
+            value_type: 'value', 'range', o 'probability'
+            
+        Returns:
+            Parametro validato (clippato se necessario)
+        """
+        from logger import log_config_warning, CLIP_LOG_CONFIG
+        
+        if param is None:
+            return None
+
+        validation_mode = CLIP_LOG_CONFIG.get('validation_mode', 'strict')
+    
+        # Caso 1: Numero scalare
+        if isinstance(param, (int, float)):
+            clean = float(param)
+            clipped = max(min_bound, min(max_bound, clean))
+            
+            if clipped != clean:
+                # Calcola messaggio di errore
+                bound_type = "MIN" if clean < min_bound else "MAX"
+                bound_value = min_bound if clean < min_bound else max_bound
+                deviation = clean - bound_value
+                
+                error_msg = (
+                    f"Parametro '{param_name}' fuori bounds!\n"
+                    f"  {value_type}: {clean:.2f}\n"
+                    f"  {bound_type} consentito: {bound_value:.2f}\n"
+                    f"  Deviazione: {deviation:+.2f}\n"
+                    f"  Stream: {self.stream_id}\n"
+                    f"  Bounds validi: [{min_bound}, {max_bound}]"
+                )
+                
+                if validation_mode == 'strict':
+                    # FAIL FAST: solleva eccezione
+                    raise ValueError(error_msg)
+                else:
+                    # PERMISSIVE: logga e continua
+                    log_config_warning(
+                        stream_id=self.stream_id,
+                        param_name=param_name,
+                        raw_value=clean,
+                        clipped_value=clipped,
+                        min_val=min_bound,
+                        max_val=max_bound,
+                        value_type=value_type
+                    )
+            
+            return clipped
+        
+        # Caso 2: Envelope
+        if isinstance(param, Envelope):
+            needs_fixing = False
+            errors = []
+            fixed_points = []
+            
+            for t, y in param.breakpoints:
+                clipped_y = max(min_bound, min(max_bound, y))
+                
+                if clipped_y != y:
+                    needs_fixing = True
+                    bound_type = "MIN" if y < min_bound else "MAX"
+                    bound_value = min_bound if y < min_bound else max_bound
+                    deviation = y - bound_value
+                    
+                    errors.append(
+                        f"  t={t:.2f}s: {value_type}={y:.2f} → {bound_type}={bound_value:.2f} (Δ{deviation:+.2f})"
+                    )
+                
+                fixed_points.append([t, clipped_y])
+            
+            if needs_fixing:
+                error_msg = (
+                    f"Envelope '{param_name}' ha breakpoint fuori bounds!\n"
+                    f"  Stream: {self.stream_id}\n"
+                    f"  Bounds validi: [{min_bound}, {max_bound}]\n"
+                    f"  Violazioni:\n" + "\n".join(errors)
+                )
+                
+                if validation_mode == 'strict':
+                    raise ValueError(error_msg)
+                else:
+                    # Log ogni violazione
+                    for t, y in param.breakpoints:
+                        clipped_y = max(min_bound, min(max_bound, y))
+                        if clipped_y != y:
+                            log_config_warning(
+                                stream_id=self.stream_id,
+                                param_name=f"{param_name}_ENV[t={t:.2f}]",
+                                raw_value=y,
+                                clipped_value=clipped_y,
+                                min_val=min_bound,
+                                max_val=max_bound,
+                                value_type=value_type
+                            )
+                    return Envelope(fixed_points)
+            
+            return param
+        
+        raise TypeError(f"Cannot validate type {type(param)}")

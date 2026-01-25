@@ -76,13 +76,17 @@ class RatioStrategy(PitchStrategy):
 # =============================================================================
 
 class DensityStrategy(ABC):
-    """Interfaccia base per tutte le strategie di densità."""
+    """Interfaccia base per calcolare la densità."""
     
     @abstractmethod
-    def calculate_inter_onset(self, 
-                            elapsed_time: float, 
-                            grain_duration: float) -> float:
-        """Calcola inter-onset time."""
+    def calculate_density(self, elapsed_time: float, **context) -> float:
+        """
+        Calcola la densità in grani/secondo.
+        
+        Args:
+            elapsed_time: tempo corrente nello stream
+            **context: dati contestuali (es. grain_duration per fill_factor)
+        """
         pass
     
     @property
@@ -90,45 +94,34 @@ class DensityStrategy(ABC):
     def name(self) -> str:
         pass
 
-
+ 
 class FillFactorStrategy(DensityStrategy):
-    """Strategia fill-factor (density = fill_factor / grain_duration)."""
+    """Strategia: density = fill_factor / grain_duration."""
     
     def __init__(self, fill_factor_param: Parameter, distribution_param: Parameter):
         self._fill_factor = fill_factor_param
-        self._distribution = distribution_param
+        # distribution non serve qui, solo nel controller!
     
-    def calculate_inter_onset(self, elapsed_time: float, grain_duration: float) -> float:
+    def calculate_density(self, elapsed_time: float, **context) -> float:
+        if 'grain_duration' not in context:
+            raise ValueError(f"{self.__class__.__name__} requires 'grain_duration' in context")
         fill_factor = self._fill_factor.get_value(elapsed_time)
-        effective_density = fill_factor / max(0.0001, grain_duration)
-        # ... logica distribution (Truax model)
-        return self._calculate_with_distribution(effective_density, elapsed_time)
-    
-    def _calculate_with_distribution(self, density: float, elapsed_time: float) -> float:
-        """Implementa il modello Truax."""
-        avg_iot = 1.0 / density
-        dist_val = self._distribution.get_value(elapsed_time)
-        # ... stessa logica di prima
-        return avg_iot
+        grain_duration = context['grain_duration']
+        safe_dur = max(0.0001, grain_duration)
+        return fill_factor / safe_dur
     
     @property
     def name(self) -> str:
         return "fill_factor"
 
-
 class DirectDensityStrategy(DensityStrategy):
-    """Strategia density diretta (grani/secondo)."""
+    """Strategia: density diretta dal parametro."""
     
     def __init__(self, density_param: Parameter, distribution_param: Parameter):
         self._density = density_param
-        self._distribution = distribution_param
     
-    def calculate_inter_onset(self, elapsed_time: float, grain_duration: float) -> float:
-        density = self._density.get_value(elapsed_time)
-        # ... logica distribution
-        avg_iot = 1.0 / density
-        # ... stessa logica
-        return avg_iot
+    def calculate_density(self, elapsed_time: float, **context) -> float:
+        return self._density.get_value(elapsed_time)
     
     @property
     def name(self) -> str:

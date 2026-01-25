@@ -32,12 +32,12 @@ class Parameter:
 
     def __init__(
         self,
-        name: str,                       # Identità del parametro (obbligatorio)
-        value: ParamInput,               # Valore base (numero o Envelope)
-        bounds: ParameterBounds,         # Regole di validazione (Schema)
-        mod_range: Optional[ParamInput] = None,  # Ampiezza random
-        mod_prob: Optional[ParamInput] = None,   # Probabilità random (0-100)
-        owner_id: str = "unknown"        # ID dello stream per i log
+        name: str,                       
+        value: ParamInput,               
+        bounds: ParameterBounds,         
+        mod_range: Optional[ParamInput] = None,  
+        mod_prob: Optional[ParamInput] = None,   
+        owner_id: str = "unknown"        
     ):
         self.name = name
         self.owner_id = owner_id

@@ -12,7 +12,8 @@ from typing import Optional, Union
 from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import DENSITY_PARAMETER_SCHEMA
-
+from strategy_registry import StrategyFactory
+from parameter_definitions import get_parameter_definition
 
 class DensityController:
     """
@@ -41,54 +42,24 @@ class DensityController:
             params,
             schema=DENSITY_PARAMETER_SCHEMA
         )
-
-        # Determinazione modalità (SEMPLICE!)
-        if 'fill_factor' in self._params:
-            self._mode = 'fill_factor'
-            self._active_density_param = self._params['fill_factor']
-            self.fill_factor = self._active_density_param
-            self.density = None
-        else:
-            self._mode = 'density'
-            self._active_density_param = self._params['density']
-            self.fill_factor = None
-            self.density = self._active_density_param
+        selected_param_name = self._determine_active_param()
+        param_obj = self._params[selected_param_name]
         
+        self._strategy = StrategyFactory.create_density_strategy(
+            selected_param_name,
+            param_obj,
+            self._params  # Passa tutti i params per accedere a 'distribution'
+        )
         self.distribution_param = self._params['distribution']
-
     
-    def _init_mode(self) -> None:
-        """
-        Determina la modalità operativa e il parametro attivo.
-        Priorità: Fill Factor > Density > Default (Fill Factor 2.0).
-        """
-        ff_param = self._params['fill_factor']
-        dens_param = self._params['density']
-        
-        # Controlliamo il valore 'base' (senza calcolarlo al tempo t) per decidere la strategia
-        if ff_param.value is not None:
-            self._mode = 'fill_factor'
-            self._active_density_param = ff_param
-            # Alias per compatibilità
-            self.fill_factor = ff_param 
-            self.density = None
-            
-        elif dens_param.value is not None:
-            self._mode = 'density'
-            self._active_density_param = dens_param
-            self.fill_factor = None
-            self.density = dens_param
-            
-        else:
-            # Fallback Default: Fill Factor = 2.0
-            self._mode = 'fill_factor'
-            # Creiamo un parametro default on-the-fly usando la factory per coerenza
-            self._active_density_param = self._factory.create_single_parameter(
-                'fill_factor', {'fill_factor': 2.0}
-            )
-            self.fill_factor = self._active_density_param
-            self.density = None
+    def _determine_active_param(self) -> str:
+        """Priorità: fill_factor > density."""
+        if 'fill_factor' in self._params:
+            return 'fill_factor'
+        return 'density'    
 
+
+ 
     def calculate_inter_onset(
         self,
         elapsed_time: float,
@@ -96,62 +67,61 @@ class DensityController:
     ) -> float:
         """
         Calcola il tempo fino al prossimo onset (IOT) basandosi sul modello Truax.
-        
-        Args:
-            elapsed_time: Tempo corrente nello stream.
-            current_grain_duration: Durata del grano corrente (necessaria per Fill Factor).
         """
-        # 1. Ottieni il valore di controllo (Density o Fill Factor)
-        # Il metodo .get_value() gestisce internamente: Envelope, Jitter, Probabilità, Bounds.
-        control_value = self._active_density_param.get_value(elapsed_time)
+        # 1. STRATEGY: Calcola density (con context per grain_duration)
+        density = self._strategy.calculate_density(
+            elapsed_time,
+            grain_duration=current_grain_duration
+        )
+
+    # devo pensare a un modo per centralizzare le evaluations. una sta qui
+    # una sta nel parser e una nei parameter. Forse bisogna riutilizzare
+    # la classe parameterEvaluator per dargli 
+        density_bounds = get_parameter_definition('density')        
+        density_bounded = max(
+                density_bounds.min_val, 
+                min(density_bounds.max_val, density)
+            )
+
+
+        # 3. CONTROLLER: Calcola average IOT
+        avg_iot = 1.0 / density_bounded
         
-        # 2. Converti in Effective Density (Grani al secondo)
-        if self._mode == 'fill_factor':
-            # fill_factor = density * grain_dur  =>  density = fill_factor / grain_dur
-            safe_dur = max(0.0001, current_grain_duration)
-            effective_density = control_value / safe_dur
-        else:
-            effective_density = control_value
-            
-        # Hard Safety Clamp (limite fisico del motore audio, es. 4000hz)
-        # Nota: effective_density è un valore calcolato, quindi lo clippiamo qui per sicurezza finale
-        effective_density = max(0.1, min(4000.0, effective_density))
+        # 4. CONTROLLER: Applica distribuzione Truax
+        return self._apply_truax_distribution(avg_iot, elapsed_time)
+
+    def _apply_truax_distribution(self, avg_iot: float, elapsed_time: float) -> float:
+        """
+        Implementa il modello Truax per la distribuzione temporale.
         
-        # 3. Calcola Average Inter-Onset Time (IOT)
-        avg_iot = 1.0 / effective_density
-        
-        # 4. Ottieni valore di Distribuzione (0=Sync, 1=Async)
+        - distribution = 0.0: Synchronous (metronomo perfetto)
+        - distribution = 1.0: Asynchronous (Poisson-like, random 0..2×avg)
+        - Valori intermedi: interpolazione lineare
+        """
         dist_val = self.distribution_param.get_value(elapsed_time)
         
-        # 5. Applica Modello Truax (Blending temporale)
         if dist_val <= 0.0:
-            # Sync: Metronomo perfetto
+            # Sync: IOT costante
             return avg_iot
         else:
-            # Async: Processo di Poisson approssimato (random 0..2*avg)
+            # Async: random 0..2×avg (simula processo Poisson)
             async_iot = random.uniform(0.0, 2.0 * avg_iot)
             
-            # Interpolazione lineare tra Sync e Async
+            # Blend lineare tra sync e async
             return (1.0 - dist_val) * avg_iot + dist_val * async_iot
-
+    
     
     @property
     def mode(self) -> str:
-        return self._mode
-    
+        return self._strategy.name
+        
     @property
     def distribution(self):
         """Espone l'oggetto parametro distribution."""
         return self.distribution_param
 
-    def get_density_value(self, elapsed_time: float) -> Optional[float]:
-        """Per visualizzatore/debug."""
-        if self._mode == 'density':
-            return self._active_density_param.get_value(elapsed_time)
-        return None
-    
-    def get_fill_factor_value(self, elapsed_time: float) -> Optional[float]:
-        """Per visualizzatore/debug."""
-        if self._mode == 'fill_factor':
-            return self._active_density_param.get_value(elapsed_time)
-        return None
+    @property
+    def density(self):
+        """Espone l'oggetto parametro distribution."""
+        return self._determine_active_param()
+
