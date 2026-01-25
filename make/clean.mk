@@ -6,6 +6,7 @@
 clean:
 	@echo "[CLEAN] Removing generated files..."
 	rm -rf $(GENDIR)/* $(SFDIR)/* $(LOGDIR)/*
+	clear
 
 clean-all: clean venv-clean
 	@echo "[CLEAN] Full cleanup done."

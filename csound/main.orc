@@ -46,9 +46,9 @@ instr Grain
     ; AUDIO PROCESSING
     ;-------------------------------------------------------------------------
     ; Genera envelope del grano
-    aEnv = poscil3:a(iAmp, 1/p3, iEnvTable)
+    aEnv = poscil:a(iAmp, 1/p3, iEnvTable)
     ; Leggi il sample con la velocità specificata
-    aSound = poscil3:a(aEnv, iFreq, iSampleTable, iStartNorm)
+    aSound = poscil:a(aEnv, iFreq, iSampleTable, iStartNorm)
     ; Calcola panning (constant power)
     aMid = aSound*cos(irad)
     aSide = aSound*sin(irad)

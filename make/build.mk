@@ -12,6 +12,7 @@ AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 
 # --- Logica condizionale per flags ---
 PYFLAGS :=
+ALL_PRE :=
 
 # 1. Se AUTOVISUAL è true, aggiungi --visualize
 ifeq ($(AUTOVISUAL), true)
@@ -24,9 +25,11 @@ PYFLAGS += --show-static
 endif
 
 ifeq ($(AUTOKILL),true)
-ALL_PRE = rx-stop
-else
-ALL_PRE =
+ALL_PRE += rx-stop
+endif
+
+ifeq ($(PRECLEAN), true)
+ALL_PRE += clean
 endif
 
 # --- Target principale ---

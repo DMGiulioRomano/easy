@@ -18,7 +18,6 @@ from typing import List, Optional, Union
 from parameter_factory import ParameterFactory
 from grain import Grain
 from envelope import Envelope
-from parameter_evaluator import ParameterEvaluator
 from pointer_controller import PointerController
 from pitch_controller import PitchController
 from density_controller import DensityController
@@ -61,12 +60,6 @@ class Stream:
         self.sample_path = params['sample']
         self.sample_dur_sec = get_sample_duration(self.sample_path)
         
-        # === 3. PARAMETER EVALUATOR (primo!) ===
-        self._evaluator = ParameterEvaluator(
-            stream_id=self.stream_id,
-            duration=self.duration,
-            time_mode=self.time_mode
-        )
         # === 5. PARAMETRI SPECIALI (logica custom) ===
         self._init_grain_reverse(params)
         # === 4. PARAMETRI DIRETTI (Data-Driven) ===
@@ -144,9 +137,10 @@ class Stream:
         # VOICE MANAGER
         voices_params = params.get('voices', {})
         self._voice_manager = VoiceManager(
-            evaluator=self._evaluator,
-            voices_params=voices_params,
-            sample_dur_sec=self.sample_dur_sec
+            params=params,
+            stream_id=self.stream_id,
+            duration=self.duration,
+            time_mode=self.time_mode
         )
     
             
@@ -402,20 +396,25 @@ class Stream:
         return self._pitch.range
     
     @property
-    def voice_pitch_offset(self) -> Union[float, Envelope]:
+    def num_voices(self):
+        """Espone num_voices per ScoreVisualizer."""
+        return self._voice_manager.num_voices_value
+    
+    @property
+    def voice_pitch_offset(self):
         """Espone voice_pitch_offset per ScoreVisualizer."""
-        return self._voice_manager.voice_pitch_offset
+        return self._voice_manager.voice_pitch_offset_value
     
     @property
-    def voice_pointer_offset(self) -> Union[float, Envelope]:
+    def voice_pointer_offset(self):
         """Espone voice_pointer_offset per ScoreVisualizer."""
-        return self._voice_manager.voice_pointer_offset
+        return self._voice_manager.voice_pointer_offset_value
     
     @property
-    def voice_pointer_range(self) -> Union[float, Envelope]:
+    def voice_pointer_range(self):
         """Espone voice_pointer_range per ScoreVisualizer."""
-        return self._voice_manager.voice_pointer_range
-    
+        return self._voice_manager.voice_pointer_range_value
+        
     # =========================================================================
     # REPR
     # =========================================================================

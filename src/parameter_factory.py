@@ -172,15 +172,7 @@ class ParameterFactory:
         if explicit_prob is not None:
             return explicit_prob
             
-        # 2. SE LA CHIAVE MANCA:
-        if range_val is None:
-            # Caso: Dephase attivo, ma Nessun Range e Nessuna Probabilità specificata.
-            # Ritorna 1.0 (1%) -> Attiva il "Jitter Implicito" leggero
-            return IMPLICIT_JITTER_PROB
-        else:
-            # Caso: Utente ha messo un Range esplicito ma nessuna probabilità.
-            # Ritorna None (100%) -> Applica quel range a tutti i grani
-            return None
+        return IMPLICIT_JITTER_PROB
         
     @staticmethod
     def _get_nested(data: dict, path: str, default: Any) -> Any:

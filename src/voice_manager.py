@@ -5,20 +5,13 @@ Responsabilità:
 - Gestione dinamica del numero di voci attive (num_voices)
 - Calcolo moltiplicatori pitch per ogni voce (pattern alternato +/-)
 - Calcolo offset pointer per ogni voce (pattern alternato +/-)
-
-Pattern Alternato:
-    Voice 0: offset = 0
-    Voice 1: offset = +param * 1
-    Voice 2: offset = -param * 1  
-    Voice 3: offset = +param * 2
-    Voice 4: offset = -param * 2
-    ...
-
-Ispirato al sistema DMX-1000 di Barry Truax.
 """
 
-from typing import Union
+from typing import Dict, Optional, Union
+import random
 from envelope import Envelope
+from parameter_factory import ParameterFactory
+from parameter_schema import VOICE_PARAMETER_SCHEMA
 
 
 class VoiceManager:
@@ -26,82 +19,74 @@ class VoiceManager:
     Gestisce le voci multiple di uno stream granulare.
     
     Attributes:
-        _evaluator: ParameterEvaluator per valutare envelope
-        _sample_dur_sec: Durata del sample (per scaling pointer offset)
-        num_voices: Numero di voci (int o Envelope)
-        voice_pitch_offset: Offset pitch in semitoni (float o Envelope)
-        voice_pointer_offset: Offset pointer in secondi (float o Envelope)
-        voice_pointer_range: Range stocastico pointer (float o Envelope)
+        stream_id: ID dello stream (per logging)
+        sample_dur_sec: Durata del sample (per scaling pointer offset)
+        num_voices: Parameter per numero di voci
+        voice_pitch_offset: Parameter per offset pitch
+        voice_pointer_offset: Parameter per offset pointer normalizzato
+        voice_pointer_range: Parameter per range stocastico pointer
+        max_voices: Numero massimo di voci (cache)
     """
     
-    def __init__(self, 
-                 evaluator, 
-                 voices_params: dict, 
-                 sample_dur_sec: float):
+    def __init__(
+        self,
+        params: dict,
+        stream_id: str,
+        duration: float,
+        time_mode: str = 'absolute'
+    ):
         """
         Inizializza il VoiceManager.
         
         Args:
-            evaluator: ParameterEvaluator per parsing e valutazione
-            voices_params: Dict con parametri voci dal YAML
-            sample_dur_sec: Durata del sample in secondi (per scaling)
+            params: dict con parametri voci dal YAML
+            stream_id: ID dello stream (per logging)
+            duration: durata dello stream (per normalizzazione envelope)
+            sample_dur_sec: Durata del sample in secondi
+            time_mode: 'absolute' o 'normalized' (default per envelope)
         """
-        self._evaluator = evaluator
-        self._sample_dur_sec = sample_dur_sec
+        self.stream_id = stream_id
         
-        # Parse parametri
-        self.num_voices = self._evaluator.parse(
-            voices_params.get('number', 1), 
-            'num_voices'
-        )
-        self.voice_pitch_offset = self._evaluator.parse(
-            voices_params.get('offset_pitch', 0.0), 
-            'voice_pitch_offset'
-        )
-        self.voice_pointer_offset = self._evaluator.parse(
-            voices_params.get('pointer_offset', 0.0), 
-            'voice_pointer_offset'
-        )
-        self.voice_pointer_range = self._evaluator.parse(
-            voices_params.get('pointer_range', 0.0), 
-            'voice_pointer_range'
+        # Factory per creare i parametri
+        factory = ParameterFactory(stream_id, duration, time_mode)
+        
+        # Carica tutti i parametri delle voci
+        self._loaded_params = factory.create_all_parameters(
+            params,
+            schema=VOICE_PARAMETER_SCHEMA
         )
         
-        # Cache max voices (calcolato una volta)
+        for name, param in self._loaded_params.items():
+            setattr(self, name, param)
+                
+        # Cache max voices
         self._max_voices = self._calculate_max_voices()
     
     # =========================================================================
-    # CALCOLO MAX VOICES (USANDO PARAMETEREVALUATOR)
+    # CALCOLO MAX VOICES
     # =========================================================================
     
     def _calculate_max_voices(self) -> int:
         """
-        Calcola il massimo numero di voci dall'envelope USANDO PARAMETEREVALUATOR.
+        Calcola il massimo numero di voci dall'envelope/valore.
         
         Se num_voices è un Envelope, prende il max dei breakpoints e lo clippa
-        ai bounds definiti in ParameterEvaluator.BOUNDS['num_voices'].
+        ai bounds definiti in parameter_definitions.py.
         """
-        # Ottieni i bounds dal ParameterEvaluator
-        bounds = self._evaluator.get_bounds('num_voices')
-        if bounds is None:
-            raise ValueError(
-                "Bounds per 'num_voices' non definiti in ParameterEvaluator. "
-                "Aggiungi una entry in ParameterEvaluator.BOUNDS."
-            )
+        if self.num_voices is None:
+            return 1
         
-        # Calcola il massimo teorico dell'envelope/valore
-        if isinstance(self.num_voices, Envelope):
+        # Estrai il valore base (potrebbe essere Envelope o numero)
+        raw_value = self.num_voices.value
+        
+        if isinstance(raw_value, Envelope):
             # Per envelope: massimo di tutti i breakpoints
-            raw_max = max(point[1] for point in self.num_voices.breakpoints)
+            raw_max = max(point[1] for point in raw_value.breakpoints)
         else:
             # Per numero fisso
-            raw_max = self.num_voices
-        
-        # Clippa ai bounds del ParameterEvaluator (non hardcoded!)
-        clipped_max = max(bounds.min_val, min(bounds.max_val, raw_max))
-        
-        # Arrotonda all'intero più vicino (le voci sono intere)
-        return int(round(clipped_max))
+            raw_max = raw_value
+                
+        return int(raw_max)
     
     @property
     def max_voices(self) -> int:
@@ -119,19 +104,16 @@ class VoiceManager:
         """
         Restituisce quante voci sono attive al tempo specificato.
         
-        Usa ParameterEvaluator.evaluate() che già clippa ai bounds.
-        
         Args:
             elapsed_time: Tempo trascorso dall'onset dello stream
             
         Returns:
             int: Numero di voci attive (1 <= n <= max_voices)
         """
-        raw_value = self._evaluator(
-            self.num_voices, 
-            elapsed_time, 
-            'num_voices'
-        )
+        if self.num_voices is None:
+            return 1
+        
+        raw_value = self.num_voices.get_value(elapsed_time)
         
         # Round + clamp a range valido (max_voices già rispetta i bounds)
         active = int(round(raw_value))
@@ -179,8 +161,6 @@ class VoiceManager:
         """
         Restituisce l'offset pitch in semitoni per una voce.
         
-        USA ParameterEvaluator.evaluate() per valutare e clippare base_offset.
-        
         Args:
             voice_index: Indice della voce (0-based)
             elapsed_time: Tempo trascorso dall'onset
@@ -188,11 +168,10 @@ class VoiceManager:
         Returns:
             float: Offset in semitoni (può essere negativo)
         """
-        base_offset = self._evaluator(
-            self.voice_pitch_offset,
-            elapsed_time,
-            'voice_pitch_offset'
-        )
+        if self.voice_pitch_offset is None:
+            return 0.0
+        
+        base_offset = self.voice_pitch_offset.get_value(elapsed_time)
         return self._get_voice_offset(voice_index, base_offset)
     
     def get_voice_pitch_multiplier(self, 
@@ -201,7 +180,7 @@ class VoiceManager:
         """
         Restituisce il ratio di pitch per una voce.
         
-        Converte l'offset in semitoni in ratio: 2^(semitoni/12)
+        Converte l'offset in semitoni in ratio: 2^(semitones/12)
         
         Args:
             voice_index: Indice della voce (0-based)
@@ -223,24 +202,19 @@ class VoiceManager:
         """
         Restituisce l'offset pointer in secondi per una voce.
         
-        Il valore base è già in secondi (o scalato da sample duration
-        se necessario nel contesto esterno).
-        
-        USA ParameterEvaluator.evaluate_scaled() se necessario.
+        Il valore base è normalizzato (0-1), viene scalato esternamente.
         
         Args:
             voice_index: Indice della voce (0-based)
             elapsed_time: Tempo trascorso dall'onset
             
         Returns:
-            float: Offset pointer in secondi (può essere negativo)
+            float: Offset pointer normalizzato (0-1, può essere negativo)
         """
-        # NOTA: voice_pointer_offset è normalizzato (0-1), viene scalato esternamente
-        base_offset = self._evaluator(
-            self.voice_pointer_offset,
-            elapsed_time,
-            'voice_pointer_offset'
-        )
+        if self.voice_pointer_offset is None:
+            return 0.0
+        
+        base_offset = self.voice_pointer_offset.get_value(elapsed_time)
         return self._get_voice_offset(voice_index, base_offset)
     
     def get_voice_pointer_range(self, elapsed_time: float) -> float:
@@ -251,13 +225,12 @@ class VoiceManager:
             elapsed_time: Tempo trascorso dall'onset
             
         Returns:
-            float: Range per variazione stocastica (già scalato se necessario)
+            float: Range per variazione stocastica (normalizzato 0-1)
         """
-        return self._evaluator(
-            self.voice_pointer_range,
-            elapsed_time,
-            'voice_pointer_range'
-        )
+        if self.voice_pointer_range is None:
+            return 0.0
+        
+        return self.voice_pointer_range.get_value(elapsed_time)
     
     # =========================================================================
     # UTILITY
@@ -276,10 +249,38 @@ class VoiceManager:
         """
         return voice_index < self.get_active_voices(elapsed_time)
     
+    
+    # =========================================================================
+    # PROPRIETÀ PER BACKWARD COMPATIBILITY (ScoreVisualizer)
+    # =========================================================================
+    
     @property
-    def sample_dur_sec(self) -> float:
-        """Durata del sample in secondi."""
-        return self._sample_dur_sec
+    def num_voices_value(self):
+        """Valore base di num_voices (per ScoreVisualizer)."""
+        if self.num_voices is None:
+            return 1
+        return self.num_voices.value
+    
+    @property
+    def voice_pitch_offset_value(self):
+        """Valore base di voice_pitch_offset (per ScoreVisualizer)."""
+        if self.voice_pitch_offset is None:
+            return 0.0
+        return self.voice_pitch_offset.value
+    
+    @property
+    def voice_pointer_offset_value(self):
+        """Valore base di voice_pointer_offset (per ScoreVisualizer)."""
+        if self.voice_pointer_offset is None:
+            return 0.0
+        return self.voice_pointer_offset.value
+    
+    @property
+    def voice_pointer_range_value(self):
+        """Valore base di voice_pointer_range (per ScoreVisualizer)."""
+        if self.voice_pointer_range is None:
+            return 0.0
+        return self.voice_pointer_range.value
     
     # =========================================================================
     # REPR
@@ -287,5 +288,5 @@ class VoiceManager:
     
     def __repr__(self) -> str:
         return (f"VoiceManager(max_voices={self._max_voices}, "
-                f"pitch_offset={self.voice_pitch_offset}, "
-                f"pointer_offset={self.voice_pointer_offset})")
+                f"pitch_offset={self.voice_pitch_offset_value}, "
+                f"pointer_offset={self.voice_pointer_offset_value})")

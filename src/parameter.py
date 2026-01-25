@@ -135,15 +135,15 @@ class Parameter:
     def _check_probability(self, time: float) -> bool:
         """
         Verifica se applicare la variazione (Gate probabilistico).
-        Ritorna True se la variazione DEVE essere applicata.
+        
+        Logica:
+        1. Se mod_prob è None → probabilità 100% (applica sempre)
+        2. Se mod_prob è un numero → applica con quella probabilità (0-100)
         """
-        # Se mod_prob non è definito nello YAML:
+        # Se mod_prob è None, significa che dephase è assente o 
+        # è stato esplicitamente impostato a None (100%)
         if self._mod_prob is None:
-            # Per 'invert' (Reverse): Default è OFF (False) -> non invertire.
-            if self._bounds.variation_mode == 'invert':
-                return False
-            # Per 'additive'/'quantized': Default è ON (True) -> applica sempre il range.
-            return True
+            return True  # 100% di probabilità
         
         # Se mod_prob è definito, valuta la probabilità (0-100)
         prob_val = self._evaluate_input(self._mod_prob, time)

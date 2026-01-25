@@ -1,0 +1,11 @@
+composition:
+  title: "il mondo dorme"
+
+streams:
+  - stream_id: "texture1"
+    time_mode: normalized
+    onset: 0.0
+    duration: 4
+    sample: "pino2.wav"
+    density: 10
+    #dephase:

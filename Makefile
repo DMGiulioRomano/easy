@@ -18,7 +18,7 @@ AUTOVISUAL ?= true
 SHOWSTATIC ?= true
 FILE ?= test-lez
 TEST ?= false
-
+PRECLEAN ?=true
 # Include moduli
 include make/test.mk
 include make/utils.mk
