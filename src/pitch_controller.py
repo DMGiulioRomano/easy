@@ -57,7 +57,7 @@ class PitchController:
         self._base_semitones = self._active_param.value if self._mode == 'semitones' else None
         self._base_ratio = self._active_param.value if self._mode == 'ratio' else None
 
-    
+        
     def calculate(self, elapsed_time: float) -> float:
         """
         Calcola il pitch ratio finale al tempo t.
