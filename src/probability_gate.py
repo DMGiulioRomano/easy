@@ -1,0 +1,93 @@
+"""
+probability_gate.py - Pattern Gateway per la gestione delle probabilità.
+Isola completamente la logica di dephase da Parameter e ParameterFactory.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Optional, Union
+import random
+from envelope import Envelope
+
+class ProbabilityGate(ABC):
+    """
+    Gateway pattern: interfaccia unificata per gate probabilistici.
+    """
+    
+    @abstractmethod
+    def should_apply(self, time: float) -> bool:
+        """Decide se applicare una variazione al tempo specificato."""
+        pass
+    
+    @abstractmethod
+    def get_probability_value(self, time: float) -> float:
+        """Restituisce il valore di probabilità corrente (0-100)."""
+        pass
+    
+    @property
+    @abstractmethod
+    def mode(self) -> str:
+        """Tipo di gate ('never', 'always', 'random', 'envelope')."""
+        pass
+
+
+class NeverGate(ProbabilityGate):
+    """Gate che NON applica mai variazione."""
+    
+    def should_apply(self, time: float) -> bool:
+        return False
+    
+    def get_probability_value(self, time: float) -> float:
+        return 0.0
+    
+    @property
+    def mode(self) -> str:
+        return "never"
+
+
+class AlwaysGate(ProbabilityGate):
+    """Gate che applica SEMPRE variazione (100%)."""
+    
+    def should_apply(self, time: float) -> bool:
+        return True
+    
+    def get_probability_value(self, time: float) -> float:
+        return 100.0
+    
+    @property
+    def mode(self) -> str:
+        return "always"
+
+
+class RandomGate(ProbabilityGate):
+    """Gate con probabilità costante."""
+    
+    def __init__(self, probability: float):
+        self._probability = min(100.0, max(0.0, probability))
+    
+    def should_apply(self, time: float) -> bool:
+        return random.uniform(0, 100) < self._probability
+    
+    def get_probability_value(self, time: float) -> float:
+        return self._probability
+    
+    @property
+    def mode(self) -> str:
+        return f"random({self._probability}%)"
+
+
+class EnvelopeGate(ProbabilityGate):
+    """Gate con probabilità variabile nel tempo (envelope)."""
+    
+    def __init__(self, envelope: Envelope):
+        self._envelope = envelope
+    
+    def should_apply(self, time: float) -> bool:
+        prob = self._envelope.evaluate(time)
+        return random.uniform(0, 100) < prob
+    
+    def get_probability_value(self, time: float) -> float:
+        return self._envelope.evaluate(time)
+    
+    @property
+    def mode(self) -> str:
+        return f"envelope({self._envelope.type})"

@@ -103,7 +103,6 @@ class GranularParser:
             value=validated_value,
             bounds=bounds,
             mod_range=validated_range,
-            mod_prob=validated_prob,
             owner_id=self.stream_id
         )
 

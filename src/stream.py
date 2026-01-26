@@ -15,7 +15,6 @@ Ispirato al DMX-1000 di Barry Truax (1988).
 import random
 from typing import List, Optional, Union
 
-from parameter_factory import ParameterFactory
 from grain import Grain
 from envelope import Envelope
 from pointer_controller import PointerController
@@ -24,6 +23,7 @@ from density_controller import DensityController
 from voice_manager import VoiceManager
 from utils import *
 from parameter_schema import STREAM_PARAMETER_SCHEMA
+from parameter_orchestrator import ParameterOrchestrator
 
 
 
@@ -87,28 +87,36 @@ class Stream:
         - ParameterFactory sa COME crearlo
         - Stream riceve i Parameter già pronti        
         """
-        factory = ParameterFactory(
+        orchestrator = ParameterOrchestrator(
             stream_id=self.stream_id,
             duration=self.duration,
             time_mode=self.time_mode
         )
         
-        # Crea tutti i parametri definiti nello schema
-        parameters = factory.create_all_parameters(params, schema=STREAM_PARAMETER_SCHEMA)
+        # 2. Imposta configurazione dephase (una volta per tutto)
+        orchestrator.set_dephase_config(params.get('dephase'))
         
-        # Assegna dinamicamente come attributi
+        # 3. Crea tutti i parametri
+        parameters = orchestrator.create_all_parameters(
+            params,
+            schema=STREAM_PARAMETER_SCHEMA
+        )
+        
+        # 4. Assegna come attributi
         for name, param in parameters.items():
             setattr(self, name, param)
-
     # =========================================================================
     # INIZIALIZZAZIONE CONTROLLER
     # =========================================================================
     
     def _init_controllers(self, params: dict) -> None:
         """Inizializza tutti i controller con i loro parametri."""
-        
+        dephase = params.get('dephase')
+
         # POINTER CONTROLLER
         pointer_params = params.get('pointer', {})
+        if dephase is not None:
+            pointer_params['dephase'] = dephase
         self._pointer = PointerController(
             params=pointer_params,
             stream_id=self.stream_id,
@@ -119,6 +127,8 @@ class Stream:
         
         # PITCH CONTROLLER
         pitch_params = params.get('pitch', {})
+        if dephase is not None:
+            pitch_params['dephase'] = dephase
         self._pitch = PitchController(
             params=pitch_params,
             stream_id=self.stream_id,
@@ -127,6 +137,9 @@ class Stream:
         )
         
         # DENSITY CONTROLLER
+        #dens_params = params.get('pitch', {})
+        #if dephase is not None:
+        #    dens_params['dephase'] = dephase
         self._density = DensityController(
             params=params,
             stream_id=self.stream_id,
@@ -136,8 +149,10 @@ class Stream:
         
         # VOICE MANAGER
         voices_params = params.get('voices', {})
+        if dephase is not None:
+            voices_params['dephase'] = dephase
         self._voice_manager = VoiceManager(
-            params=params,
+            params=voices_params,
             stream_id=self.stream_id,
             duration=self.duration,
             time_mode=self.time_mode
@@ -337,15 +352,11 @@ class Stream:
         # FASE 2: Controlliamo se dobbiamo FLIPPARE (Dephase/Probabilità)
         # Usiamo il metodo interno del parametro per vedere se il "dado" vince
         # Nota: Qui stiamo "rubando" la logica probabilistica all'oggetto Parameter
-        should_flip = self.reverse._check_probability(elapsed_time)
+        should_flip = self.reverse._probability_gate.should_apply(elapsed_time)
         
-        # FASE 3: Applichiamo il flip
-        # Se should_flip è True, invertiamo la decisione di base
         if should_flip:
             return not is_reverse_base
-            
         return is_reverse_base
-
     # =========================================================================
     # PROPRIETÀ PER BACKWARD COMPATIBILITY
     # =========================================================================
@@ -358,7 +369,7 @@ class Stream:
     @property
     def num_voices(self) -> Union[int, Envelope]:
         """Espone num_voices per ScoreVisualizer."""
-        return self._voice_manager.num_voices
+        return self._voice_manager.num_voices_value
     
     @property
     def density(self) -> Optional[Union[float, Envelope]]:
@@ -371,15 +382,13 @@ class Stream:
         return self._density.fill_factor
     
     @property
-    def distribution(self) -> Union[float, Envelope]:
-        """Espone distribution per ScoreVisualizer."""
-        return self._density.distribution
-    
+    def distribution(self):
+        return self._density.distribution.value if hasattr(self._density.distribution, 'value') else self._density.distribution
+        
     @property
-    def pointer_speed(self) -> Union[float, Envelope]:
-        """Espone pointer_speed per ScoreVisualizer."""
-        return self._pointer.speed
-    
+    def pointer_speed(self):
+        return self._pointer.speed.value
+        
     @property
     def pitch_ratio(self) -> Optional[Union[float, Envelope]]:
         """Espone pitch_ratio per ScoreVisualizer (solo se in modalità ratio)."""
@@ -394,12 +403,7 @@ class Stream:
     def pitch_range(self) -> Union[float, Envelope]:
         """Espone pitch_range per ScoreVisualizer."""
         return self._pitch.range
-    
-    @property
-    def num_voices(self):
-        """Espone num_voices per ScoreVisualizer."""
-        return self._voice_manager.num_voices_value
-    
+        
     @property
     def voice_pitch_offset(self):
         """Espone voice_pitch_offset per ScoreVisualizer."""

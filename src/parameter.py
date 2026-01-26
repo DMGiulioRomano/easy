@@ -15,7 +15,7 @@ from typing import Union, Optional, Callable, Dict
 from envelope import Envelope
 from parameter_definitions import ParameterBounds
 from logger import log_clip_warning
-
+from probability_gate import *
 # Definiamo un tipo alias per chiarezza: l'input può essere un numero o un Envelope
 ParamInput = Union[float, int, Envelope]
 
@@ -36,7 +36,6 @@ class Parameter:
         value: ParamInput,               
         bounds: ParameterBounds,         
         mod_range: Optional[ParamInput] = None,  
-        mod_prob: Optional[ParamInput] = None,   
         owner_id: str = "unknown"        
     ):
         self.name = name
@@ -45,8 +44,8 @@ class Parameter:
         self._value = value
         self._bounds = bounds
         self._mod_range = mod_range
-        self._mod_prob = mod_prob
-        
+        self._probability_gate = NeverGate()  # Default safe
+                
         # Strategy Map: Collega la modalità di variazione alla funzione corrispondente.
         # Questo elimina l'if/elif nel metodo get_value.
         self._strategies: Dict[str, Callable[[float, float], float]] = {
@@ -62,6 +61,10 @@ class Parameter:
                 f"definito in parameter_definitions.py"
             )
 
+    def set_probability_gate(self, gate: ProbabilityGate):
+        """Setter per dependency injection."""
+        self._probability_gate = gate
+    
     def get_value(self, time: float) -> float:
         """
         Calcola il valore finale del parametro al tempo specificato.
@@ -70,14 +73,13 @@ class Parameter:
         
         # 1. Valuta il valore base (Base Signal)
         base_val = self._evaluate_input(self._value, time)
-
+        current_range = self._calculate_range(time)
         # 2. Check Probabilità (Gate)
         # Se il gate è chiuso, restituisci subito il base value (clippato)
-        if not self._check_probability(time):
+        if not self._probability_gate.should_apply(time):
             return self._clamp(base_val, time)
 
         # 3. Calcola il Range di variazione (Modulation Depth)
-        current_range = self._calculate_range(time)
 
         # 4. Esegui la Strategia di Variazione (Dispatch)
         # Seleziona la funzione giusta in base alla configurazione (es. 'quantized' per semitoni)
@@ -131,23 +133,6 @@ class Parameter:
         if isinstance(param, Envelope):
             return param.evaluate(time)
         return float(param)
-
-    def _check_probability(self, time: float) -> bool:
-        """
-        Verifica se applicare la variazione (Gate probabilistico).
-        
-        Logica:
-        1. Se mod_prob è None → probabilità 100% (applica sempre)
-        2. Se mod_prob è un numero → applica con quella probabilità (0-100)
-        """
-        # Se mod_prob è None, significa che dephase è assente o 
-        # è stato esplicitamente impostato a None (100%)
-        if self._mod_prob is None:
-            return True  # 100% di probabilità
-        
-        # Se mod_prob è definito, valuta la probabilità (0-100)
-        prob_val = self._evaluate_input(self._mod_prob, time)
-        return random.uniform(0, 100) < prob_val
 
     def _calculate_range(self, time: float) -> float:
         """Calcola l'ampiezza della variazione."""

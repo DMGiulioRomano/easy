@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union
 from parameter import Parameter
 from envelope import Envelope
-
 # =============================================================================
 # STRATEGIE PITCH
 # =============================================================================

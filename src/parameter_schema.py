@@ -183,8 +183,6 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
         name='fill_factor',
         yaml_path='fill_factor',
         default=2,  # Default non-None
-        range_path='fill_factor_range',
-        dephase_key='pc_rand_density',
         exclusive_group='density_mode',  # <--- NUOVO GRUPPO
         group_priority=1  # <--- PRIORITÀ PIÙ ALTA
     ),
@@ -192,8 +190,6 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
         name='density',
         yaml_path='density',
         default=None,  # None = non presente di default
-        range_path='density_range',
-        dephase_key='pc_rand_density',
         exclusive_group='density_mode',  # <--- STESSO GRUPPO
         group_priority=2  # <--- PRIORITÀ PIÙ BASSA
     ),

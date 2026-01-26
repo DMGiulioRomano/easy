@@ -163,7 +163,7 @@ class Generator:
                     f.write(f'f {num} 0 1024 20 5 1\n\n')
                 elif param == 'gaussian':
                     # opt=3 è un buon default (più stretto = valori più alti)
-                    f.write(f'f {num} 0 1024 20 6 1\n\n')
+                    f.write(f'f {num} 0 1024 20 6 1 2\n\n')
                 elif param == 'kaiser':
                     # opt=6 è un buon compromesso
                     f.write(f'f {num} 0 1024 20 7 1 6\n\n')

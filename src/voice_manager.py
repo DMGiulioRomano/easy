@@ -8,10 +8,10 @@ Responsabilità:
 """
 
 from typing import Dict, Optional, Union
-import random
 from envelope import Envelope
 from parameter_factory import ParameterFactory
 from parameter_schema import VOICE_PARAMETER_SCHEMA
+from parameter_orchestrator import ParameterOrchestrator
 
 
 class VoiceManager:
@@ -47,18 +47,25 @@ class VoiceManager:
         """
         self.stream_id = stream_id
         
-        # Factory per creare i parametri
-        factory = ParameterFactory(stream_id, duration, time_mode)
+        # Extract dephase config
+        dephase_config = params.get('dephase')
+        
+        # Create orchestrator
+        self._orchestrator = ParameterOrchestrator(
+            stream_id=stream_id,
+            duration=duration,
+            time_mode=time_mode
+        )
+        self._orchestrator.set_dephase_config(dephase_config)
         
         # Carica tutti i parametri delle voci
-        self._loaded_params = factory.create_all_parameters(
+        self._loaded_params = self._orchestrator.create_all_parameters(
             params,
             schema=VOICE_PARAMETER_SCHEMA
         )
         
         for name, param in self._loaded_params.items():
-            setattr(self, name, param)
-                
+            setattr(self, name, param)                
         # Cache max voices
         self._max_voices = self._calculate_max_voices()
     

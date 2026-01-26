@@ -19,7 +19,7 @@ from parameter import Parameter
 from parser import GranularParser
 from parameter_schema import STREAM_PARAMETER_SCHEMA, ParameterSpec
 from parameter_definitions import IMPLICIT_JITTER_PROB 
-
+import inspect
 
 class ParameterFactory:
     """
@@ -44,6 +44,7 @@ class ParameterFactory:
         self, 
         stream_id: str, 
         duration: float, 
+        caller: str,
         time_mode: str = 'absolute'
     ):
         """
@@ -56,6 +57,7 @@ class ParameterFactory:
         """
         self._parser = GranularParser(stream_id, duration, time_mode)
         self._stream_id = stream_id
+        self._caller = caller
     
     def create_all_parameters(
         self, 
@@ -72,6 +74,9 @@ class ParameterFactory:
             Dict[nome_attributo, Parameter o valore raw]
         """
         result = {}
+        #import pdb 
+        #pdb.set_trace()
+
         dephase = yaml_data.get('dephase')  
         target_schema = schema if schema is not None else STREAM_PARAMETER_SCHEMA
         
@@ -99,7 +104,6 @@ class ParameterFactory:
         Utile per testing o per creare parametri singoli.
         """
         from parameter_schema import get_parameter_spec
-        
         spec = get_parameter_spec(name)
         dephase = yaml_data.get('dephase')
         
@@ -122,20 +126,17 @@ class ParameterFactory:
         """
         # 1. Estrai valore base dal YAML
         value = self._get_nested(yaml_data, spec.yaml_path, spec.default)
-        
+
         # 2. Estrai range se definito nello schema
         range_val = None
         if spec.range_path:
             range_val = self._get_nested(yaml_data, spec.range_path, None)
-        
-        # Passo anche range_val perché serve per decidere se dare 1% o 100%
-        prob_val = self._resolve_dephase_prob(spec, dephase, range_val)
+
         # 4. Usa il parser per creare il Parameter
         return self._parser.parse_parameter(
             name=spec.name,  # Stessa chiave per bounds e attributo
             value_raw=value,
             range_raw=range_val,
-            prob_raw=prob_val
         )
     
     def _extract_raw_value(self, spec: ParameterSpec, yaml_data: dict) -> Any:
@@ -146,34 +147,6 @@ class ParameterFactory:
         """
         return self._get_nested(yaml_data, spec.yaml_path, spec.default)
     
-    def _resolve_dephase_prob(
-        self, 
-        spec: ParameterSpec, 
-        dephase: Optional[dict],
-        range_val: Optional[Any]
-    ) -> Optional[Any]:
-        """
-        Risolve la probabilità dephase per un parametro.
-        
-        Logica:
-        - Se spec.dephase_key è None → parametro non supporta dephase → None
-        - Se dephase è None (assente nel YAML) → None (Scenario A: sempre attivo)
-        - Se dephase esiste ma la chiave specifica no → None (usa default del Parameter)
-        - Altrimenti → valore specificato
-        """
-        if spec.dephase_key is None:
-            return None
-        
-        if dephase is None:
-            return None
-        
-        # 1. Cerca valore esplicito
-        explicit_prob = dephase.get(spec.dephase_key)
-        if explicit_prob is not None:
-            return explicit_prob
-            
-        return IMPLICIT_JITTER_PROB
-        
     @staticmethod
     def _get_nested(data: dict, path: str, default: Any) -> Any:
         """
@@ -199,3 +172,19 @@ class ParameterFactory:
                 return default
         
         return current
+
+    def _get_caller(self):   
+        frame = inspect.currentframe().f_back
+        caller_info = inspect.getframeinfo(frame)
+        return f"{caller_info.function}:{caller_info.lineno}"
+    
+
+    def __repr__(self) -> str:
+        """
+        Rappresentazione stringa per debug.
+        
+        Returns:
+            str: Rappresentazione dell'oggetto ParameterFactory
+        """
+    def __repr__(self) -> str:
+        return f"ParameterFactory(stream_id='{self._stream_id}', caller='{self._caller}')"

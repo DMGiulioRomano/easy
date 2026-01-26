@@ -15,7 +15,8 @@ import random
 from envelope import Envelope
 from parameter_factory import ParameterFactory
 from parameter import Parameter
-from parameter_schema import POINTER_PARAMETER_SCHEMA, get_parameter_spec
+from parameter_schema import POINTER_PARAMETER_SCHEMA
+from parameter_orchestrator import ParameterOrchestrator
 
 class PointerController:
     """
@@ -58,8 +59,18 @@ class PointerController:
         """
         self._sample_dur_sec = sample_dur_sec
         self._time_mode = time_mode
-        self._factory = ParameterFactory(stream_id, duration, time_mode)
+
+        # Extract dephase config
+        dephase_config = params.get('dephase')
         
+        # Create orchestrator
+        self._orchestrator = ParameterOrchestrator(
+            stream_id=stream_id,
+            duration=duration,
+            time_mode=time_mode
+        )
+        self._orchestrator.set_dephase_config(dephase_config)
+
         self._init_params(params)
         self._init_loop_state()
     
@@ -74,8 +85,10 @@ class PointerController:
         # 1. Carica TUTTO usando lo schema specifico
         # Questo crea: 'pointer_speed', 'pointer_jitter', 'pointer_offset_range', 
         # 'pointer_start', 'loop_dur' (non scalato!)
-        all_params = self._factory.create_all_parameters(params, schema=POINTER_PARAMETER_SCHEMA)
-        
+        all_params = self._orchestrator.create_all_parameters(
+            params, schema=POINTER_PARAMETER_SCHEMA
+        )
+                
         # 2. Assegna dinamicamente rimuovendo il prefisso 'pointer_'
         for name, param_obj in all_params.items():
             # CASO SPECIALE: loop_dur lo saltiamo qui, lo gestisce _init_loop_params
@@ -122,7 +135,11 @@ class PointerController:
                 # ma noi gli diamo il valore già estratto e scalato.
                 # Trucco: create_single_parameter cerca 'loop_dur' nel dict.
                 fake_params = {'loop_dur': scaled_dur_raw}
-                self.loop_dur = self._factory.create_single_parameter('loop_dur', fake_params)                
+                self.loop_dur = self._orchestrator.create_parameter_with_gate(
+                    'loop_dur', 
+                    fake_params,
+                    self._orchestrator._param_factory._parser._get_parameter_spec('loop_dur')
+                    ) 
             else:
                 # Solo loop_start → loop fino a fine sample
                 self.loop_end = self._sample_dur_sec

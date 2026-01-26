@@ -14,6 +14,7 @@ from parameter import Parameter
 from parameter_schema import DENSITY_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
 from parameter_definitions import get_parameter_definition
+from parameter_orchestrator import ParameterOrchestrator
 
 class DensityController:
     """
@@ -37,11 +38,23 @@ class DensityController:
         """
         Inizializza il controller di densità.
         """
-        self._factory = ParameterFactory(stream_id, duration, time_mode)
-        self._params = self._factory.create_all_parameters(
+
+        # Extract dephase config
+        dephase_config = params.get('dephase')
+        
+        # Create orchestrator
+        self._orchestrator = ParameterOrchestrator(
+            stream_id=stream_id,
+            duration=duration,
+            time_mode=time_mode
+        )
+        self._orchestrator.set_dephase_config(dephase_config)
+        # Create parameters
+        self._params = self._orchestrator.create_all_parameters(
             params,
             schema=DENSITY_PARAMETER_SCHEMA
         )
+
         selected_param_name = self._determine_active_param()
         param_obj = self._params[selected_param_name]
         
@@ -73,7 +86,6 @@ class DensityController:
             elapsed_time,
             grain_duration=current_grain_duration
         )
-
     # devo pensare a un modo per centralizzare le evaluations. una sta qui
     # una sta nel parser e una nei parameter. Forse bisogna riutilizzare
     # la classe parameterEvaluator per dargli 
@@ -125,3 +137,6 @@ class DensityController:
         """Espone l'oggetto parametro distribution."""
         return self._determine_active_param()
 
+    def __repr__(self) -> str:
+        active_param = self._determine_active_param()
+        return f"<DensityController {self._factory._parser.stream_id} [{self.mode}:{active_param}]>"

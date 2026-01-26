@@ -17,6 +17,7 @@ from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
+from parameter_orchestrator import ParameterOrchestrator
 
 
 class PitchController:
@@ -39,8 +40,19 @@ class PitchController:
         
         Args:
         """
-        self._factory = ParameterFactory(stream_id, duration, time_mode)
-        self._loaded_params = self._factory.create_all_parameters(
+        # Extract dephase config
+        dephase_config = params.get('dephase')
+        
+        # Create orchestrator
+        self._orchestrator = ParameterOrchestrator(
+            stream_id=stream_id,
+            duration=duration,
+            time_mode=time_mode
+        )
+        self._orchestrator.set_dephase_config(dephase_config)
+        
+        # Create parameters
+        self._loaded_params = self._orchestrator.create_all_parameters(
             params, 
             schema=PITCH_PARAMETER_SCHEMA
         )
@@ -52,6 +64,7 @@ class PitchController:
             param_obj, 
             self._loaded_params
         )
+
 
     def _determine_active_param(self) -> str:
         """Logica di selezione separata e testabile."""
@@ -66,29 +79,30 @@ class PitchController:
     @property
     def mode(self) -> str:
         return self._strategy.name    
+
     @property
     def base_semitones(self):
         """Valore base semitoni (o Envelope) senza jitter."""
-        return self._base_semitones
+        if 'pitch_semitones' in self._loaded_params:
+            return self._loaded_params['pitch_semitones'].value
+        return None
     
     @property
     def base_ratio(self):
         """Valore base ratio (o Envelope) senza jitter."""
-        return self._base_ratio
+        if 'pitch_ratio' in self._loaded_params:
+            return self._loaded_params['pitch_ratio'].value
+        return None
 
     @property
     def range(self):
-        """
-        Valore del range (o Envelope). 
-        Attenzione: questo è il valore raw, non l'oggetto Parameter.
-        """
-        # Ricostruiamo un parametro dummy se serve il valore calcolato, 
-        # oppure ritorniamo il raw value/envelope.
-        # Per semplicità ritorniamo l'oggetto Envelope o il float.
-        if hasattr(self._active_param, '_mod_range') and self._active_param._mod_range is not None:
-             return self._active_param._mod_range
+        """Espone il range del parametro attivo."""
+        active_param = self._determine_active_param()
+        if active_param in self._loaded_params:
+            param = self._loaded_params[active_param]
+            if hasattr(param, '_mod_range') and param._mod_range is not None:
+                return param._mod_range
         return 0.0
-
     # =========================================================================
     # REPR
     # =========================================================================
