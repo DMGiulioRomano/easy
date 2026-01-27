@@ -25,11 +25,14 @@ class ParameterOrchestrator:
         time_mode: str = 'absolute',
         config: OrchestrationConfig = None
     ):
+        self._config = config or OrchestrationConfig()
         self._param_factory = ParameterFactory(
-            stream_id, duration, "Orchestrator", time_mode
+            stream_id=stream_id, 
+            duration=duration,
+            time_mode=time_mode, 
+            distribution_mode=self._config.distribution_mode
         )
         self._stream_id = stream_id
-        self._config = config or OrchestrationConfig()
         
     
     def create_all_parameters(
@@ -75,7 +78,7 @@ class ParameterOrchestrator:
         
         # 2. Crea il ProbabilityGate corrispondente
         gate = GateFactory.create_gate(
-            dephase_config=self._config.dephase_config,       
+            dephase=self._config.dephase,       
             param_key=param_spec.dephase_key,
             default_prob=IMPLICIT_JITTER_PROB,
             has_explicit_range=has_explicit_range,

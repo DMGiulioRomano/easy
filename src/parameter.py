@@ -16,7 +16,9 @@ from envelope import Envelope
 from parameter_definitions import ParameterBounds
 from logger import log_clip_warning
 from probability_gate import *
-# Definiamo un tipo alias per chiarezza: l'input può essere un numero o un Envelope
+from distribution_strategy import DistributionFactory, DistributionStrategy
+
+# Definisco un tipo alias per chiarezza: l'input può essere un numero o un Envelope
 ParamInput = Union[float, int, Envelope]
 
 class Parameter:
@@ -36,7 +38,8 @@ class Parameter:
         value: ParamInput,               
         bounds: ParameterBounds,         
         mod_range: Optional[ParamInput] = None,  
-        owner_id: str = "unknown"        
+        owner_id: str = "unknown",
+        distribution_mode: str = 'uniform'
     ):
         self.name = name
         self.owner_id = owner_id
@@ -45,7 +48,7 @@ class Parameter:
         self._bounds = bounds
         self._mod_range = mod_range
         self._probability_gate = NeverGate()  # Default safe
-                
+        self._distribution = DistributionFactory.create(distribution_mode)                
         # Strategy Map: Collega la modalità di variazione alla funzione corrispondente.
         # Questo elimina l'if/elif nel metodo get_value.
         self._strategies: Dict[str, Callable[[float, float], float]] = {
@@ -95,26 +98,29 @@ class Parameter:
 
     def _strategy_additive(self, base: float, rng: float) -> float:
         """
-        Variazione continua: base ± random(rng/2).
-        Usata per: Volume, Pan, Duration, Density, Ratio.
+        Variazione continua usando DistributionStrategy.
+        
+        Invece di hardcoded uniform, delega alla strategia configurata.
         """
         if rng > 0:
-            return base + random.uniform(-0.5, 0.5) * rng
+            # ← CAMBIATO: usa distribution strategy invece di random.uniform
+            return self._distribution.sample(base, rng)
         return base
 
     def _strategy_quantized(self, base: float, rng: float) -> float:
         """
-        Variazione discreta (interi): base ± randint(rng/2).
-        Usata per: Pitch Semitones, Voices, Sample Select.
+        Variazione discreta.
+        
+        Per gaussiana: genera valore float e arrotonda a intero.
         """
         if rng >= 1.0:
-            limit = int(rng * 0.5)
-            if limit > 0:
-                # randint è inclusivo [-limit, limit]
-                return base + random.randint(-limit, limit)
+            # Genera campione dalla distribuzione
+            raw_sample = self._distribution.sample(0.0, rng)  # center=0 per simmetria
+            # Arrotonda a intero
+            return base + round(raw_sample)
         return base
-
-    def _strategy_invert(self, base: float, rng: float) -> float:
+    
+    def _strategy_invert(self, base: float) -> float:
         """
         Variazione booleana: inverte 0.0 <-> 1.0.
         Usata per: Reverse.

@@ -15,7 +15,7 @@ class GateFactory:
 
     @staticmethod
     def create_gate(
-        dephase_config: Optional[dict] = None,
+        dephase: Optional[dict] = None,
         param_key: Optional[str] = None,
         default_prob: float = 0.0,
         has_explicit_range: bool = False,
@@ -26,7 +26,7 @@ class GateFactory:
             return NeverGate()
 
         # CASO 2: Nessuna configurazione dephase
-        if dephase_config is None:
+        if dephase is None:
             # Se range esplicitato → 100%
             if has_explicit_range:
                 return AlwaysGate()
@@ -34,7 +34,7 @@ class GateFactory:
             return NeverGate()
             
         # CASO 3: dephase config esiste, cerca chiave        
-        if param_key not in dephase_config:
+        if param_key not in dephase:
             # Se range esplicitato → 100%
             if has_explicit_range and range_always_active:
                 return AlwaysGate()
@@ -43,7 +43,7 @@ class GateFactory:
                 return RandomGate(default_prob)
             return NeverGate()
 
-        raw_value = dephase_config[param_key]
+        raw_value = dephase[param_key]
         
         # CASO 4: Chiave è None → implicit jitter
         if raw_value is None:

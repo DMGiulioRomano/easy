@@ -7,6 +7,7 @@ streams:
     onset: 0.0
     duration: 30
     range_always_active:
+    distribution_mode: 'gaussian'
     fill_factor: 1
     sample: "pino2.wav"
     grain:

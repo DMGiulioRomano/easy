@@ -13,7 +13,6 @@ Ispirato al DMX-1000 di Barry Truax (1988)
 
 import math
 from typing import Union, Optional
-from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory

@@ -9,7 +9,6 @@ Responsabilità:
 
 from typing import Dict, Optional, Union
 from envelope import Envelope
-from parameter_factory import ParameterFactory
 from parameter_schema import VOICE_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
 from orchestration_config import OrchestrationConfig

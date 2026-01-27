@@ -13,7 +13,6 @@ Ispirato al DMX-1000 di Barry Truax (1988)
 from typing import Union, Optional, Callable
 import random
 from envelope import Envelope
-from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator

@@ -9,8 +9,6 @@ Implementa il modello Truax per la distribuzione temporale:
 
 import random
 from typing import Optional, Union
-from parameter_factory import ParameterFactory
-from parameter import Parameter
 from parameter_schema import DENSITY_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
 from parameter_definitions import get_parameter_definition

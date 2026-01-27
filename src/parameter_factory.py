@@ -44,8 +44,8 @@ class ParameterFactory:
         self, 
         stream_id: str, 
         duration: float, 
-        caller: str,
-        time_mode: str = 'absolute'
+        time_mode: str = 'absolute',
+        distribution_mode: str = 'uniform',
     ):
         """
         Inizializza la factory con il contesto dello Stream.
@@ -55,9 +55,9 @@ class ParameterFactory:
             duration: Durata totale (per normalizzazione envelope)
             time_mode: 'absolute' o 'normalized'
         """
-        self._parser = GranularParser(stream_id, duration, time_mode)
+        self._distribution_mode = distribution_mode
+        self._parser = GranularParser(stream_id, duration, time_mode, distribution_mode = distribution_mode)
         self._stream_id = stream_id
-        self._caller = caller
         
     # =========================================================================
     # INTERNAL METHODS
@@ -127,11 +127,4 @@ class ParameterFactory:
     
 
     def __repr__(self) -> str:
-        """
-        Rappresentazione stringa per debug.
-        
-        Returns:
-            str: Rappresentazione dell'oggetto ParameterFactory
-        """
-    def __repr__(self) -> str:
-        return f"ParameterFactory(stream_id='{self._stream_id}', caller='{self._caller}')"
+        return f"ParameterFactory(stream_id='{self._stream_id}')"
