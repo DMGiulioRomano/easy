@@ -190,7 +190,12 @@ class PointerController:
     # CALCULATION
     # =========================================================================
     
-    def calculate(self, elapsed_time: float) -> float:
+    def calculate(
+        self,
+        elapsed_time: float,
+        grain_duration: float = 0.0,
+        grain_reverse: bool = False
+    ) -> float:
         """
         Calcola la posizione di lettura nel sample per questo grano.
         
@@ -219,6 +224,8 @@ class PointerController:
         dev_normalized = self.deviation.get_value(elapsed_time)
         deviation_seconds = dev_normalized * context_length
         final_pos = base_pos + deviation_seconds
+        if grain_reverse:
+            final_pos+=grain_duration
         return wrap_fn(final_pos)        
     
 

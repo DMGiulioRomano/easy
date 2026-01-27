@@ -274,9 +274,11 @@ class Stream:
         Returns:
             Grain: oggetto grano completo
         """
+        grain_reverse = self._calculate_grain_reverse(elapsed_time)
+
         # === 1. PITCH ===
         # Base + Voice Offset
-        base_pitch = self._pitch.calculate(elapsed_time)
+        base_pitch = self._pitch.calculate(elapsed_time, grain_reverse=grain_reverse)
         voice_pitch_mult = self._voice_manager.get_voice_pitch_multiplier(
             voice_index, elapsed_time
         )
@@ -284,7 +286,7 @@ class Stream:
         
         # === 2. POINTER ===
         # Base + Voice Offset + Jitter Voce
-        base_pointer = self._pointer.calculate(elapsed_time)
+        base_pointer = self._pointer.calculate(elapsed_time,grain_dur,grain_reverse)
         
         voice_pointer_offset = self._voice_manager.get_voice_pointer_offset(
             voice_index, elapsed_time
@@ -294,18 +296,10 @@ class Stream:
         voice_ptr_range = self._voice_manager.get_voice_pointer_range(elapsed_time)
         voice_ptr_deviation = random.uniform(-0.5, 0.5) * voice_ptr_range * self.sample_dur_sec
         
-        pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
+        pointer_pos = base_pointer #+ voice_pointer_offset + voice_ptr_deviation
         
         volume = self.volume.get_value(elapsed_time)
-        
-        # === 4. PAN (REFACTOR) ===
-        # Parameter gestisce base, range e dephase interna
-        pan = self.pan.get_value(elapsed_time)
-        
-        # === 5. REVERSE (con Dephase booleano) ===
-        # Gestito separatamente perché non è un range additivo ma un flip booleano
-        grain_reverse = self._calculate_grain_reverse(elapsed_time)
-        
+        pan = self.pan.get_value(elapsed_time)        
         # === 6. ONSET ===
         absolute_onset = self.onset + elapsed_time
         

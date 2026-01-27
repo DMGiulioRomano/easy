@@ -12,10 +12,10 @@ SSDIR  := refs
 YMLDIR := configs
 
 # --- Flags configurabili ---
-AUTOKILL ?= true
+AUTOKILL ?= false
 AUTOPEN ?= true
 AUTOVISUAL ?= true
-SHOWSTATIC ?= true
+SHOWSTATIC ?= false
 FILE ?= test-lez
 TEST ?= false
 PRECLEAN ?=true

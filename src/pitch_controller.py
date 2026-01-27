@@ -72,10 +72,31 @@ class PitchController:
             return 'pitch_semitones'
         return 'pitch_ratio'
     
-    def calculate(self, elapsed_time: float) -> float:
-        """Delega COMPLETAMENTE alla strategy."""
-        return self._strategy.calculate(elapsed_time)
-    
+    def calculate(
+        self,
+        elapsed_time: float,
+        grain_reverse: bool = False
+    ) -> float:
+        """
+        Calcola pitch ratio finale con compensazione reverse.
+        
+        Args:
+            elapsed_time: tempo corrente nello stream
+            grain_reverse: se True, nega il pitch per lettura backward
+        
+        Returns:
+            float: pitch ratio finale (può essere negativo se reverse)
+        """
+        # 1. Strategy calcola trasposizione musicale
+        pitch_ratio = self._strategy.calculate(elapsed_time)
+        
+        # 2. Compensazione fisica per reverse
+        # Quando il grano è reverse, il phasor deve leggere backward
+        # Questo si ottiene con frequenza negativa
+        if grain_reverse:
+            pitch_ratio *= -1
+        
+        return pitch_ratio    
     @property
     def mode(self) -> str:
         return self._strategy.name    

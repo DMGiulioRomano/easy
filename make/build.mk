@@ -53,6 +53,7 @@ $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 		--env:INCDIR+=$(PWD_DIR)/$(INCDIR) \
 		--env:SSDIR+=$(PWD_DIR)/$(SSDIR) \
 		--env:SFDIR=$(PWD_DIR)/$(SFDIR) \
+		-m 134 \
 		$(CSDIR)/main.orc $< \
 		--logfile=$(LOGDIR)/$*.log \
 		-o $@

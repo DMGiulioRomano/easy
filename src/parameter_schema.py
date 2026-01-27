@@ -89,7 +89,7 @@ STREAM_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ParameterSpec(
         name='grain_envelope',
         yaml_path='grain.envelope',
-        default='gaussian',
+        default='hanning',
         is_smart=False  # Stringa, non Parameter
     ),
     

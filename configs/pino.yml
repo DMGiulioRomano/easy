@@ -6,7 +6,8 @@ streams:
     time_mode: normalized
     onset: 0.0
     duration: 30
-    density: 1
-    sample: "sinus.wav"
+    fill_factor: 1
+    sample: "pino2.wav"
     grain:
-      duration: .4
+      duration: .1
+      reverse:
