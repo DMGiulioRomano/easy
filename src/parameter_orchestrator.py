@@ -49,7 +49,7 @@ class ParameterOrchestrator:
         result = {}
         for spec_name, spec in selected_specs.items():
             if spec.is_smart:
-                param = self.create_parameter_with_gate(spec_name, yaml_data, spec)
+                param = self.create_parameter_with_gate(yaml_data, spec)
                 result[spec_name] = param
             else:
                 # Parametri non smart (raw)
@@ -58,7 +58,6 @@ class ParameterOrchestrator:
     
     def create_parameter_with_gate(
         self,
-        name: str,
         yaml_data: dict,
         param_spec: ParameterSpec
     ) -> Parameter:
@@ -68,7 +67,7 @@ class ParameterOrchestrator:
         Design Pattern: Strategy Injection
         """
         # 1. Crea il Parameter base (SENZA probabilità)
-        param = self._param_factory.create_smart_parameter(name, yaml_data)
+        param = self._param_factory.create_smart_parameter(param_spec, yaml_data)
 
         # Controlla se range è esplicitato
         has_explicit_range = False
