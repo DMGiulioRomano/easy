@@ -46,12 +46,21 @@ class ParameterOrchestrator:
         """
         # 1. Crea il Parameter base (SENZA probabilità)
         param = self._param_factory.create_single_parameter(name, yaml_data)
-        
+
+        # Controlla se range è esplicitato
+        has_range = False
+        if param_spec.range_path:
+            range_val = ParameterFactory._get_nested(
+                yaml_data, param_spec.range_path, None
+            )
+            has_range = (range_val is not None)
+            
         # 2. Crea il ProbabilityGate corrispondente
         gate = GateFactory.create_gate(
             dephase_config=self._dephase_config,
             param_key=param_spec.dephase_key,
-            default_prob=IMPLICIT_JITTER_PROB 
+            default_prob=IMPLICIT_JITTER_PROB,
+            has_explicit_range=has_range
         )
         
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
