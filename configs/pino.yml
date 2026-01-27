@@ -8,8 +8,8 @@ streams:
     duration: 30
     range_always_active:
     distribution_mode: 'gaussian'
-    fill_factor: 1
+    fill_factor: [[0,0.8],[.4,4],[.6,.4],[1,1]]
     sample: "pino2.wav"
     grain:
-      duration: .1
-      reverse:
+      duration: 0.1
+    dephase: {}

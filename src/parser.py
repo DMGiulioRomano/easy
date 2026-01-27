@@ -27,7 +27,9 @@ class GranularParser:
         self, 
         stream_id: str, 
         duration: float, 
-        time_mode: str = 'absolute'
+        time_mode: str = 'absolute',
+        distribution_mode: str = 'uniform',
+
     ):
         """
         Inizializza il parser con il contesto dello Stream.
@@ -40,6 +42,7 @@ class GranularParser:
         self.stream_id = stream_id
         self.duration = duration
         self.time_mode = time_mode
+        self.distribution_mode = distribution_mode
 
     def parse_parameter(
         self,
@@ -103,7 +106,8 @@ class GranularParser:
             value=validated_value,
             bounds=bounds,
             mod_range=validated_range,
-            owner_id=self.stream_id
+            owner_id=self.stream_id,
+            distribution_mode=self.distribution_mode
         )
 
     # =========================================================================

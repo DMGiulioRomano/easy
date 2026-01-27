@@ -56,7 +56,11 @@ class ParameterFactory:
             time_mode: 'absolute' o 'normalized'
         """
         self._distribution_mode = distribution_mode
-        self._parser = GranularParser(stream_id, duration, time_mode, distribution_mode = distribution_mode)
+        self._parser = GranularParser(
+            stream_id=stream_id,
+            duration=duration,
+            time_mode=time_mode,
+            distribution_mode =distribution_mode)
         self._stream_id = stream_id
         
     # =========================================================================
