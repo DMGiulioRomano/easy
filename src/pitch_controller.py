@@ -18,7 +18,7 @@ from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
 from parameter_orchestrator import ParameterOrchestrator
-
+from orchestration_config import OrchestrationConfig
 
 class PitchController:
     """
@@ -30,27 +30,25 @@ class PitchController:
     
     def __init__(
         self,
-        params: dict,
-        stream_id: str,
-        duration: float,
-        time_mode: str = 'absolute'
+        params: dict,                      # 1. Dati specifici
+        config: OrchestrationConfig,       # 2. Regole processo
+        stream_id: str,                    # 3. Context identità
+        duration: float,                   # 4. Context timing
+        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il controller.
         
         Args:
         """
-        # Extract dephase config
-        dephase_config = params.get('dephase')
         
         # Create orchestrator
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode
-        )
-        self._orchestrator.set_dephase_config(dephase_config)
-        
+            time_mode=time_mode,
+            config=config
+        )        
         # Create parameters
         self._loaded_params = self._orchestrator.create_all_parameters(
             params, 

@@ -24,7 +24,7 @@ from voice_manager import VoiceManager
 from utils import *
 from parameter_schema import STREAM_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
-
+from orchestration_config import OrchestrationConfig
 
 
 class Stream:
@@ -63,9 +63,9 @@ class Stream:
         # === 5. PARAMETRI SPECIALI (logica custom) ===
         self._init_grain_reverse(params)
         # === 4. PARAMETRI DIRETTI (Data-Driven) ===
-        self._init_stream_parameters(params)
+        config = self._init_stream_parameters(params)
         # === 6. CONTROLLER ===
-        self._init_controllers(params)
+        self._init_controllers(params,config)
         # === 7. RIFERIMENTI CSOUND (assegnati da Generator) ===
         self.sample_table_num: Optional[int] = None
         self.envelope_table_num: Optional[int] = None
@@ -87,18 +87,14 @@ class Stream:
         - ParameterFactory sa COME crearlo
         - Stream riceve i Parameter già pronti        
         """
+        config = OrchestrationConfig.from_yaml(params)
         orchestrator = ParameterOrchestrator(
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode
+            time_mode=self.time_mode,
+            config=config
         )
-        
-        # 2. Imposta configurazione dephase (una volta per tutto)
-        orchestrator.set_dephase_config(
-            dephase_config=params.get('dephase'),
-            range_always_active=params.get('range_always_active', False)
-            )
-        
+
         # 3. Crea tutti i parametri
         parameters = orchestrator.create_all_parameters(
             params,
@@ -108,57 +104,51 @@ class Stream:
         # 4. Assegna come attributi
         for name, param in parameters.items():
             setattr(self, name, param)
+        return config
     # =========================================================================
     # INIZIALIZZAZIONE CONTROLLER
     # =========================================================================
     
-    def _init_controllers(self, params: dict) -> None:
+    def _init_controllers(self, params: dict, config: OrchestrationConfig) -> None:
         """Inizializza tutti i controller con i loro parametri."""
-        dephase = params.get('dephase')
-
         # POINTER CONTROLLER
         pointer_params = params.get('pointer', {})
-        if dephase is not None:
-            pointer_params['dephase'] = dephase
         self._pointer = PointerController(
             params=pointer_params,
             stream_id=self.stream_id,
             duration=self.duration,
             sample_dur_sec=self.sample_dur_sec,
-            time_mode=self.time_mode
+            time_mode=self.time_mode,
+            config=config
         )
         
         # PITCH CONTROLLER
         pitch_params = params.get('pitch', {})
-        if dephase is not None:
-            pitch_params['dephase'] = dephase
         self._pitch = PitchController(
             params=pitch_params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode
-        )
+            time_mode=self.time_mode,
+            config=config
+            )
         
         # DENSITY CONTROLLER
-        #dens_params = params.get('pitch', {})
-        #if dephase is not None:
-        #    dens_params['dephase'] = dephase
         self._density = DensityController(
             params=params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode
+            time_mode=self.time_mode,
+            config=config
         )
         
         # VOICE MANAGER
         voices_params = params.get('voices', {})
-        if dephase is not None:
-            voices_params['dephase'] = dephase
         self._voice_manager = VoiceManager(
             params=voices_params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode
+            time_mode=self.time_mode,
+            config=config
         )
     
             

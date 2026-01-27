@@ -17,6 +17,7 @@ from parameter_factory import ParameterFactory
 from parameter import Parameter
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
+from orchestration_config import OrchestrationConfig
 
 class PointerController:
     """
@@ -42,11 +43,12 @@ class PointerController:
     
     def __init__(
         self,
-        params: dict,
-        stream_id: str,          
-        duration: float, 
-        sample_dur_sec: float,
-        time_mode: str = 'absolute'
+        params: dict,                      # 1. Dati specifici
+        config: OrchestrationConfig,       # 2. Regole processo
+        stream_id: str,                    # 3. Context identità
+        duration: float,                   # 4. Context timing
+        sample_dur_sec: float,             # 5. Context audio (se serve)
+        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il controller.
@@ -60,17 +62,13 @@ class PointerController:
         self._sample_dur_sec = sample_dur_sec
         self._time_mode = time_mode
 
-        # Extract dephase config
-        dephase_config = params.get('dephase')
-        
         # Create orchestrator
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode
+            time_mode=time_mode,
+            config=config
         )
-        self._orchestrator.set_dephase_config(dephase_config)
-
         self._init_params(params)
         self._init_loop_state()
     

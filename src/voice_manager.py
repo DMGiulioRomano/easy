@@ -12,6 +12,7 @@ from envelope import Envelope
 from parameter_factory import ParameterFactory
 from parameter_schema import VOICE_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
+from orchestration_config import OrchestrationConfig
 
 
 class VoiceManager:
@@ -30,10 +31,11 @@ class VoiceManager:
     
     def __init__(
         self,
-        params: dict,
-        stream_id: str,
-        duration: float,
-        time_mode: str = 'absolute'
+        params: dict,                      # 1. Dati specifici
+        config: OrchestrationConfig,       # 2. Regole processo
+        stream_id: str,                    # 3. Context identità
+        duration: float,                   # 4. Context timing
+        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il VoiceManager.
@@ -47,17 +49,14 @@ class VoiceManager:
         """
         self.stream_id = stream_id
         
-        # Extract dephase config
-        dephase_config = params.get('dephase')
-        
         # Create orchestrator
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode
+            time_mode=time_mode,
+            config=config
         )
-        self._orchestrator.set_dephase_config(dephase_config)
-        
+
         # Carica tutti i parametri delle voci
         self._loaded_params = self._orchestrator.create_all_parameters(
             params,

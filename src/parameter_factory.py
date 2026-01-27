@@ -59,40 +59,6 @@ class ParameterFactory:
         self._stream_id = stream_id
         self._caller = caller
     
-    def create_all_parameters(
-        self, 
-        yaml_data: dict,
-        schema: list = None
-    ) -> Dict[str, Union[Parameter, Any]]:
-        """
-        Crea tutti i parametri definiti nello schema.
-        
-        Args:
-            yaml_data: Dict completo dei parametri YAML dello stream
-            
-        Returns:
-            Dict[nome_attributo, Parameter o valore raw]
-        """
-        result = {}
-        #import pdb 
-        #pdb.set_trace()
-
-        dephase = yaml_data.get('dephase')  
-        target_schema = schema if schema is not None else STREAM_PARAMETER_SCHEMA
-        
-        # 1. SELEZIONE PARAMETRI (gestisce mutua esclusività)
-        selected_specs, _ = ExclusiveGroupSelector.select_parameters(
-            target_schema, yaml_data
-        )
-
-        for spec_name, spec in selected_specs.items():
-            if spec.is_smart:
-                result[spec_name] = self._create_smart_parameter(spec, yaml_data, dephase)
-            else:
-                result[spec_name] = self._extract_raw_value(spec, yaml_data)
-        
-        return result
-    
     def create_single_parameter(
         self, 
         name: str, 

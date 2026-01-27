@@ -11,6 +11,7 @@ from parameter import Parameter
 from parameter_schema import ParameterSpec
 from parameter_definitions import IMPLICIT_JITTER_PROB
 from exclusive_selector import ExclusiveGroupSelector
+from orchestration_config import OrchestrationConfig
 
 class ParameterOrchestrator:
     """
@@ -21,27 +22,15 @@ class ParameterOrchestrator:
         self,
         stream_id: str,
         duration: float,
-        time_mode: str = 'absolute'
+        time_mode: str = 'absolute',
+        config: OrchestrationConfig = None
     ):
         self._param_factory = ParameterFactory(
             stream_id, duration, "Orchestrator", time_mode
         )
         self._stream_id = stream_id
-        self._dephase_config = None
-    
-    def set_dephase_config(
-        self, 
-        dephase_config: Optional[dict],
-        range_always_active: bool = False
-    ):
-        """
-        Imposta configurazione dephase e flag globale range.
+        self._config = config or OrchestrationConfig()
         
-        Context Object Pattern: raggruppa configurazioni correlate.
-        """
-        self._dephase_config = dephase_config
-        self._range_always_active = range_always_active  # ← SALVA
-    
     def create_parameter_with_gate(
         self,
         name: str,
@@ -66,13 +55,12 @@ class ParameterOrchestrator:
             
         # 2. Crea il ProbabilityGate corrispondente
         gate = GateFactory.create_gate(
-            dephase_config=self._dephase_config,
+            dephase_config=self._config.dephase_config,       
             param_key=param_spec.dephase_key,
             default_prob=IMPLICIT_JITTER_PROB,
             has_explicit_range=has_explicit_range,
-            range_always_active=self._range_always_active
-        )
-        
+            range_always_active=self._config.range_always_active
+        )        
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
         param.set_probability_gate(gate)
         
@@ -104,6 +92,5 @@ class ParameterOrchestrator:
                 result[spec_name] = self._param_factory._extract_raw_value(
                     spec, yaml_data
                 )
-        
         return result
     
