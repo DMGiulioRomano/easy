@@ -23,7 +23,6 @@ instr Grain
     idegree    = p7
     iSampleTable = p8
     iEnvTable    = p9
-    iGrainReverse = p10
     irad = (idegree * $M_PI)/180.0
     if giTest >= 1 then
         iId = giInstanceNo
@@ -46,9 +45,6 @@ instr Grain
     ; ═══════════════════════════════════════════════════════════════════
     ; GRAIN REVERSE: se flag=1, inverte direzione lettura campioni
     ; ═══════════════════════════════════════════════════════════════════
-    if iGrainReverse == 1 then
-        iFreq = 0-iFreq  ; frequenza NEGATIVA -> lettura BACKWARD
-    endif
     if giTest == 2 then    
         prints "grainId %d, iStartNorm: %f\n", iId, iStartNorm
     endif

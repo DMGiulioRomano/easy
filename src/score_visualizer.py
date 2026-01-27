@@ -579,7 +579,7 @@ class ScoreVisualizer:
             arrow_head_width = width * 0.5  # 30% della larghezza del grano
 
             # Direzione
-            if grain.grain_reverse:
+            if grain.pitch_ratio < 0:
                 y_top = pointer_y
                 y_bottom = pointer_y - height
 
@@ -610,7 +610,7 @@ class ScoreVisualizer:
             polygons.append(poly)
             
             # Colore
-            color = list(self._pitch_to_color(grain.pitch_ratio))
+            color = list(self._pitch_to_color(abs(grain.pitch_ratio)))
             color[3] = self._volume_to_alpha(grain.volume)
             colors.append(color)
         

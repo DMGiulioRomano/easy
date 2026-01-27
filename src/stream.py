@@ -311,8 +311,7 @@ class Stream:
             volume=volume,
             pan=pan,
             sample_table=self.sample_table_num,
-            envelope_table=self.envelope_table_num,
-            grain_reverse=grain_reverse
+            envelope_table=self.envelope_table_num
         )
 
 
