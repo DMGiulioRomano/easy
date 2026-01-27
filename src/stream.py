@@ -60,12 +60,19 @@ class Stream:
         self.sample_path = params['sample']
         self.sample_dur_sec = get_sample_duration(self.sample_path)
         
-        # === 5. PARAMETRI SPECIALI (logica custom) ===
+
+        # === 3. CONFIGURATION ===
+        config = OrchestrationConfig.from_yaml(params)
+        
+        # === 4. PARAMETRI SPECIALI ===
         self._init_grain_reverse(params)
-        # === 4. PARAMETRI DIRETTI (Data-Driven) ===
-        config = self._init_stream_parameters(params)
-        # === 6. CONTROLLER ===
-        self._init_controllers(params,config)
+        
+        # === 5. PARAMETRI DIRETTI (riceve config) ===
+        self._init_stream_parameters(params, config)
+        
+        # === 6. CONTROLLER (riceve config) ===
+        self._init_controllers(params, config)
+
         # === 7. RIFERIMENTI CSOUND (assegnati da Generator) ===
         self.sample_table_num: Optional[int] = None
         self.envelope_table_num: Optional[int] = None
@@ -78,7 +85,7 @@ class Stream:
     # PARAMETRI DIRETTI (non delegati ai controller)
     # =========================================================================
 
-    def _init_stream_parameters(self, params: dict) -> None:
+    def _init_stream_parameters(self, params: dict, config: OrchestrationConfig) -> None:
         """
         Inizializza parametri diretti di Stream usando ParameterFactory.
         
@@ -87,8 +94,7 @@ class Stream:
         - ParameterFactory sa COME crearlo
         - Stream riceve i Parameter già pronti        
         """
-        config = OrchestrationConfig.from_yaml(params)
-        orchestrator = ParameterOrchestrator(
+        _orchestrator = ParameterOrchestrator(
             stream_id=self.stream_id,
             duration=self.duration,
             time_mode=self.time_mode,
@@ -96,7 +102,7 @@ class Stream:
         )
 
         # 3. Crea tutti i parametri
-        parameters = orchestrator.create_all_parameters(
+        parameters = _orchestrator.create_all_parameters(
             params,
             schema=STREAM_PARAMETER_SCHEMA
         )
@@ -104,7 +110,7 @@ class Stream:
         # 4. Assegna come attributi
         for name, param in parameters.items():
             setattr(self, name, param)
-        return config
+
     # =========================================================================
     # INIZIALIZZAZIONE CONTROLLER
     # =========================================================================

@@ -58,34 +58,15 @@ class ParameterFactory:
         self._parser = GranularParser(stream_id, duration, time_mode)
         self._stream_id = stream_id
         self._caller = caller
-    
-    def create_single_parameter(
-        self, 
-        name: str, 
-        yaml_data: dict
-    ) -> Union[Parameter, Any]:
-        """
-        Crea un singolo parametro per nome.
         
-        Utile per testing o per creare parametri singoli.
-        """
-        from parameter_schema import get_parameter_spec
-        spec = get_parameter_spec(name)
-        dephase = yaml_data.get('dephase')
-        
-        if spec.is_smart:
-            return self._create_smart_parameter(spec, yaml_data, dephase)
-        return self._extract_raw_value(spec, yaml_data)
-    
     # =========================================================================
     # INTERNAL METHODS
     # =========================================================================
     
-    def _create_smart_parameter(
+    def create_smart_parameter(
         self, 
         spec: ParameterSpec, 
-        yaml_data: dict, 
-        dephase: Optional[dict]
+        yaml_data: dict
     ) -> Parameter:
         """
         Crea un oggetto Parameter usando GranularParser.
@@ -105,7 +86,7 @@ class ParameterFactory:
             range_raw=range_val,
         )
     
-    def _extract_raw_value(self, spec: ParameterSpec, yaml_data: dict) -> Any:
+    def create_raw_parameter(self, spec: ParameterSpec, yaml_data: dict) -> Any:
         """
         Estrae un valore raw (non Parameter) dal YAML.
         

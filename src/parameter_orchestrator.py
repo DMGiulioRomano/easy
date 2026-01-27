@@ -31,40 +31,6 @@ class ParameterOrchestrator:
         self._stream_id = stream_id
         self._config = config or OrchestrationConfig()
         
-    def create_parameter_with_gate(
-        self,
-        name: str,
-        yaml_data: dict,
-        param_spec: ParameterSpec
-    ) -> Parameter:
-        """
-        Crea un Parameter completo con il suo ProbabilityGate.
-        
-        Design Pattern: Strategy Injection
-        """
-        # 1. Crea il Parameter base (SENZA probabilità)
-        param = self._param_factory.create_single_parameter(name, yaml_data)
-
-        # Controlla se range è esplicitato
-        has_explicit_range = False
-        if param_spec.range_path:
-            range_val = ParameterFactory._get_nested(
-                yaml_data, param_spec.range_path, None
-            )
-            has_explicit_range = (range_val is not None)
-            
-        # 2. Crea il ProbabilityGate corrispondente
-        gate = GateFactory.create_gate(
-            dephase_config=self._config.dephase_config,       
-            param_key=param_spec.dephase_key,
-            default_prob=IMPLICIT_JITTER_PROB,
-            has_explicit_range=has_explicit_range,
-            range_always_active=self._config.range_always_active
-        )        
-        # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
-        param.set_probability_gate(gate)
-        
-        return param
     
     def create_all_parameters(
         self,
@@ -83,14 +49,40 @@ class ParameterOrchestrator:
         result = {}
         for spec_name, spec in selected_specs.items():
             if spec.is_smart:
-                param = self.create_parameter_with_gate(
-                    spec_name, yaml_data, spec
-                )
+                param = self.create_parameter_with_gate(spec_name, yaml_data, spec)
                 result[spec_name] = param
             else:
                 # Parametri non smart (raw)
-                result[spec_name] = self._param_factory._extract_raw_value(
-                    spec, yaml_data
-                )
+                result[spec_name] = self._param_factory.create_raw_parameter(spec, yaml_data)
         return result
     
+    def create_parameter_with_gate(
+        self,
+        name: str,
+        yaml_data: dict,
+        param_spec: ParameterSpec
+    ) -> Parameter:
+        """
+        Crea un Parameter completo con il suo ProbabilityGate.
+        
+        Design Pattern: Strategy Injection
+        """
+        # 1. Crea il Parameter base (SENZA probabilità)
+        param = self._param_factory.create_smart_parameter(name, yaml_data)
+
+        # Controlla se range è esplicitato
+        has_explicit_range = False
+        has_explicit_range = param._mod_range is not None
+        
+        # 2. Crea il ProbabilityGate corrispondente
+        gate = GateFactory.create_gate(
+            dephase_config=self._config.dephase_config,       
+            param_key=param_spec.dephase_key,
+            default_prob=IMPLICIT_JITTER_PROB,
+            has_explicit_range=has_explicit_range,
+            range_always_active=self._config.range_always_active
+        )        
+        # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
+        param.set_probability_gate(gate)
+        
+        return param
