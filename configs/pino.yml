@@ -6,6 +6,7 @@ streams:
     time_mode: normalized
     onset: 0.0
     duration: 30
+    range_always_active:
     fill_factor: 1
     sample: "pino2.wav"
     grain:

@@ -132,7 +132,6 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
         default=0.0,                
         range_path='offset_range',  
         dephase_key='pc_rand_pointer',
-        is_smart=True
     ),
     ParameterSpec(
         name='loop_dur',
@@ -197,7 +196,6 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
         name='distribution',
         yaml_path='distribution',
         default=0.0,
-        is_smart=True  # Non è nel gruppo esclusivo!
     ),
     ParameterSpec(
         name='effective_density',

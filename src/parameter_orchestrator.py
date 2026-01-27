@@ -29,9 +29,18 @@ class ParameterOrchestrator:
         self._stream_id = stream_id
         self._dephase_config = None
     
-    def set_dephase_config(self, dephase_config: Optional[dict]):
-        """Imposta configurazione dephase (una volta per tutto lo stream)."""
+    def set_dephase_config(
+        self, 
+        dephase_config: Optional[dict],
+        range_always_active: bool = False
+    ):
+        """
+        Imposta configurazione dephase e flag globale range.
+        
+        Context Object Pattern: raggruppa configurazioni correlate.
+        """
         self._dephase_config = dephase_config
+        self._range_always_active = range_always_active  # ← SALVA
     
     def create_parameter_with_gate(
         self,
@@ -48,19 +57,20 @@ class ParameterOrchestrator:
         param = self._param_factory.create_single_parameter(name, yaml_data)
 
         # Controlla se range è esplicitato
-        has_range = False
+        has_explicit_range = False
         if param_spec.range_path:
             range_val = ParameterFactory._get_nested(
                 yaml_data, param_spec.range_path, None
             )
-            has_range = (range_val is not None)
+            has_explicit_range = (range_val is not None)
             
         # 2. Crea il ProbabilityGate corrispondente
         gate = GateFactory.create_gate(
             dephase_config=self._dephase_config,
             param_key=param_spec.dephase_key,
             default_prob=IMPLICIT_JITTER_PROB,
-            has_explicit_range=has_range
+            has_explicit_range=has_explicit_range,
+            range_always_active=self._range_always_active
         )
         
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)

@@ -94,7 +94,10 @@ class Stream:
         )
         
         # 2. Imposta configurazione dephase (una volta per tutto)
-        orchestrator.set_dephase_config(params.get('dephase'))
+        orchestrator.set_dephase_config(
+            dephase_config=params.get('dephase'),
+            range_always_active=params.get('range_always_active', False)
+            )
         
         # 3. Crea tutti i parametri
         parameters = orchestrator.create_all_parameters(
