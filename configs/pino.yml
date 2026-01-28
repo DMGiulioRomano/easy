@@ -7,6 +7,7 @@ streams:
     onset: 0.0
     duration: 30
     sample: "pino2.wav"
+    range_always_active: 
     grain:
       duration: 0.1
-    dephase: 10
+    dephase: 0

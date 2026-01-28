@@ -48,7 +48,7 @@ class GateFactory:
         if param_key is None:
             return NeverGate()
         
-        if has_explicit_range and range_always_active:
+        if has_explicit_range and range_always_active is None:
             return AlwaysGate()
         
         # Classifica lo stato
