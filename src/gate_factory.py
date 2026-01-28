@@ -5,6 +5,16 @@ Nessuna dipendenza da ParameterFactory o parser.
 
 from typing import Optional, Any, Union
 from probability_gate import *
+from enum import Enum
+
+
+class DephaseMode(Enum):
+    """Stati semantici di dephase."""
+    DISABLED = "disabled"      # False - solo range espliciti
+    IMPLICIT = "implicit"      # None - usa IMPLICIT_JITTER_PROB
+    GLOBAL = "global"          # numero - probabilità globale
+    SPECIFIC = "specific"      # dict - probabilità per chiave
+
 
 class GateFactory:
     """
@@ -12,47 +22,73 @@ class GateFactory:
     TOTALMENTE isolata dal sistema Parameter.
     """
     
+    @staticmethod
+    def _classify_dephase(dephase) -> DephaseMode:
+        """Determina lo stato semantico di dephase."""
+        if dephase is False:
+            return DephaseMode.DISABLED
+        elif dephase is None:
+            return DephaseMode.IMPLICIT
+        elif isinstance(dephase, (int, float)):
+            return DephaseMode.GLOBAL
+        elif isinstance(dephase, dict):
+            return DephaseMode.SPECIFIC
+        else:
+            raise ValueError(f"dephase tipo invalido: {type(dephase)}")
 
     @staticmethod
     def create_gate(
-        dephase: Optional[dict] = None,
+        dephase: Optional[Union[dict, bool, int, float]] = False,
         param_key: Optional[str] = None,
         default_prob: float = 0.0,
         has_explicit_range: bool = False,
         range_always_active: bool = False 
     ) -> ProbabilityGate:
-        # CASO 1: Parametro non supporta dephase
+
         if param_key is None:
             return NeverGate()
-
-        # CASO 2: Nessuna configurazione dephase
-        if dephase is None:
-            # Se range esplicitato → 100%
-            if has_explicit_range:
-                return AlwaysGate()
-            # Se range NON esplicitato → 0%
-            return NeverGate()
-            
-        # CASO 3: dephase config esiste, cerca chiave        
-        if param_key not in dephase:
-            # Se range esplicitato → 100%
-            if has_explicit_range and range_always_active:
-                return AlwaysGate()
-            # Chiave mancante, range non esplicitato → implicit jitter
-            if default_prob > 0:
-                return RandomGate(default_prob)
-            return NeverGate()
-
-        raw_value = dephase[param_key]
         
-        # CASO 4: Chiave è None → implicit jitter
-        if raw_value is None:
-            if default_prob > 0:
-                return RandomGate(default_prob)
-            return NeverGate()
+        if has_explicit_range and range_always_active:
+            return AlwaysGate()
         
-        # CASO 5: Valore esplicito
-        return GateFactory._parse_raw_value(raw_value)
+        # Classifica lo stato
+        mode = GateFactory._classify_dephase(dephase)
+        
+        # Logica basata sullo stato
+        if mode == DephaseMode.DISABLED:
+            return AlwaysGate() if has_explicit_range else NeverGate()
+        
+        elif mode == DephaseMode.IMPLICIT:
+            return GateFactory._create_probability_gate(default_prob)
+        
+        elif mode == DephaseMode.GLOBAL:
+            return GateFactory._create_probability_gate(float(dephase))
+        
+        elif mode == DephaseMode.SPECIFIC:
+            if param_key in dephase:
+                raw_value = dephase[param_key]
+                if raw_value is None:
+                    return GateFactory._create_probability_gate(default_prob)
+                else:
+                    return GateFactory._parse_raw_value(raw_value)
+            else:
+                return GateFactory._create_probability_gate(default_prob)
+        
+        return NeverGate()
+
+    @staticmethod
+    def _create_probability_gate(probability: float) -> ProbabilityGate:
+        """
+        Helper per creare gate da valore numerico.
+        
+        Evita di ripetere la logica 0→Never, 100→Always, altro→Random.
+        """
+        if probability <= 0:
+            return NeverGate()
+        elif probability >= 100:
+            return AlwaysGate()
+        else:
+            return RandomGate(probability)
 
     @staticmethod
     def _parse_raw_value(raw_value: Any) -> ProbabilityGate:
@@ -81,11 +117,3 @@ class GateFactory:
             print(f"⚠️  Envelope invalido per gate: {e}, usando AlwaysGate")
             return AlwaysGate()
     
-    @staticmethod
-    def create_implicit_gate() -> ProbabilityGate:
-        """
-        Crea gate per jitter implicito (Scenario B: dephase presente ma senza range).
-        Usa la probabilità di default dal sistema (es. 1%).
-        """
-        from parameter_definitions import IMPLICIT_JITTER_PROB
-        return RandomGate(IMPLICIT_JITTER_PROB)

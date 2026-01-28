@@ -1,4 +1,5 @@
 """
+
 parameter_orchestrator.py - Coordina ParameterFactory e GateFactory.
 Isola completamente la logica di dephase dal parsing dei parametri.
 """
@@ -9,7 +10,7 @@ from gate_factory import GateFactory
 from probability_gate import ProbabilityGate
 from parameter import Parameter
 from parameter_schema import ParameterSpec
-from parameter_definitions import IMPLICIT_JITTER_PROB
+from parameter_definitions import DEFAULT_PROB
 from exclusive_selector import ExclusiveGroupSelector
 from orchestration_config import OrchestrationConfig
 
@@ -25,7 +26,7 @@ class ParameterOrchestrator:
         time_mode: str = 'absolute',
         config: OrchestrationConfig = None
     ):
-        self._config = config or OrchestrationConfig()
+        self._config = config
         self._param_factory = ParameterFactory(
             stream_id=stream_id, 
             duration=duration,
@@ -42,8 +43,8 @@ class ParameterOrchestrator:
     ) -> Dict[str, Parameter]:
         """
         Crea tutti i parametri con i rispettivi gate.
-        """
         
+        """
         # Seleziona parametri attivi
         selected_specs, _ = ExclusiveGroupSelector.select_parameters(
             schema, yaml_data
@@ -80,7 +81,7 @@ class ParameterOrchestrator:
         gate = GateFactory.create_gate(
             dephase=self._config.dephase,       
             param_key=param_spec.dephase_key,
-            default_prob=IMPLICIT_JITTER_PROB,
+            default_prob=DEFAULT_PROB,
             has_explicit_range=has_explicit_range,
             range_always_active=self._config.range_always_active
         )        

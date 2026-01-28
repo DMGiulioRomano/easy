@@ -46,7 +46,7 @@ class ParameterBounds:
 
 # Probabilità di default (1%) usata quando dephase è attivo ma senza range espliciti.
 # Questo attiva il "Jitter Implicito" definito nei bounds dei parametri.
-IMPLICIT_JITTER_PROB = 1.0 
+DEFAULT_PROB = 1.0 
 
 # =============================================================================
 # PARAMETER REGISTRY
@@ -88,7 +88,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=10.0,    # 10 secondi
         min_range=0.0,
         max_range=1.0,
-        default_jitter=0.00,
+        default_jitter=0.01,
         variation_mode='additive'
     ),
     

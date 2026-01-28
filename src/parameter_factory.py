@@ -13,12 +13,10 @@ Design Pattern:
 - Facade: Interfaccia semplice verso sottosistemi complessi
 """
 
-from typing import Any, Dict, Optional, Union
-from exclusive_selector import ExclusiveGroupSelector
+from typing import Any
 from parameter import Parameter
 from parser import GranularParser
-from parameter_schema import STREAM_PARAMETER_SCHEMA, ParameterSpec
-from parameter_definitions import IMPLICIT_JITTER_PROB 
+from parameter_schema import ParameterSpec
 import inspect
 
 class ParameterFactory:

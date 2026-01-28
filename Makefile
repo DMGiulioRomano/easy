@@ -13,9 +13,9 @@ YMLDIR := configs
 
 # --- Flags configurabili ---
 AUTOKILL ?= false
-AUTOPEN ?= true
+AUTOPEN ?= false
 AUTOVISUAL ?= true
-SHOWSTATIC ?= false
+SHOWSTATIC ?= true
 FILE ?= test-lez
 TEST ?= false
 PRECLEAN ?=true

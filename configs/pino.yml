@@ -6,10 +6,8 @@ streams:
     time_mode: normalized
     onset: 0.0
     duration: 30
-    range_always_active:
     distribution_mode: 'gaussian'
-    fill_factor: [[0,0.8],[.4,4],[.6,.4],[1,1]]
     sample: "pino2.wav"
     grain:
       duration: 0.1
-    dephase: {}
+    dephase:
