@@ -186,15 +186,6 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         min_val=0.0,
         max_val=1.0
     ),
-
-    # =========================================================================
-    # PROBABILITIES (DEPHASE)
-    # =========================================================================
-    'dephase_prob': ParameterBounds(
-        min_val=0.0,
-        max_val=100.0,
-        variation_mode='additive'
-    ),
 }
 
 def get_parameter_definition(param_name: str) -> ParameterBounds:

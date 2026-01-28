@@ -6,8 +6,7 @@ streams:
     time_mode: normalized
     onset: 0.0
     duration: 30
-    distribution_mode: 'gaussian'
     sample: "pino2.wav"
     grain:
       duration: 0.1
-    dephase:
+    dephase: 10
