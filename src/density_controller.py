@@ -114,7 +114,7 @@ class DensityController:
             # Sync: IOT costante
             return avg_iot
         else:
-            # Async: random 0..2×avg (simula processo Poisson)
+            # Async: random 0..2×avg
             async_iot = random.uniform(0.0, 2.0 * avg_iot)
             
             # Blend lineare tra sync e async

@@ -106,8 +106,7 @@ class FillFactorStrategy(DensityStrategy):
             raise ValueError(f"{self.__class__.__name__} requires 'grain_duration' in context")
         fill_factor = self._fill_factor.get_value(elapsed_time)
         grain_duration = context['grain_duration']
-        safe_dur = max(0.0001, grain_duration)
-        return fill_factor / safe_dur
+        return fill_factor / grain_duration
     
     @property
     def name(self) -> str:

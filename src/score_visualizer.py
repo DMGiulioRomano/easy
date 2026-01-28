@@ -668,7 +668,7 @@ class ScoreVisualizer:
             ('fill_factor', 'fill_factor'),
             ('pointer_speed', 'pointer_speed'),
             ('pitch_ratio', 'pitch_ratio'),
-            ('pitch_semitones', 'pitch_semitones_envelope'),  # nome diverso!
+            ('pitch_semitones', 'pitch_semitones'),  # nome diverso!
             ('distribution', 'distribution'),
             ('num_voices', 'num_voices'),
             ('pc_rand_reverse', 'grain_reverse_randomness'),

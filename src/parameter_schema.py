@@ -66,14 +66,14 @@ STREAM_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='volume',
         default=-6.0,
         range_path='volume_range',
-        dephase_key='pc_rand_volume'
+        dephase_key='volume'
     ),
     ParameterSpec(
         name='pan',
         yaml_path='pan',
         default=0.0,
         range_path='pan_range',
-        dephase_key='pc_rand_pan'
+        dephase_key='pan'
     ),
     
     # =========================================================================
@@ -84,7 +84,7 @@ STREAM_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='grain.duration',
         default=0.05,
         range_path='grain.duration_range',
-        dephase_key='pc_rand_duration'
+        dephase_key='duration'
     ),
     ParameterSpec(
         name='grain_envelope',
@@ -100,7 +100,7 @@ STREAM_PARAMETER_SCHEMA: List[ParameterSpec] = [
         name='reverse',
         yaml_path='grain.reverse',
         default=0,  # 0 = forward, 1 = reverse
-        dephase_key='pc_rand_reverse'
+        dephase_key='reverse'
         # Nota: 'reverse' usa variation_mode='invert', quindi
         # il dephase_key controlla la PROBABILITÀ di flip, non un range
     ),
@@ -131,7 +131,7 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='_dummy_fixed_zero_',   
         default=0.0,                
         range_path='offset_range',  
-        dephase_key='pc_rand_pointer',
+        dephase_key='pointer',
     ),
     ParameterSpec(
         name='loop_dur',
@@ -154,7 +154,7 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='ratio',
         default=1.0,
         range_path='range',
-        dephase_key='pc_rand_pitch', 
+        dephase_key='pitch', 
         exclusive_group='pitch_mode', 
         group_priority=1  
     ),
@@ -163,7 +163,7 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
         yaml_path='semitones',
         default=None,
         range_path='range',
-        dephase_key='pc_rand_pitch' ,
+        dephase_key='pitch' ,
         exclusive_group='pitch_mode', 
         group_priority=2  
     ),
