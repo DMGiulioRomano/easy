@@ -1,3 +1,4 @@
+from typing import Union, Optional, List, Any
 class Envelope:
     """
     Envelope temporale definita da breakpoints.
@@ -277,3 +278,62 @@ class Envelope:
     def __repr__(self):
         return f"Envelope(type={self.type}, points={self.breakpoints})"
 
+
+
+def create_scaled_envelope(
+    raw_data: Union[List, dict],
+    duration: float = 1.0,
+    time_mode: str = 'absolute'
+) -> Envelope:
+    """
+    Factory function per creare Envelope con gestione scaling temporale.
+    
+    Centralizza la logica di creazione/scaling envelope usata da Parser,
+    GateFactory, e qualsiasi altro componente che ne abbia bisogno.
+    
+    Args:
+        raw_data: lista [[t,v], ...] o dict {'points': ..., 'type': ..., 'time_unit': ...}
+        duration: durata stream per scaling (default 1.0 = no scaling)
+        time_mode: 'absolute' (tempi in secondi) o 'normalized' (0-1)
+    
+    Returns:
+        Envelope con tempi scalati se time_mode='normalized'
+    
+    Examples:
+        # Assoluto: nessun scaling
+        env = create_scaled_envelope([[0, 10], [5, 50]], duration=10, time_mode='absolute')
+        
+        # Normalized: 0.5 diventa 5.0
+        env = create_scaled_envelope([[0, 10], [0.5, 50]], duration=10, time_mode='normalized')
+        
+        # Override locale
+        env = create_scaled_envelope(
+            {'points': [[0.5, 50]], 'time_unit': 'absolute'},
+            duration=10, 
+            time_mode='normalized'  # ignorato per time_unit locale
+        )
+    """
+    # A) Parse struttura
+    if isinstance(raw_data, dict):
+        points = raw_data.get('points', [])
+        env_type = raw_data.get('type', 'linear')
+        local_time_unit = raw_data.get('time_unit')  # Override locale
+    else:
+        points = raw_data
+        env_type = 'linear'
+        local_time_unit = None
+    
+    # B) Determina modalità effettiva (locale vince su globale)
+    effective_mode = local_time_unit if local_time_unit else time_mode
+    
+    # C) Scala tempi se necessario
+    if effective_mode == 'normalized':
+        scaled_points = [[t * duration, v] for t, v in points]
+    else:
+        scaled_points = points
+    
+    # D) Crea Envelope
+    if isinstance(raw_data, dict):
+        return Envelope({'type': env_type, 'points': scaled_points})
+    else:
+        return Envelope(scaled_points)

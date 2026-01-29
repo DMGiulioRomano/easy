@@ -34,6 +34,8 @@ class ParameterOrchestrator:
             distribution_mode=self._config.distribution_mode
         )
         self._stream_id = stream_id
+        self._duration=duration
+        self._time_mode=time_mode
         
     
     def create_all_parameters(
@@ -83,7 +85,9 @@ class ParameterOrchestrator:
             param_key=param_spec.dephase_key,
             default_prob=DEFAULT_PROB,
             has_explicit_range=has_explicit_range,
-            range_always_active=self._config.range_always_active
+            range_always_active=self._config.range_always_active,
+            duration=self._duration,
+            time_mode=self._time_mode
         )        
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
         param.set_probability_gate(gate)

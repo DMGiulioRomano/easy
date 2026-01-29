@@ -7,7 +7,8 @@ streams:
     onset: 0.0
     duration: 10
     sample: "sinus.wav"
-    #range_always_active: 
+    range_always_active: 
+    distribution_mode: 'gaussian'
     density: 5
     grain:
       duration: 0.1
@@ -19,5 +20,5 @@ streams:
       duration: 
         type: 'step'
         points: [[0,0],[.5,100],[.75,20]]
-      reverse: 0
+      #reverse: 80
       pointer: 0

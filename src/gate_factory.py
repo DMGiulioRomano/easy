@@ -6,7 +6,7 @@ Nessuna dipendenza da ParameterFactory o parser.
 from typing import Optional, Any, Union
 from probability_gate import *
 from enum import Enum
-
+from envelope import Envelope, create_scaled_envelope
 
 class DephaseMode(Enum):
     """Stati semantici di dephase."""
@@ -42,7 +42,9 @@ class GateFactory:
         param_key: Optional[str] = None,
         default_prob: float = 0.0,
         has_explicit_range: bool = False,
-        range_always_active: bool = False 
+        range_always_active: bool = False,
+        duration: float = 1.0,       
+        time_mode: str = 'absolute'         
     ) -> ProbabilityGate:
 
         if param_key is None:
@@ -70,7 +72,7 @@ class GateFactory:
                 if raw_value is None:
                     return GateFactory._create_probability_gate(default_prob)
                 else:
-                    return GateFactory._parse_raw_value(raw_value)
+                    return GateFactory._parse_raw_value(raw_value, duration, time_mode)
             else:
                 return GateFactory._create_probability_gate(default_prob)
         
@@ -91,29 +93,36 @@ class GateFactory:
             return RandomGate(probability)
 
     @staticmethod
-    def _parse_raw_value(raw_value: Any) -> ProbabilityGate:
-        """
-        Converte un valore grezzo in ProbabilityGate.
-        """
-        # 4a: Numero (0-100)
+    def _parse_raw_value(raw_value: Any, duration: float, time_mode: str) -> ProbabilityGate:
+        """..."""
+        # Numero
         if isinstance(raw_value, (int, float)):
             prob = float(raw_value)
             if prob <= 0:
                 return NeverGate()
-            if prob >= 100:
+            elif prob >= 100:
                 return AlwaysGate()
-            return RandomGate(prob)
+            else:
+                return RandomGate(prob)
         
-        # 4b: Envelope (lista o dict)
-        # NOTA: Qui NON usiamo ParameterFactory! Usiamo direttamente Envelope
-        # Se c'è envelope, significa che l'utente vuole variazioni temporali
-        try:
-            # Import locale per evitare dipendenze circolari
-            from envelope import Envelope
-            envelope = Envelope(raw_value)
-            return EnvelopeGate(envelope)
-        except Exception as e:
-            # Fallback: se envelope non valido, usiamo 100%
-            print(f"⚠️  Envelope invalido per gate: {e}, usando AlwaysGate")
-            return AlwaysGate()
-    
+        # Envelope (con gestione errori)
+        if isinstance(raw_value, (list, dict)):
+            try:
+                from envelope import create_scaled_envelope
+                envelope = create_scaled_envelope(raw_value, duration, time_mode)
+                return EnvelopeGate(envelope)
+            except Exception as e:
+                # Envelope malformato - fallback con logging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"Envelope dephase invalido: {raw_value}. "
+                    f"Errore: {e}. Usando AlwaysGate (probabilità 100%) come fallback."
+                )
+                return AlwaysGate()
+        
+        # Tipo completamente sbagliato
+        raise ValueError(
+            f"Valore invalido per dephase: {raw_value} (tipo: {type(raw_value).__name__}). "
+            f"Atteso numero (0-100), lista di punti [[t,v],...], o dict envelope."
+        )

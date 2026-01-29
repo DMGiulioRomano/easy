@@ -13,7 +13,7 @@ Responsabilità:
 
 from typing import Union, Optional, List, Any
 from parameter import Parameter, ParamInput
-from envelope import Envelope
+from envelope import Envelope, create_scaled_envelope
 from parameter_definitions import get_parameter_definition
 
 class GranularParser:
@@ -129,59 +129,12 @@ class GranularParser:
 
         # Caso 2: Struttura complessa (Lista o Dict) -> Envelope
         if isinstance(raw_data, (list, dict)):
-            return self._create_envelope(raw_data)
-
+            return create_scaled_envelope(raw_data, self.duration, self.time_mode)
         # Caso Errore: Tipo non supportato
         raise ValueError(
             f"Formato non valido per '{context_info}': {raw_data}. "
             f"Atteso numero, lista di punti, o dict envelope."
         )
-
-    def _create_envelope(self, raw_data: Union[List, dict]) -> Envelope:
-        """
-        Crea un oggetto Envelope gestendo la normalizzazione temporale.
-        """
-        points = []
-        env_type = 'linear'
-        local_time_mode = None
-
-        # A) Parsing della struttura dati
-        if isinstance(raw_data, dict):
-            # Formato esplicito: {type: 'cubic', points: [...], time_unit: 'normalized'}
-            points = raw_data.get('points', [])
-            env_type = raw_data.get('type', 'linear')
-            local_time_mode = raw_data.get('time_unit') # Override locale
-        else:
-            # Formato implicito (lista): [[0, 10], [1, 20]]
-            points = raw_data
-            env_type = 'linear'
-
-        # B) Logica di Normalizzazione Temporale
-        # La modalità locale vince su quella globale dello stream
-        effective_mode = local_time_mode if local_time_mode else self.time_mode
-        should_scale = (effective_mode == 'normalized')
-
-        final_points = []
-        if should_scale:
-            # Scala l'asse X (tempo) moltiplicandolo per la durata dello stream
-            # Esempio: [0.5, 10] -> [0.5 * duration, 10]
-            for pt in points:
-                if len(pt) != 2:
-                    raise ValueError(f"Breakpoint envelope non valido: {pt}")
-                final_points.append([pt[0] * self.duration, pt[1]])
-        else:
-            # Usa i tempi assoluti così come sono
-            final_points = points
-
-        # C) Creazione Envelope
-        # Nota: Passiamo sempre una struttura dict all'init di Envelope per uniformità,
-        # oppure la lista diretta se Envelope la accetta (il tuo Envelope accetta entrambi).
-        if isinstance(raw_data, dict):
-            # Preserva altri metadati del dict originale se necessario
-            return Envelope({'type': env_type, 'points': final_points})
-        else:
-            return Envelope(final_points)
-
 
     def _validate_and_clip(
         self,
