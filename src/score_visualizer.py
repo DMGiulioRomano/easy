@@ -66,43 +66,85 @@ class ScoreVisualizer:
             'title_fontsize': 12,
             # Envelope ranges (per normalizzazione)
             'envelope_ranges': {
+                # === OUTPUT ===
                 'volume': (-90, 0),           # dB
-                'grain_duration': (0.001, 1.0),  # secondi
+                'volume_prob': (0, 100),      # probabilità %
                 'pan': (-180, 180),           # gradi (ciclico)
-                'pitch_ratio': (0.125, 8.0),
-                'density': (1, 200),          # grani/sec
+                'pan_prob': (0, 100),         # probabilità %
+                
+                # === GRAIN ===
+                'grain_duration': (0.001, 1.0),  # secondi
+                'grain_duration_prob': (0, 100),  # probabilità %
+                'reverse': (0, 1),            # boolean
+                'reverse_prob': (0, 100),     # probabilità %
+                
+                # === POINTER ===
+                'pointer_start': (0.0, 1.0),  # normalizzato
                 'pointer_speed': (-4.0, 16.0),
+                'pointer_deviation': (0.0, 1.0),  # normalizzato
+                'pointer_deviation_prob': (0, 100),  # probabilità %
+                'loop_dur': (0.001, 10.0),    # secondi
+                
+                # === PITCH ===
+                'pitch_ratio': (0.125, 8.0),
+                'pitch_ratio_prob': (0, 100),  # probabilità %
+                'pitch_semitones': (-36, 36),
+                'pitch_semitones_prob': (0, 100),  # probabilità %
+                
+                # === DENSITY ===
+                'density': (1, 200),          # grani/sec
                 'fill_factor': (0.1, 20),
                 'distribution': (0, 1),
-                'pitch_semitones': (-36, 36),  
+                'effective_density': (1, 200),
+                
+                # === VOICES ===
                 'num_voices': (1, 20),
-                'pc_rand_reverse': (0, 100),
-                'pc_rand_duration': (0, 100),
-                'pc_rand_pan': (0, 100),
-                'pc_rand_volume': (0, 100),
+                'voice_pitch_offset': (-48, 48),  # semitoni
+                'voice_pointer_offset': (-1.0, 1.0),  # normalizzato
+                'voice_pointer_range': (0.0, 1.0),    # normalizzato
             },
-            # Colori per ogni tipo di envelope
+
             'envelope_colors': {
+                # === OUTPUT ===
                 'volume': '#e41a1c',          # rosso
-                'grain_duration': '#377eb8',  # blu
+                'volume_prob': '#fb9a99',     # rosso chiaro
                 'pan': '#4daf4a',             # verde
-                'pitch_ratio': '#984ea3',     # viola
-                'density': '#ff7f00',         # arancio
+                'pan_prob': '#b2df8a',        # verde chiaro
+                
+                # === GRAIN ===
+                'grain_duration': '#377eb8',  # blu
+                'grain_duration_prob': '#a6cee3',  # blu chiaro
+                'reverse': '#999999',         # grigio
+                'reverse_prob': '#cccccc',    # grigio chiarissimo
+                
+                # === POINTER ===
+                'pointer_start': '#8dd3c7',   # celeste
                 'pointer_speed': '#a65628',   # marrone
+                'pointer_deviation': '#fb8072',  # salmone
+                'pointer_deviation_prob': '#fdb462',  # arancione chiaro
+                'loop_dur': '#bebada',        # lavanda
+                
+                # === PITCH ===
+                'pitch_ratio': '#984ea3',     # viola
+                'pitch_ratio_prob': '#cab2d6',  # viola chiaro
+                'pitch_semitones': '#9467bd', # viola chiaro alternativo
+                'pitch_semitones_prob': '#e7d4e8',  # lavanda chiaro
+                
+                # === DENSITY ===
+                'density': '#ff7f00',         # arancio
                 'fill_factor': '#f781bf',     # rosa
                 'distribution': '#999999',    # grigio
-                'pitch_semitones': '#9467bd',  # colore viola chiaro in envelope_colors
-                'num_voices': '#e377c2',
-                'pc_rand_reverse': '#17becf',
-                'pc_rand_duration': '#bcbd22',  # giallo-verde
-                'pc_rand_pan': '#7f7f7f',       # grigio scuro
-                'pc_rand_volume': '#d62728', 
+                'effective_density': '#ffed6f',  # giallo
+                
+                # === VOICES ===
+                'num_voices': '#e377c2',      # magenta
+                'voice_pitch_offset': '#c49c94',  # beige
+                'voice_pointer_offset': '#f7b6d2', # rosa chiaro
+                'voice_pointer_range': '#c7c7c7',  # grigio chiaro
             },
             'envelope_panel_ratio': 0.3,      # 30% altezza per envelope
         }
         
-
-
         self.config = default_config
         if config:
             self.config.update(config)
@@ -643,64 +685,98 @@ class ScoreVisualizer:
     # =========================================================================
     # ENVELOPE
     # =========================================================================
-    
+
     def _get_stream_envelopes(self, stream):
         """
-        Estrae tutti i parametri che sono Envelope (non costanti) dallo stream.
+        Estrae tutti i parametri che sono Envelope dallo stream.
+        
+        Soluzione C: usa gli schema come single source of truth.
+        Suffisso "_prob" per le probabilità dephase.
         
         Returns:
             dict: {nome_parametro: Envelope}
         """
-        # Import Envelope per type check
         from envelope import Envelope
+        from parameter import Parameter
+        from parameter_schema import (
+            STREAM_PARAMETER_SCHEMA, 
+            POINTER_PARAMETER_SCHEMA, 
+            PITCH_PARAMETER_SCHEMA,
+            DENSITY_PARAMETER_SCHEMA,
+            VOICE_PARAMETER_SCHEMA
+        )
         
         envelopes = {}
-
         show_static = self.config.get('show_static_params', False)
-
-        # Lista dei parametri da controllare
-        # (nome_visualizzazione, nome_attributo)
-        params_to_check = [
-            ('volume', 'volume'),
-            ('grain_duration', 'grain_duration'),
-            ('pan', 'pan'),
-            ('density', 'density'),
-            ('fill_factor', 'fill_factor'),
-            ('pointer_speed', 'pointer_speed'),
-            ('pitch_ratio', 'pitch_ratio'),
-            ('pitch_semitones', 'pitch_semitones'),  # nome diverso!
-            ('distribution', 'distribution'),
-            ('num_voices', 'num_voices'),
-            ('pc_rand_reverse', 'grain_reverse_randomness'),
-            ('pc_rand_duration', 'grain_duration_randomness'),
-            ('pc_rand_pan', 'grain_pan_randomness'),
-            ('pc_rand_volume', 'grain_volume_randomness'),
-        ]
         
-        for param_name, attr_name in params_to_check:
-            if hasattr(stream, attr_name):
-                value = getattr(stream, attr_name)
-                if isinstance(value, Envelope):
-                    # Salta envelope costanti (un solo punto)
-                    if len(value.breakpoints) > 1:
-                        envelopes[param_name] = value
-
-                    # Se ha 1 punto è statico -> Lo prendiamo solo se richiesto
-                    elif show_static and len(value.breakpoints) == 1:
-                        val = value.breakpoints[0][1]
-                        # Creiamo un envelope fittizio che copre la durata dello stream
-                        # [tempo 0, valore], [tempo durata, valore]
-                        envelopes[param_name] = Envelope([[0, val], [stream.duration, val]])
-
-                # Caso B: È un numero (float/int) ed è statico
-                elif isinstance(value, (int, float)) and show_static:
-                    # Escludiamo i None
-                    if value is not None:
-                        # Creiamo envelope fittizio costante
-                        envelopes[param_name] = Envelope([[0, value], [stream.duration, value]])        
+        # Combina tutti gli schema disponibili
+        all_schemas = (
+            STREAM_PARAMETER_SCHEMA + 
+            POINTER_PARAMETER_SCHEMA + 
+            PITCH_PARAMETER_SCHEMA + 
+            DENSITY_PARAMETER_SCHEMA +
+            VOICE_PARAMETER_SCHEMA
+        )
+        
+        # Itera su tutte le specifiche dei parametri
+        for spec in all_schemas:
+            # Salta se l'attributo non esiste nello stream
+            if not hasattr(stream, spec.name):
+                continue
+            
+            param = getattr(stream, spec.name)
+            
+            # =====================================================================
+            # PARTE 1: ESTRAZIONE VALORE PRINCIPALE
+            # =====================================================================
+            
+            # Determina il valore effettivo (raw o da Parameter)
+            if isinstance(param, Parameter):
+                value = param._value
+            else:
+                value = param
+            
+            # Aggiungi envelope del valore principale
+            if isinstance(value, Envelope):
+                # Solo envelope dinamici (multi-breakpoint)
+                if len(value.breakpoints) > 1:
+                    envelopes[spec.name] = value
+                # Envelope statici (solo se richiesto)
+                elif show_static and len(value.breakpoints) == 1:
+                    val = value.breakpoints[0][1]
+                    envelopes[spec.name] = Envelope([[0, val], [stream.duration, val]])
+            
+            # Valori statici (numero)
+            elif isinstance(value, (int, float)) and show_static:
+                if value is not None:
+                    envelopes[spec.name] = Envelope([[0, value], [stream.duration, value]])
+            
+            # =====================================================================
+            # PARTE 2: ESTRAZIONE DEPHASE (PROBABILITA) CON SUFFISSO "_prob"
+            # =====================================================================
+            
+            # Se il parametro ha un dephase_key E è un Parameter object
+            if spec.dephase_key and isinstance(param, Parameter):
+                mod_prob = getattr(param, '_mod_prob', None)
+                
+                if mod_prob is not None:
+                    # CHIAVE: Usa spec.name + "_prob" come nome nell'envelope
+                    prob_key = f"{spec.name}_prob"
+                    
+                    if isinstance(mod_prob, Envelope):
+                        # Solo envelope dinamici
+                        if len(mod_prob.breakpoints) > 1:
+                            envelopes[prob_key] = mod_prob
+                        # Envelope statici (solo se richiesto)
+                        elif show_static and len(mod_prob.breakpoints) == 1:
+                            val = mod_prob.breakpoints[0][1]
+                            envelopes[prob_key] = Envelope([[0, val], [stream.duration, val]])
+                    
+                    # Probabilita statiche (numero)
+                    elif isinstance(mod_prob, (int, float)) and show_static:
+                        envelopes[prob_key] = Envelope([[0, mod_prob], [stream.duration, mod_prob]])
+        
         return envelopes
-    
-
 
     def _normalize_envelope_value(self, param_name, value):
         """

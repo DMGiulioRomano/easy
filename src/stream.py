@@ -387,7 +387,7 @@ class Stream:
         return self._pitch.base_ratio
     
     @property
-    def pitch_semitones_envelope(self) -> Optional[Union[float, Envelope]]:
+    def pitch_semitones(self) -> Optional[Union[float, Envelope]]:
         """Espone pitch_semitones per ScoreVisualizer (solo se in modalità semitoni)."""
         return self._pitch.base_semitones
     
