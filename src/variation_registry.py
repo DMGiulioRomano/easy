@@ -9,7 +9,8 @@ from variation_strategy import (
     VariationStrategy,
     AdditiveVariation,
     QuantizedVariation,
-    InvertVariation
+    InvertVariation,
+    ChoiceVariation
 )
 
 # =============================================================================
@@ -20,6 +21,7 @@ VARIATION_STRATEGIES: Dict[str, Type[VariationStrategy]] = {
     'additive': AdditiveVariation,
     'quantized': QuantizedVariation,
     'invert': InvertVariation,
+    'choice': ChoiceVariation,
 }
 
 
