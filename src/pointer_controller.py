@@ -47,7 +47,6 @@ class PointerController:
         stream_id: str,                    # 3. Context identità
         duration: float,                   # 4. Context timing
         sample_dur_sec: float,             # 5. Context audio (se serve)
-        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il controller.
@@ -59,13 +58,11 @@ class PointerController:
             time_mode: 'absolute' o 'normalized' (default per envelope)
         """
         self._sample_dur_sec = sample_dur_sec
-        self._time_mode = time_mode
-
+        self._time_mode = config.time_mode  
         # Create orchestrator
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode,
             config=config
         )
         self._init_params(params)

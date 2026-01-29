@@ -7,7 +7,9 @@ class OrchestrationConfig:
     dephase: Optional[Union[dict, bool, int, float]] = False
     range_always_active: bool = False
     distribution_mode: str = 'uniform'
-    
+    time_mode: str = 'absolute'
+    time_scale: float = 1.0 
+
     @classmethod
     def from_yaml(cls, yaml_data: dict, allow_none: bool = True) -> 'OrchestrationConfig':
         """
@@ -28,5 +30,4 @@ class OrchestrationConfig:
                 if name in yaml_data and yaml_data[name] is not None
             }
         
-        return cls(**kwargs)            
-
+        return cls(**kwargs)

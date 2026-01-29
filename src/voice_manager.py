@@ -34,7 +34,6 @@ class VoiceManager:
         config: OrchestrationConfig,       # 2. Regole processo
         stream_id: str,                    # 3. Context identità
         duration: float,                   # 4. Context timing
-        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il VoiceManager.
@@ -44,7 +43,6 @@ class VoiceManager:
             stream_id: ID dello stream (per logging)
             duration: durata dello stream (per normalizzazione envelope)
             sample_dur_sec: Durata del sample in secondi
-            time_mode: 'absolute' o 'normalized' (default per envelope)
         """
         self.stream_id = stream_id
         
@@ -52,7 +50,6 @@ class VoiceManager:
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode,
             config=config
         )
 

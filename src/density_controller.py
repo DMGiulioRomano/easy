@@ -33,7 +33,6 @@ class DensityController:
         config: OrchestrationConfig,       # 2. Regole processo
         stream_id: str,                    # 3. Context identità
         duration: float,                   # 4. Context timing
-        time_mode: str = 'absolute'        # 6. Context mode
     ):
         """
         Inizializza il controller di densità.
@@ -43,7 +42,6 @@ class DensityController:
         self._orchestrator = ParameterOrchestrator(
             stream_id=stream_id,
             duration=duration,
-            time_mode=time_mode,
             config=config
         )
 

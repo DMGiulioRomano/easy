@@ -23,20 +23,16 @@ class ParameterOrchestrator:
         self,
         stream_id: str,
         duration: float,
-        time_mode: str = 'absolute',
         config: OrchestrationConfig = None
     ):
         self._config = config
         self._param_factory = ParameterFactory(
             stream_id=stream_id, 
             duration=duration,
-            time_mode=time_mode, 
             distribution_mode=self._config.distribution_mode
         )
         self._stream_id = stream_id
-        self._duration=duration
-        self._time_mode=time_mode
-        
+        self._duration=duration        
     
     def create_all_parameters(
         self,
@@ -87,7 +83,7 @@ class ParameterOrchestrator:
             has_explicit_range=has_explicit_range,
             range_always_active=self._config.range_always_active,
             duration=self._duration,
-            time_mode=self._time_mode
+            time_mode=self._config.time_mode
         )        
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)
         param.set_probability_gate(gate)

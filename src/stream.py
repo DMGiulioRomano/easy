@@ -53,13 +53,10 @@ class Stream:
         self.stream_id = params['stream_id']
         self.onset = params['onset']
         self.duration = params['duration']
-        self.time_mode = params.get('time_mode', 'absolute')
         self.time_scale = params.get('time_scale', 1.0)
-        
         # === 2. AUDIO ===
         self.sample_path = params['sample']
         self.sample_dur_sec = get_sample_duration(self.sample_path)
-        
 
         # === 3. CONFIGURATION ===
         config = OrchestrationConfig.from_yaml(params)
@@ -97,7 +94,6 @@ class Stream:
         _orchestrator = ParameterOrchestrator(
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode,
             config=config
         )
 
@@ -124,7 +120,6 @@ class Stream:
             stream_id=self.stream_id,
             duration=self.duration,
             sample_dur_sec=self.sample_dur_sec,
-            time_mode=self.time_mode,
             config=config
         )
         
@@ -134,7 +129,6 @@ class Stream:
             params=pitch_params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode,
             config=config
             )
         
@@ -143,7 +137,6 @@ class Stream:
             params=params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode,
             config=config
         )
         
@@ -153,7 +146,6 @@ class Stream:
             params=voices_params,
             stream_id=self.stream_id,
             duration=self.duration,
-            time_mode=self.time_mode,
             config=config
         )
     
