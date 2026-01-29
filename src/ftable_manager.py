@@ -46,10 +46,10 @@ class FtableManager:
         if window_name in self._window_cache:
             return self._window_cache[window_name]
         
-        # Valida che l'window esista nel registro
+        # Valida che la window esista nel registro
         if WindowRegistry.get(window_name) is None:
             raise ValueError(
-                f"window '{window_name}' non valido. "
+                f"Window '{window_name}' non valida. "
                 f"Validi: {', '.join(WindowRegistry.all_names())}"
             )
         
@@ -58,6 +58,49 @@ class FtableManager:
         self.tables[num] = ('window', window_name)
         self._window_cache[window_name] = num
         return num
+    
+    # =========================================================================
+    # AGGIUNTE CONSIGLIATE
+    # =========================================================================
+    
+    def get_sample_table_num(self, sample_path: str) -> Optional[int]:
+        """
+        Ottieni numero tabella per sample (se già registrato).
+        
+        Returns:
+            int se registrato, None altrimenti
+        """
+        return self._sample_cache.get(sample_path)
+    
+    def get_window_table_num(self, window_name: str) -> Optional[int]:
+        """
+        Ottieni numero tabella per window (se già registrata).
+        
+        Returns:
+            int se registrata, None altrimenti
+        """
+        return self._window_cache.get(window_name)
+    
+    def get_all_tables(self) -> Dict[int, Tuple[str, str]]:
+        """
+        Ritorna copia di tutte le tabelle registrate.
+        
+        Returns:
+            dict: {table_num: (ftype, key)}
+        """
+        return dict(self.tables)
+    
+    def __repr__(self) -> str:
+        """Rappresentazione per debugging."""
+        n_samples = len(self._sample_cache)
+        n_windows = len(self._window_cache)
+        return (f"FtableManager(tables={len(self.tables)}, "
+                f"samples={n_samples}, windows={n_windows}, "
+                f"next_num={self.next_num})")
+    
+    # =========================================================================
+    # SCRITTURA FILE SCORE
+    # =========================================================================
     
     def write_to_file(self, f) -> None:
         """Scrive tutte le ftables nel file score Csound."""
@@ -72,6 +115,15 @@ class FtableManager:
             
             elif ftype == 'window':
                 spec = WindowRegistry.get(key)
-                f.write(f'; window: {key} - {spec.description}\n')
+                
+                # ERROR HANDLING AGGIUNTO
+                if spec is None:
+                    raise ValueError(
+                        f"Window '{key}' non trovata nel WindowRegistry. "
+                        f"Questo non dovrebbe accadere se register_window() "
+                        f"ha validato correttamente."
+                    )
+                
+                f.write(f'; Window: {key} - {spec.description}\n')
                 statement = WindowRegistry.generate_ftable_statement(num, key)
                 f.write(f'{statement}\n\n')
