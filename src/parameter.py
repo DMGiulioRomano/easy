@@ -17,7 +17,7 @@ from parameter_definitions import ParameterBounds
 from logger import log_clip_warning
 from probability_gate import *
 from distribution_strategy import DistributionFactory, DistributionStrategy
-
+from variation_registry import VariationFactory
 # Definisco un tipo alias per chiarezza: l'input può essere un numero o un Envelope
 ParamInput = Union[float, int, Envelope]
 
@@ -27,10 +27,10 @@ class Parameter:
     
     Sa calcolare il proprio valore al tempo T, gestendo automaticamente:
     1. Interpolazione Envelope (se presente)
-    2. Variazione Stocastica (Range/Jitter) con diverse strategie
+    2. Variazione Stocastica usando VariationStrategy
     3. Probabilità di attivazione (Dephase)
     4. Safety Clamping (rispetto ai Bounds)
-    """
+        """
 
     def __init__(
         self,
@@ -47,23 +47,11 @@ class Parameter:
         self._value = value
         self._bounds = bounds
         self._mod_range = mod_range
-        self._probability_gate = NeverGate()  # Default safe
-        self._distribution = DistributionFactory.create(distribution_mode)                
-        # Strategy Map: Collega la modalità di variazione alla funzione corrispondente.
-        # Questo elimina l'if/elif nel metodo get_value.
-        self._strategies: Dict[str, Callable[[float, float], float]] = {
-            'additive': self._strategy_additive,
-            'quantized': self._strategy_quantized,
-            'invert': self._strategy_invert
-        }
-        
-        # Validazione immediata della configurazione (Fail Fast)
-        if self._bounds.variation_mode not in self._strategies:
-            raise ValueError(
-                f"Parametro '{self.name}': Unknown variation_mode '{self._bounds.variation_mode}' "
-                f"definito in parameter_definitions.py"
-            )
+        self._probability_gate = NeverGate()
 
+        self._distribution = DistributionFactory.create(distribution_mode)                
+        self._variation_strategy = VariationFactory.create(bounds.variation_mode)
+        
     def set_probability_gate(self, gate: ProbabilityGate):
         """Setter per dependency injection."""
         self._probability_gate = gate
@@ -84,11 +72,12 @@ class Parameter:
 
         # 3. Calcola il Range di variazione (Modulation Depth)
 
-        # 4. Esegui la Strategia di Variazione (Dispatch)
-        # Seleziona la funzione giusta in base alla configurazione (es. 'quantized' per semitoni)
-        strategy_func = self._strategies[self._bounds.variation_mode]
-        final_val = strategy_func(base_val, current_range)
-
+        # 4. Delega alla VariationStrategy (Strategy Pattern)
+        final_val = self._variation_strategy.apply(
+            base_val, 
+            current_range, 
+            self._distribution
+        )
         # 5. Safety Clamp e Ritorno
         return self._clamp(final_val, time)
 
