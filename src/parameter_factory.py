@@ -38,13 +38,7 @@ class ParameterFactory:
             setattr(self, name, param)
     """
     
-    def __init__(
-        self, 
-        stream_id: str, 
-        duration: float, 
-        time_mode: str = 'absolute',
-        distribution_mode: str = 'uniform',
-    ):
+    def __init__(self, config):
         """
         Inizializza la factory con il contesto dello Stream.
         
@@ -53,13 +47,8 @@ class ParameterFactory:
             duration: Durata totale (per normalizzazione envelope)
             time_mode: 'absolute' o 'normalized'
         """
-        self._distribution_mode = distribution_mode
-        self._parser = GranularParser(
-            stream_id=stream_id,
-            duration=duration,
-            time_mode=time_mode,
-            distribution_mode =distribution_mode)
-        self._stream_id = stream_id
+        self._parser = GranularParser(config)
+        self._stream_id = config.context.stream_id
         
     # =========================================================================
     # INTERNAL METHODS

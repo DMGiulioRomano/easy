@@ -17,15 +17,16 @@ from typing import List, Optional, Union
 
 from grain import Grain
 from envelope import Envelope
+from window_controller import WindowController
 from pointer_controller import PointerController
 from pitch_controller import PitchController
 from density_controller import DensityController
 from voice_manager import VoiceManager
-from utils import *
+from utils import get_sample_duration
 from parameter_schema import STREAM_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
-from orchestration_config import OrchestrationConfig
-from window_controller import WindowController
+from stream_config import StreamConfig, StreamContext
+from dataclasses import fields
 
 
 class Stream:
@@ -36,9 +37,6 @@ class Stream:
     Mantiene compatibilità con Generator e ScoreVisualizer.
     
     Attributes:
-        stream_id: identificatore univoco
-        onset: tempo di inizio (secondi)
-        duration: durata dello stream (secondi)
         voices: List[List[Grain]] - grani organizzati per voce
         grains: List[Grain] - lista flattened (backward compatibility)
     """
@@ -50,27 +48,16 @@ class Stream:
         Args:
             params: dizionario parametri dallo YAML
         """
-        # === 1. IDENTITÀ & TIMING ===
-        self.stream_id = params['stream_id']
-        self.onset = params['onset']
-        self.duration = params['duration']
-        self.time_scale = params.get('time_scale', 1.0)
-        # === 2. AUDIO ===
-        self.sample_path = params['sample']
-        self.sample_dur_sec = get_sample_duration(self.sample_path)
 
         # === 3. CONFIGURATION ===
-        config = OrchestrationConfig.from_yaml(params)
-        
+        config = StreamConfig.from_yaml(params,StreamContext.from_yaml(params))
+        self._init_stream_context(params)
         # === 4. PARAMETRI SPECIALI ===
         self._init_grain_reverse(params)
-        
         # === 5. PARAMETRI DIRETTI (riceve config) ===
         self._init_stream_parameters(params, config)
-        
         # === 6. CONTROLLER (riceve config) ===
         self._init_controllers(params, config)
-
         # === 7. RIFERIMENTI CSOUND (assegnati da Generator) ===
         self.sample_table_num: Optional[int] = None
         self.envelope_table_num: Optional[int] = None
@@ -79,11 +66,21 @@ class Stream:
         self.grains: List[Grain] = []  # backward compatibility
         self.generated = False
 
-    # =========================================================================
-    # PARAMETRI DIRETTI (non delegati ai controller)
-    # =========================================================================
+    def _init_stream_context(self, params):
+        base = {field.name for field in fields(StreamContext)}
+        missing = base - set(params.keys())
+        if missing:
+            missing_list = sorted(missing)
+            if len(missing_list) == 1:
+                raise ValueError(f"Parametro obbligatorio mancante: '{missing_list[0]}'")
+            else:
+                missing_str = ", ".join(f"'{m}'" for m in missing_list)
+                raise ValueError(f"Parametri obbligatori mancanti: {missing_str}")
+        for key in base:
+            setattr(self, key, params[key])
+        self.sample_dur_sec = get_sample_duration(self.sample)
 
-    def _init_stream_parameters(self, params: dict, config: OrchestrationConfig) -> None:
+    def _init_stream_parameters(self, params: dict, config: StreamConfig) -> None:
         """
         Inizializza parametri diretti di Stream usando ParameterFactory.
         
@@ -92,11 +89,7 @@ class Stream:
         - ParameterFactory sa COME crearlo
         - Stream riceve i Parameter già pronti        
         """
-        _orchestrator = ParameterOrchestrator(
-            stream_id=self.stream_id,
-            duration=self.duration,
-            config=config
-        )
+        _orchestrator = ParameterOrchestrator(config=config)
 
         # 3. Crea tutti i parametri
         parameters = _orchestrator.create_all_parameters(
@@ -112,47 +105,37 @@ class Stream:
     # INIZIALIZZAZIONE CONTROLLER
     # =========================================================================
     
-    def _init_controllers(self, params: dict, config: OrchestrationConfig) -> None:
+    def _init_controllers(self, params: dict, config: StreamConfig) -> None:
         """Inizializza tutti i controller con i loro parametri."""
         # POINTER CONTROLLER
         pointer_params = params.get('pointer', {})
         self._pointer = PointerController(
             params=pointer_params,
-            stream_id=self.stream_id,
-            duration=self.duration,
             sample_dur_sec=self.sample_dur_sec,
             config=config
         )
         
         # PITCH CONTROLLER
-        pitch_params = params.get('pitch', {})
         self._pitch = PitchController(
-            params=pitch_params,
-            stream_id=self.stream_id,
-            duration=self.duration,
+            params=params.get('pitch', {}),
             config=config
             )
         
         # DENSITY CONTROLLER
         self._density = DensityController(
             params=params,
-            stream_id=self.stream_id,
-            duration=self.duration,
             config=config
         )
 
         self._window_controller = WindowController(
             params=params.get('grain', {}),
-            dephase=params.get('dephase'),
-            stream_id=self.stream_id
+            config=config
         )
 
         # VOICE MANAGER
         voices_params = params.get('voices', {})
         self._voice_manager = VoiceManager(
             params=voices_params,
-            stream_id=self.stream_id,
-            duration=self.duration,
             config=config
         )
     

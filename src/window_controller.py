@@ -2,6 +2,7 @@
 from typing import List, Tuple, Dict, Any
 from window_registry import WindowRegistry
 import random
+from stream_config import StreamConfig
 class WindowController:
     """Gestisce selezione grain envelope."""
     
@@ -60,7 +61,7 @@ class WindowController:
     # METODI D'ISTANZA (per Stream)
     # =========================================================================
     
-    def __init__(self, params: dict, dephase: dict = None, stream_id: str = "unknown"):
+    def __init__(self, params: dict, config: StreamConfig = None):
         """
         Inizializza controller per selezione runtime.
         
@@ -68,15 +69,13 @@ class WindowController:
             params: dict grain da YAML
             dephase: dict con probabilità
             stream_id: per logging
-        """
-        self._stream_id = stream_id
-        
+        """        
         # Riusa metodo statico per parsing
-        self._windows = self.parse_window_list(params, stream_id)
+        self._windows = self.parse_window_list(params, config.context.stream_id)
         
         # Range e probability (aspetti dinamici)
         self._range = params.get('envelope_range', 0)
-        self._prob = dephase.get('pc_rand_envelope') if dephase else None
+        self._prob = config.dephase.get('pc_rand_envelope') if config.dephase else None
     
     def select_window(self) -> str:
         """Seleziona finestra per grano corrente."""

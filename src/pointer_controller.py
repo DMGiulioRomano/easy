@@ -16,7 +16,7 @@ from envelope import Envelope
 from parameter import Parameter
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
-from orchestration_config import OrchestrationConfig
+from stream_config import StreamConfig
 
 class PointerController:
     """
@@ -43,9 +43,7 @@ class PointerController:
     def __init__(
         self,
         params: dict,                      # 1. Dati specifici
-        config: OrchestrationConfig,       # 2. Regole processo
-        stream_id: str,                    # 3. Context identità
-        duration: float,                   # 4. Context timing
+        config: StreamConfig,       # 2. Regole processo
         sample_dur_sec: float,             # 5. Context audio (se serve)
     ):
         """
@@ -60,11 +58,7 @@ class PointerController:
         self._sample_dur_sec = sample_dur_sec
         self._time_mode = config.time_mode  
         # Create orchestrator
-        self._orchestrator = ParameterOrchestrator(
-            stream_id=stream_id,
-            duration=duration,
-            config=config
-        )
+        self._orchestrator = ParameterOrchestrator(config=config)
         self._init_params(params)
         self._init_loop_state()
     

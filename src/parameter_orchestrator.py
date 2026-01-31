@@ -12,7 +12,7 @@ from parameter import Parameter
 from parameter_schema import ParameterSpec
 from parameter_definitions import DEFAULT_PROB
 from exclusive_selector import ExclusiveGroupSelector
-from orchestration_config import OrchestrationConfig
+from stream_config import StreamConfig
 
 class ParameterOrchestrator:
     """
@@ -21,18 +21,10 @@ class ParameterOrchestrator:
     
     def __init__(
         self,
-        stream_id: str,
-        duration: float,
-        config: OrchestrationConfig = None
+        config: StreamConfig = None
     ):
+        self._param_factory = ParameterFactory(config)
         self._config = config
-        self._param_factory = ParameterFactory(
-            stream_id=stream_id, 
-            duration=duration,
-            distribution_mode=self._config.distribution_mode
-        )
-        self._stream_id = stream_id
-        self._duration=duration        
     
     def create_all_parameters(
         self,
@@ -82,7 +74,7 @@ class ParameterOrchestrator:
             default_prob=DEFAULT_PROB,
             has_explicit_range=has_explicit_range,
             range_always_active=self._config.range_always_active,
-            duration=self._duration,
+            duration=self._config.context.duration,
             time_mode=self._config.time_mode
         )        
         # 3. Inietta il gate nel Parameter (modifica la classe Parameter)

@@ -147,9 +147,7 @@ class Generator:
             stream = Stream(stream_data)
             
             # 2. Registra ftable sample
-            stream.sample_table_num = self.ftable_manager.register_sample(
-                stream.sample_path
-            )
+            stream.sample_table_num = self.ftable_manager.register_sample(stream.sample)
             
             # 3. Pre-registra tutte le finestre possibili
             # CHIAMATA QUI ↓

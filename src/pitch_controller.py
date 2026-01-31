@@ -17,7 +17,7 @@ from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
 from parameter_orchestrator import ParameterOrchestrator
-from orchestration_config import OrchestrationConfig
+from stream_config import StreamConfig
 
 class PitchController:
     """
@@ -30,9 +30,7 @@ class PitchController:
     def __init__(
         self,
         params: dict,                      # 1. Dati specifici
-        config: OrchestrationConfig,       # 2. Regole processo
-        stream_id: str,                    # 3. Context identità
-        duration: float,                   # 4. Context timing
+        config: StreamConfig       # 2. Regole processo
     ):
         """
         Inizializza il controller.
@@ -41,11 +39,7 @@ class PitchController:
         """
         
         # Create orchestrator
-        self._orchestrator = ParameterOrchestrator(
-            stream_id=stream_id,
-            duration=duration,
-            config=config
-        )        
+        self._orchestrator = ParameterOrchestrator(config=config)        
         # Create parameters
         self._loaded_params = self._orchestrator.create_all_parameters(
             params, 

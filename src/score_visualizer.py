@@ -386,7 +386,7 @@ class ScoreVisualizer:
         # =========================================================================
         samples_dict = {}
         for stream in active_streams:
-            path = stream.sample_path
+            path = stream.sample
             if path not in samples_dict:
                 samples_dict[path] = []
             samples_dict[path].append(stream)
@@ -563,7 +563,7 @@ class ScoreVisualizer:
     def _draw_waveform_full(self, ax, stream, sample_duration):
         """Disegna waveform usando tutto lo spazio verticale dello subplot."""
         
-        time_axis, amplitude, _ = self._load_waveform(stream.sample_path)
+        time_axis, amplitude, _ = self._load_waveform(stream.sample)
         
         # Y = tempo nel sample (da 0 a sample_duration)
         # X = ampiezza normalizzata (-1 a +1)

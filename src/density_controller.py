@@ -13,7 +13,7 @@ from parameter_schema import DENSITY_PARAMETER_SCHEMA
 from strategy_registry import StrategyFactory
 from parameter_definitions import get_parameter_definition
 from parameter_orchestrator import ParameterOrchestrator
-from orchestration_config import OrchestrationConfig
+from stream_config import StreamConfig
 
 class DensityController:
     """
@@ -29,21 +29,15 @@ class DensityController:
     
     def __init__(
         self,
-        params: dict,                      # 1. Dati specifici
-        config: OrchestrationConfig,       # 2. Regole processo
-        stream_id: str,                    # 3. Context identità
-        duration: float,                   # 4. Context timing
+        params: dict,             
+        config: StreamConfig,     
     ):
         """
         Inizializza il controller di densità.
         """
                 
         # Create orchestrator
-        self._orchestrator = ParameterOrchestrator(
-            stream_id=stream_id,
-            duration=duration,
-            config=config
-        )
+        self._orchestrator = ParameterOrchestrator(config=config)
 
         # Create parameters
         self._params = self._orchestrator.create_all_parameters(

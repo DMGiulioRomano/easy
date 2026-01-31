@@ -11,7 +11,7 @@ from typing import Dict, Optional, Union
 from envelope import Envelope
 from parameter_schema import VOICE_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
-from orchestration_config import OrchestrationConfig
+from stream_config import StreamConfig
 
 
 class VoiceManager:
@@ -31,25 +31,16 @@ class VoiceManager:
     def __init__(
         self,
         params: dict,                      # 1. Dati specifici
-        config: OrchestrationConfig,       # 2. Regole processo
-        stream_id: str,                    # 3. Context identità
-        duration: float,                   # 4. Context timing
+        config: StreamConfig,       # 2. Regole processo
     ):
         """
         Inizializza il VoiceManager.
         
         Args:
             params: dict con parametri voci dal YAML
-            stream_id: ID dello stream (per logging)
-            duration: durata dello stream (per normalizzazione envelope)
-            sample_dur_sec: Durata del sample in secondi
-        """
-        self.stream_id = stream_id
-        
+        """        
         # Create orchestrator
         self._orchestrator = ParameterOrchestrator(
-            stream_id=stream_id,
-            duration=duration,
             config=config
         )
 
@@ -58,7 +49,6 @@ class VoiceManager:
             params,
             schema=VOICE_PARAMETER_SCHEMA
         )
-        
         for name, param in self._loaded_params.items():
             setattr(self, name, param)                
         # Cache max voices

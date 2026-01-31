@@ -23,14 +23,7 @@ class GranularParser:
     gli Envelope e i log.
     """
 
-    def __init__(
-        self, 
-        stream_id: str, 
-        duration: float, 
-        time_mode: str = 'absolute',
-        distribution_mode: str = 'uniform',
-
-    ):
+    def __init__(self, config):
         """
         Inizializza il parser con il contesto dello Stream.
 
@@ -39,10 +32,10 @@ class GranularParser:
             duration: Durata totale dello stream (usata per time_scale).
             time_mode: 'absolute' (sec) o 'normalized' (0-1). Default per gli envelope.
         """
-        self.stream_id = stream_id
-        self.duration = duration
-        self.time_mode = time_mode
-        self.distribution_mode = distribution_mode
+        self.stream_id = config.context.stream_id
+        self.duration = config.context.duration
+        self.time_mode = config.time_mode
+        self.distribution_mode = config.distribution_mode
 
     def parse_parameter(
         self,
