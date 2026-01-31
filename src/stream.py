@@ -25,6 +25,7 @@ from utils import *
 from parameter_schema import STREAM_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
 from orchestration_config import OrchestrationConfig
+from window_controller import WindowController
 
 
 class Stream:
@@ -139,7 +140,13 @@ class Stream:
             duration=self.duration,
             config=config
         )
-        
+
+        self._window_controller = WindowController(
+            params=params.get('grain', {}),
+            dephase=params.get('dephase'),
+            stream_id=self.stream_id
+        )
+
         # VOICE MANAGER
         voices_params = params.get('voices', {})
         self._voice_manager = VoiceManager(
@@ -293,7 +300,11 @@ class Stream:
         pan = self.pan.get_value(elapsed_time)        
         # === 6. ONSET ===
         absolute_onset = self.onset + elapsed_time
-        
+
+        # Nel loop di generazione grani
+        window_name = self._window_controller.select_window()
+        window_table_num = self.window_table_map[window_name]
+
         return Grain(
             onset=absolute_onset,
             duration=grain_dur,
@@ -302,7 +313,7 @@ class Stream:
             volume=volume,
             pan=pan,
             sample_table=self.sample_table_num,
-            envelope_table=self.envelope_table_num
+            envelope_table=window_table_num
         )
 
 

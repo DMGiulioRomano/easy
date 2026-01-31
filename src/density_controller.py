@@ -129,9 +129,18 @@ class DensityController:
         return self.distribution_param
 
     @property
+    def fill_factor(self):
+        """Espone parametro fill_factor (se attivo), altrimenti None."""
+        if self.mode == 'fill_factor':
+            return self._params.get('fill_factor')
+        return None
+
+    @property  
     def density(self):
-        """Espone l'oggetto parametro distribution."""
-        return self._determine_active_param()
+        """Espone parametro density (se attivo), altrimenti None."""
+        if self.mode == 'density':
+            return self._params.get('density')
+        return None
 
     def __repr__(self) -> str:
         active_param = self._determine_active_param()

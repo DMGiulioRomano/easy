@@ -35,24 +35,41 @@ class ChoiceVariation(VariationStrategy):
     """
     Selezione casuale da lista discreta.
     Usato per envelope, samples, preset values.
+    
+    Supporta due modalità:
+    1. Lista esplicita: ['hanning', 'hamming', 'gaussian']
+    2. Range=True: espande a tutte le finestre disponibili
     """
     
-    def apply(self, value: Any, mod_range: float, mod_prob: float) -> Any:
+    def apply(self, value: Any, mod_range: float, 
+              distribution: DistributionStrategy) -> Any:
         """
         Args:
-            value: lista di opzioni
-            mod_prob: probabilità di variare (0-100)
+            value: può essere:
+                   - stringa singola: 'hanning' → nessuna variazione
+                   - lista: ['hanning', 'hamming'] → choice da lista
+                   - True: espande a tutte le finestre da WindowRegistry
+            mod_range: se > 0, abilita la variazione (altrimenti ritorna primo elemento)
         
         Returns:
             elemento scelto dalla lista
         """
+        # Caso 1: Valore singolo (stringa) → comportamento deterministico
+        if isinstance(value, str):
+            return value
+        
+        # Caso 2: Range=True → espandi a tutte le finestre
+        if value is True or (isinstance(value, str) and value.lower() == 'all'):
+            from window_registry import WindowRegistry
+            value = list(WindowRegistry.WINDOWS.keys())
+        
+        # Caso 3: Lista esplicita
         if not isinstance(value, list):
-            raise TypeError(f"ChoiceVariation richiede lista, ricevuto {type(value)}")
+            raise TypeError(f"ChoiceVariation richiede stringa, lista, o True. Ricevuto {type(value)}")
         
-        # Probabilità di dephasing
-        if random.random() * 100 > mod_prob:
-            # Non varia → restituisci primo elemento (default)
-            return value[0]
+        # Se mod_range == 0, non variare (usa primo elemento come default)
+        if mod_range == 0:
+            return value[0] if value else 'hanning'
         
-        # Varia → scelta random
+        # Altrimenti, scelta random
         return random.choice(value)

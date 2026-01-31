@@ -9,17 +9,9 @@ streams:
     sample: "pino2.wav"
     #range_always_active: 
     distribution_mode: 'gaussian'
-    density: 5
+    density: 20
     grain:
       duration: 0.1
       duration_range: .05
-      #reverse: 
-    dephase: 
-      volume: 0
-      pitch: 0
-      pan: 0
-      duration: 
-        type: 'step'
-        points: [[0,0],[.5,100],[.75,20]]
-      #reverse: 80
-      pointer: 0
+      envelope: all
+      envelope_range: 1.0

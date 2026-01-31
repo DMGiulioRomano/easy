@@ -101,6 +101,13 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         variation_mode='invert'  # <--- NOTA: (Boolean Flip)
     ),
 
+    'grain_envelope': ParameterBounds(
+        min_val=0,      # Non usato per choice
+        max_val=0,      # Non usato per choice
+        min_range=0.0,  # Non usato per choice
+        max_range=0.0,  # Non usato per choice
+        variation_mode='choice'  # Usa ChoiceVariation
+    ),
     # =========================================================================
     # PITCH (La distinzione chiave discussa)
     # =========================================================================

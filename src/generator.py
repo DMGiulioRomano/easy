@@ -18,7 +18,7 @@ from stream import Stream
 from testina import Testina
 from ftable_manager import FtableManager
 from score_writer import ScoreWriter
-
+from window_controller import WindowController
 
 class Generator:
     """
@@ -95,21 +95,24 @@ class Generator:
         Raises:
             ValueError: se load_yaml() non è stato chiamato
         """
-        if not self.data:
-            raise ValueError(
-                "Devi chiamare load_yaml() prima di create_elements()!"
-            )
+        if self.data is None:
+            raise ValueError("Devi prima caricare il YAML con load_yaml()")
         
-        # Crea stream granulari
-        if 'streams' in self.data:
-            self._create_streams(self.data['streams'])
+        # Estrai e filtra stream
+        stream_data_list = self.data.get('streams', [])
+        filtered_streams = self._filter_solo_mute(stream_data_list)
         
-        # Crea testine tape recorder
-        if 'testine' in self.data:
-            self._create_testine(self.data['testine'])
+        # Crea stream (QUI viene chiamato _register_stream_windows)
+        self._create_streams(filtered_streams)
+        
+        # Crea testine
+        testina_data_list = self.data.get('testine', [])
+        if testina_data_list:
+            self._create_testine(testina_data_list)
         
         return self.streams, self.testine
-    
+
+
     def generate_score_file(self, output_path: str = 'output.sco'):
         """
         Genera il file score Csound completo.
@@ -136,30 +139,29 @@ class Generator:
         
         Args:
             stream_data_list: lista dizionari parametri stream da YAML
-        """
-        # Filtra in base a solo/mute
-        filtered_streams = self._filter_streams_solo_mute(stream_data_list)
+        """        
+        print(f"Creazione di {len(stream_data_list)} stream...")
         
-        print(f"Creazione di {len(filtered_streams)} streams granulari...")
-        
-        for stream_data in filtered_streams:
-            # Crea stream
+        for stream_data in stream_data_list:
+            # 1. Crea stream
             stream = Stream(stream_data)
             
-            # Registra ftables tramite manager
+            # 2. Registra ftable sample
             stream.sample_table_num = self.ftable_manager.register_sample(
                 stream.sample_path
             )
-            stream.envelope_table_num = self.ftable_manager.register_window(
-                stream.grain_envelope
-            )
             
-            # Genera grani
+            # 3. Pre-registra tutte le finestre possibili
+            # CHIAMATA QUI ↓
+            stream.window_table_map = self._register_stream_windows(stream_data)
+            
+            # 4. Genera grani
             stream.generate_grains()
             
             self.streams.append(stream)
+            print(f"  → Stream '{stream.stream_id}': {stream}")
     
-    def _filter_streams_solo_mute(self, stream_data_list: list) -> list:
+    def _filter_solo_mute(self, stream_data_list: list) -> list:
         """
         Applica logica solo/mute agli stream.
         
@@ -295,3 +297,21 @@ class Generator:
         # Altri tipi: passa through
         else:
             return obj
+        
+    def _register_stream_windows(self, stream_data: dict) -> dict:
+        """Pre-registra tutte le finestre per questo stream."""
+        stream_id = stream_data.get('stream_id', 'unknown')
+        
+        # USA METODO STATICO (no istanza temporanea!)
+        possible_windows = WindowController.parse_window_list(
+            params=stream_data.get('grain', {}),
+            stream_id=stream_id
+        )
+        
+        # Registra tutte le finestre nel FtableManager
+        window_map = {}
+        for window_name in possible_windows:
+            table_num = self.ftable_manager.register_window(window_name)
+            window_map[window_name] = table_num
+        
+        return window_map
