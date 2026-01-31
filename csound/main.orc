@@ -3,7 +3,7 @@ kr=48000
 nchnls=2
 0dbfs=1
 
-giTest init 2
+giTest init 0
 giInstanceNo init 0
 ;=============================================================================
 ; STRUMENTO GRAIN

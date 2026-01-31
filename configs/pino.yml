@@ -10,8 +10,12 @@ streams:
     #range_always_active: 
     distribution_mode: 'gaussian'
     density: 20
+    pointer:
+      speed: .5
     grain:
-      duration: 0.1
+      duration: 2
       duration_range: .05
-      envelope: all
+      envelope: ['gaussian', 'hanning', 'expodec']
       envelope_range: 1.0
+    pan: 70
+    pan_range: 140
