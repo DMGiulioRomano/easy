@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union
 from parameter import Parameter
 from envelope import Envelope
+from parameter_definitions import get_parameter_definition
 # =============================================================================
 # STRATEGIE PITCH
 # =============================================================================
@@ -95,19 +96,29 @@ class DensityStrategy(ABC):
 
  
 class FillFactorStrategy(DensityStrategy):
-    """Strategia: density = fill_factor / grain_duration."""
-    
+    """
+    Strategia: density = fill_factor / grain_duration.
+
+    Nota sul clamping: fill_factor e grain_duration vengono gia' clampati
+    nei loro rispettivi bounds da Parameter.get_value(). Pero' il valore
+    DERIVATO (la divisione) puo' uscire dai bounds di densita':
+      - fill_factor massimo / grain_duration minimo -> densita' molto alta
+      - fill_factor minimo / grain_duration massimo -> densita' molto bassa
+    Questa strategia e' quindi responsabile di clampare il risultato
+    nei bounds di 'density', garantendo che l'output sia sempre valido.
+    """    
     def __init__(self, fill_factor_param: Parameter, distribution_param: Parameter):
         self._fill_factor = fill_factor_param
-        # distribution non serve qui, solo nel controller!
-    
+        self._density_bounds = get_parameter_definition('density')
+     
     def calculate_density(self, elapsed_time: float, **context) -> float:
         if 'grain_duration' not in context:
             raise ValueError(f"{self.__class__.__name__} requires 'grain_duration' in context")
         fill_factor = self._fill_factor.get_value(elapsed_time)
         grain_duration = context['grain_duration']
-        return fill_factor / grain_duration
-    
+        raw_density = fill_factor / grain_duration
+        return max(self._density_bounds.min_val,min(self._density_bounds.max_val, raw_density))
+        
     @property
     def name(self) -> str:
         return "fill_factor"

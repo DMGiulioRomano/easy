@@ -156,8 +156,7 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
         default=1.0,
         range_path='range',
         dephase_key='pitch', 
-        exclusive_group='pitch_mode', 
-        group_priority=1  
+        exclusive_group='pitch_mode' 
     ),
     ParameterSpec(
         name='pitch_semitones',
@@ -166,7 +165,7 @@ PITCH_PARAMETER_SCHEMA: List[ParameterSpec] = [
         range_path='range',
         dephase_key='pitch' ,
         exclusive_group='pitch_mode', 
-        group_priority=2  
+        group_priority=1  
     ),
 ]
 

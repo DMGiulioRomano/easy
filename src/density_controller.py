@@ -8,12 +8,10 @@ Implementa il modello Truax per la distribuzione temporale:
 """
 
 import random
-from typing import Optional, Union
 from parameter_schema import DENSITY_PARAMETER_SCHEMA
-from strategy_registry import StrategyFactory
-from parameter_definitions import get_parameter_definition
-from parameter_orchestrator import ParameterOrchestrator
+from strategy_registry import StrategyFactory, DENSITY_STRATEGIES
 from stream_config import StreamConfig
+from parameter_orchestrator import ParameterOrchestrator
 
 class DensityController:
     """
@@ -45,7 +43,7 @@ class DensityController:
             schema=DENSITY_PARAMETER_SCHEMA
         )
 
-        selected_param_name = self._determine_active_param()
+        selected_param_name = self._find_selected_param()
         param_obj = self._params[selected_param_name]
         
         self._strategy = StrategyFactory.create_density_strategy(
@@ -55,13 +53,29 @@ class DensityController:
         )
         self.distribution_param = self._params['distribution']
     
-    def _determine_active_param(self) -> str:
-        """Priorità: fill_factor > density."""
-        if 'fill_factor' in self._params:
-            return 'fill_factor'
-        return 'density'    
+    def _find_selected_param(self) -> str:
+        """
+        Individua quale parametro del gruppo esclusivo 'density_mode'
+        è stato selezionato da ExclusiveGroupSelector.
 
+        Non compie alcuna decisione di priorità: quella è già stata fatta
+        dal selettore durante create_all_parameters(). Questo metodo
+        semplicemente trova quale chiave sopravvisse, incrociando con
+        DENSITY_STRATEGIES come sorgente di verità sui nomi validi.
 
+        Nota: _params contiene anche 'distribution' (non esclusivo),
+        quindi il filtraggio via DENSITY_STRATEGIES è necessario.
+
+        Raises:
+            ValueError: se zero o più di un parametro density vengono trovati
+        """
+        candidates = [name for name in self._params if name in DENSITY_STRATEGIES]
+        if len(candidates) != 1:
+            raise ValueError(
+                f"Atteso esattamente 1 parametro density dal gruppo esclusivo, "
+                f"trovati: {candidates}"
+            )
+        return candidates[0]
  
     def calculate_inter_onset(
         self,
@@ -76,18 +90,9 @@ class DensityController:
             elapsed_time,
             grain_duration=current_grain_duration
         )
-    # devo pensare a un modo per centralizzare le evaluations. una sta qui
-    # una sta nel parser e una nei parameter. Forse bisogna riutilizzare
-    # la classe parameterEvaluator per dargli 
-        density_bounds = get_parameter_definition('density')        
-        density_bounded = max(
-                density_bounds.min_val, 
-                min(density_bounds.max_val, density)
-            )
-
 
         # 3. CONTROLLER: Calcola average IOT
-        avg_iot = 1.0 / density_bounded
+        avg_iot = 1.0 / density
         
         # 4. CONTROLLER: Applica distribuzione Truax
         return self._apply_truax_distribution(avg_iot, elapsed_time)
@@ -137,5 +142,5 @@ class DensityController:
         return None
 
     def __repr__(self) -> str:
-        active_param = self._determine_active_param()
-        return f"<DensityController {self._factory._parser.stream_id} [{self.mode}:{active_param}]>"
+        active_param = self._find_selected_param()
+        return f"<DensityController [{self.mode}:{active_param}]>"

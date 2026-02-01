@@ -3,6 +3,9 @@ from typing import List, Tuple, Dict, Any
 from window_registry import WindowRegistry
 import random
 from stream_config import StreamConfig
+from gate_factory import GateFactory
+from parameter_definitions import DEFAULT_PROB
+
 class WindowController:
     """Gestisce selezione grain envelope."""
     
@@ -67,26 +70,44 @@ class WindowController:
         
         Args:
             params: dict grain da YAML
-            dephase: dict con probabilità
-            stream_id: per logging
+            config: StreamConfig con regole di processo (dephase, durata, ecc.)
         """        
         # Riusa metodo statico per parsing
         self._windows = self.parse_window_list(params, config.context.stream_id)
         
-        # Range e probability (aspetti dinamici)
+        # Range: guard semantico. Se 0, nessuna variazione richiesta.
         self._range = params.get('envelope_range', 0)
-        self._prob = config.dephase.get('pc_rand_envelope') if config.dephase else None
+
+        # Gate: delega la decisione probabilistica al sistema unificato.
+        # Supporta DISABLED, IMPLICIT, GLOBAL, SPECIFIC e EnvelopeGate.
+        has_explicit_range = self._range > 0
+        self._gate = GateFactory.create_gate(
+            dephase=config.dephase,
+            param_key='pc_rand_envelope',
+            default_prob=DEFAULT_PROB,
+            has_explicit_range=has_explicit_range,
+            range_always_active=config.range_always_active,
+            duration=config.context.duration,
+            time_mode=config.time_mode
+        )
     
-    def select_window(self) -> str:
-        """Seleziona finestra per grano corrente."""
-        # Range disabilitato → deterministico
+    def select_window(self, elapsed_time: float = 0.0) -> str:
+        """
+        Seleziona finestra per grano corrente.
+        
+        Args:
+            elapsed_time: tempo corrente nello stream, necessario per
+                          gate con probabilità variabile nel tempo (EnvelopeGate).
+        """
+        # Guard semantico: se range è 0, nessuna variazione richiesta.
+        # Questo è indipendente dal gate: anche se il gate direbbe "applica",
+        # non c'è niente da variare.
         if self._range == 0:
             return self._windows[0]
         
-        # Check dephase probability
-        if self._prob is not None:
-            if random.random() * 100 > self._prob:
-                return self._windows[0]
+        # Delega la decisione probabilistica al gate.
+        if not self._gate.should_apply(elapsed_time):
+            return self._windows[0]
         
-        # Variazione attiva → random
+        # Variazione attiva → selezione casuale
         return random.choice(self._windows)

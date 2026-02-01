@@ -13,6 +13,7 @@ class DephaseMode(Enum):
     DISABLED = "disabled"      # False - solo range espliciti
     IMPLICIT = "implicit"      # None - usa IMPLICIT_JITTER_PROB
     GLOBAL = "global"          # numero - probabilità globale
+    GLOBAL_ENV = "global_env"   # envelope globale
     SPECIFIC = "specific"      # dict - probabilità per chiave
 
 
@@ -21,16 +22,32 @@ class GateFactory:
     Factory specializzata per creare ProbabilityGate.
     TOTALMENTE isolata dal sistema Parameter.
     """
-    
+        
+    @staticmethod
+    def _is_envelope_like(obj):
+        """Riconosce se un oggetto rappresenta un envelope."""
+        # Lista di breakpoints
+        if isinstance(obj, list) and len(obj) > 0:
+            # [[t,v], ...] o lista di liste
+            return all(isinstance(item, list) and len(item) >= 2 
+                    for item in obj)
+        
+        # Dict con struttura envelope
+        if isinstance(obj, dict):
+            return 'points' in obj
+        
+        return False
+
     @staticmethod
     def _classify_dephase(dephase) -> DephaseMode:
-        """Determina lo stato semantico di dephase."""
         if dephase is False:
             return DephaseMode.DISABLED
         elif dephase is None:
             return DephaseMode.IMPLICIT
         elif isinstance(dephase, (int, float)):
             return DephaseMode.GLOBAL
+        elif GateFactory._is_envelope_like(dephase):
+            return DephaseMode.GLOBAL_ENV  # <-- NUOVO
         elif isinstance(dephase, dict):
             return DephaseMode.SPECIFIC
         else:
@@ -49,33 +66,34 @@ class GateFactory:
 
         if param_key is None:
             return NeverGate()
-        
         if has_explicit_range and range_always_active is None:
             return AlwaysGate()
-        
         # Classifica lo stato
         mode = GateFactory._classify_dephase(dephase)
-        
         # Logica basata sullo stato
         if mode == DephaseMode.DISABLED:
             return AlwaysGate() if has_explicit_range else NeverGate()
-        
         elif mode == DephaseMode.IMPLICIT:
             return GateFactory._create_probability_gate(default_prob)
-        
         elif mode == DephaseMode.GLOBAL:
             return GateFactory._create_probability_gate(float(dephase))
-        
+        elif mode == DephaseMode.GLOBAL_ENV:
+            # Crea Envelope dai dati grezzi
+            envelope = create_scaled_envelope(dephase, duration, time_mode)
+            return EnvelopeGate(envelope)
         elif mode == DephaseMode.SPECIFIC:
             if param_key in dephase:
                 raw_value = dephase[param_key]
                 if raw_value is None:
                     return GateFactory._create_probability_gate(default_prob)
+                elif GateFactory._is_envelope_like(raw_value):
+                    # Valore envelope per questo parametro specifico
+                    envelope = create_scaled_envelope(raw_value, duration, time_mode)
+                    return EnvelopeGate(envelope)
                 else:
                     return GateFactory._parse_raw_value(raw_value, duration, time_mode)
             else:
-                return GateFactory._create_probability_gate(default_prob)
-        
+                return GateFactory._create_probability_gate(default_prob)        
         return NeverGate()
 
     @staticmethod
@@ -94,7 +112,6 @@ class GateFactory:
 
     @staticmethod
     def _parse_raw_value(raw_value: Any, duration: float, time_mode: str) -> ProbabilityGate:
-        """..."""
         # Numero
         if isinstance(raw_value, (int, float)):
             prob = float(raw_value)
@@ -108,7 +125,6 @@ class GateFactory:
         # Envelope (con gestione errori)
         if isinstance(raw_value, (list, dict)):
             try:
-                from envelope import create_scaled_envelope
                 envelope = create_scaled_envelope(raw_value, duration, time_mode)
                 return EnvelopeGate(envelope)
             except Exception as e:

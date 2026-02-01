@@ -88,7 +88,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=10.0,    # 10 secondi
         min_range=0.0,
         max_range=1.0,
-        default_jitter=0.1,
+        default_jitter=0.01,
         variation_mode='additive'
     ),
     
@@ -97,7 +97,6 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=1,
         min_range=0,
         max_range=1,
-        default_jitter=0,
         variation_mode='invert'  # <--- NOTA: (Boolean Flip)
     ),
 
@@ -116,7 +115,6 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=36.0,
         min_range=0.0,
         max_range=36.0,
-        default_jitter=0.0, # Semitoni di solito non hanno jitter implicito se non richiesto
         variation_mode='quantized'  # <--- NOTA: Variazione a interi (randint)
     ),
     
@@ -125,7 +123,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=8.0,     # 3 ottave sopra
         min_range=0.0,
         max_range=2.0,
-        default_jitter=0.02,
+        default_jitter=0.01,
         variation_mode='additive'   
     ),
 
@@ -142,7 +140,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
         max_val=1.0,        # Normalizzato (100% del loop)
         min_range=0.0,
         max_range=1.0,
-        default_jitter=0.05,
+        default_jitter=0.2,
         variation_mode='additive'
     ),
     

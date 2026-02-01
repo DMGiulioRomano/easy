@@ -11,11 +11,8 @@ Supporta range stocastico in entrambe le modalità.
 Ispirato al DMX-1000 di Barry Truax (1988)
 """
 
-import math
-from typing import Union, Optional
-from parameter import Parameter
 from parameter_schema import PITCH_PARAMETER_SCHEMA
-from strategy_registry import StrategyFactory
+from strategy_registry import StrategyFactory, PITCH_STRATEGIES
 from parameter_orchestrator import ParameterOrchestrator
 from stream_config import StreamConfig
 
@@ -46,7 +43,7 @@ class PitchController:
             schema=PITCH_PARAMETER_SCHEMA
         )
     
-        selected_param_name = self._determine_active_param()
+        selected_param_name = self._find_selected_param()
         param_obj = self._loaded_params[selected_param_name]
         self._strategy = StrategyFactory.create_pitch_strategy(
             selected_param_name, 
@@ -55,11 +52,26 @@ class PitchController:
         )
 
 
-    def _determine_active_param(self) -> str:
-        """Logica di selezione separata e testabile."""
-        if 'pitch_semitones' in self._loaded_params:
-            return 'pitch_semitones'
-        return 'pitch_ratio'
+    def _find_selected_param(self) -> str:
+        """
+        Individua quale parametro del gruppo esclusivo 'pitch_mode'
+        è stato selezionato da ExclusiveGroupSelector.
+
+        Non compie alcuna decisione di priorità: quella è già stata fatta
+        dal selettore durante create_all_parameters(). Questo metodo
+        semplicemente trova quale chiave sopravvisse, incrociando con
+        PITCH_STRATEGIES come sorgente di verità sui nomi validi.
+
+        Raises:
+            ValueError: se zero o più di un parametro pitch vengono trovati
+        """
+        candidates = [name for name in self._loaded_params if name in PITCH_STRATEGIES]
+        if len(candidates) != 1:
+            raise ValueError(
+                f"Atteso esattamente 1 parametro pitch dal gruppo esclusivo, "
+                f"trovati: {candidates}"
+            )
+        return candidates[0]
     
     def calculate(
         self,
@@ -107,12 +119,12 @@ class PitchController:
     @property
     def range(self):
         """Espone il range del parametro attivo."""
-        active_param = self._determine_active_param()
-        if active_param in self._loaded_params:
-            param = self._loaded_params[active_param]
-            if hasattr(param, '_mod_range') and param._mod_range is not None:
-                return param._mod_range
+        active_param = self._find_selected_param()
+        param = self._loaded_params[active_param]
+        if hasattr(param, '_mod_range') and param._mod_range is not None:
+            return param._mod_range
         return 0.0
+
     # =========================================================================
     # REPR
     # =========================================================================

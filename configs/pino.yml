@@ -9,13 +9,18 @@ streams:
     sample: "pino2.wav"
     #range_always_active: 
     distribution_mode: 'gaussian'
-    density: 20
+    density: 
+      type: cubic
+      points: [[0,10],[.4,200],[1, 50]]
+    distribution: .5
     pointer:
       speed: .5
+      loop_start: 
     grain:
-      duration: 2
-      duration_range: .05
-      envelope: ['gaussian', 'hanning', 'expodec']
-      envelope_range: 1.0
-    pan: 70
-    pan_range: 140
+      duration: .05
+      #duration_range: .05
+      #envelope: ['gaussian', 'hanning', 'expodec']
+      #envelope_range: 1.0
+    dephase:
+      type: cubic
+      points: [[0,2],[.4,40],[1,10]]

@@ -47,7 +47,7 @@ class StreamConfig:
     Condiviso tra Stream e i suoi controller (PointerController, 
     PitchController, DensityController, VoiceManager).
     """
-    dephase: Optional[Union[dict, bool, int, float]] = False
+    dephase: Optional[Union[dict, bool, int, float, list]] = False
     range_always_active: bool = False
     distribution_mode: str = 'uniform'
     time_mode: str = 'absolute'
