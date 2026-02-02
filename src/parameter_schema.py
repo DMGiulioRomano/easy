@@ -137,14 +137,12 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
     ParameterSpec(
         name='loop_start',
         yaml_path='loop_start',
-        default=None,
-        is_smart=False                     
+        default=None
     ),
     ParameterSpec(
         name='loop_end',
         yaml_path='loop_end',
         default=None,
-        is_smart=False,                     
         exclusive_group='loop_bounds',
         group_priority=1                    
     ),

@@ -145,9 +145,20 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
     ),
     
     'loop_dur': ParameterBounds(
-        min_val=0.001,
+        min_val=0.005,
         max_val=100.0 
     ),
+
+    'loop_start': ParameterBounds(
+        min_val=0,
+        max_val=100.0 
+    ),
+
+    'loop_end': ParameterBounds(
+        min_val=0.0,
+        max_val=100.0 
+    ),
+
 
     # =========================================================================
     # OUTPUT (SPATIALIZATION & AMP)
