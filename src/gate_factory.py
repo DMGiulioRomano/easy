@@ -25,18 +25,11 @@ class GateFactory:
         
     @staticmethod
     def _is_envelope_like(obj):
-        """Riconosce se un oggetto rappresenta un envelope."""
-        # Lista di breakpoints
-        if isinstance(obj, list) and len(obj) > 0:
-            # [[t,v], ...] o lista di liste
-            return all(isinstance(item, list) and len(item) >= 2 
-                    for item in obj)
-        
-        # Dict con struttura envelope
-        if isinstance(obj, dict):
-            return 'points' in obj
-        
-        return False
+        """
+        Delega alla classe Envelope (Single Responsibility).
+        Mantiene backward compatibility per chiamanti esistenti.
+        """
+        return Envelope.is_envelope_like(obj)
 
     @staticmethod
     def _classify_dephase(dephase) -> DephaseMode:

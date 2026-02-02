@@ -106,19 +106,20 @@ class PointerController:
         return scaled
 
     def _scale_value(self, value, scale: float):
-        """Scala un valore che puo' essere scalare, lista (envelope) o dict."""
+        """
+        Scala un valore che può essere scalare, envelope, o dict.
+        
+        FIXED: Ora gestisce correttamente marker 'cycle' delegando a Envelope.
+        """
         if isinstance(value, (int, float)):
             return value * scale
-        if isinstance(value, list):
-            # Envelope come lista di punti [[t, y], ...]
-            # Scala solo le Y (i valori), non i tempi
-            return [[t, y * scale] for t, y in value]
-        if isinstance(value, dict):
-            points = value.get('points', [])
-            scaled = dict(value)
-            scaled['points'] = [[t, y * scale] for t, y in points]
-            return scaled
-        return value  # Tipo non riconosciuto, passa invariato
+        
+        # Envelope-like: usa metodo centralizzato
+        if Envelope.is_envelope_like(value):
+            return Envelope.scale_envelope_values(value, scale)
+        
+        # Tipo non riconosciuto, passa invariato
+        return value
 
     def _init_loop_state(self) -> None:
         self._in_loop = False

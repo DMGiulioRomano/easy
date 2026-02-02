@@ -11,11 +11,11 @@ streams:
     distribution_mode: 'gaussian'
     density: 
       type: cubic
-      points: [[0,10],[.4,200],[1, 50]]
+      points: [[0,10],[.1,50], cycle]
     distribution: .5
     pointer:
-      speed: 1
-      loop_start: 0
+      speed: -1
+      loop_start: 0.3
       loop_dur: [[0,0.1],[.1,0.02], cycle]
     grain:
       duration: .05
@@ -23,5 +23,5 @@ streams:
       #envelope: ['gaussian', 'hanning', 'expodec']
       #envelope_range: 1.0
     dephase:
-      type: cubic
-      points: [[0,2],[.4,40],[1,10]]
+      type: 'cubic'
+      points: [[0,10],[.1,0], cycle]

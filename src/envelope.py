@@ -382,7 +382,201 @@ class Envelope:
         raise NotImplementedError(
             "integrate() per envelope non ciclici da implementare"
         )
+
     
+    @staticmethod
+    def is_envelope_like(obj: Any) -> bool:
+        """
+        Type checker centralizzato: rileva se un oggetto rappresenta envelope-like data.
+        
+        Riconosce:
+        - Liste di breakpoints: [[t,v], ...] con possibili marker 'cycle'
+        - Dict con chiave 'points'
+        - Oggetti Envelope
+        
+        Design Pattern: Type Checker
+        Centralizza la logica che era sparsa in gate_factory, parser, ecc.
+        """
+        # Già un Envelope
+        if isinstance(obj, Envelope):
+            return True
+        
+        # Dict con struttura envelope
+        if isinstance(obj, dict) and 'points' in obj:
+            return True
+        
+        # Lista di breakpoints (con possibili 'cycle')
+        if isinstance(obj, list) and len(obj) > 0:
+            # Tutti gli item devono essere o liste [t,v] o marker 'cycle'
+            for item in obj:
+                if isinstance(item, str):
+                    # Marker 'cycle' è valido
+                    if item.lower() != 'cycle':
+                        return False
+                elif isinstance(item, list):
+                    # Breakpoint deve avere almeno 2 elementi
+                    if len(item) < 2:
+                        return False
+                else:
+                    # Tipo non riconosciuto
+                    return False
+            return True
+        
+        return False
+    
+    @staticmethod
+    def extract_points(raw_data: Union[List, dict]) -> List:
+        """
+        Estrae lista pulita di breakpoints da raw_data, ignorando marker 'cycle'.
+        
+        Utile per operazioni che devono processare solo i punti numerici
+        senza considerare i marker strutturali.
+        
+        Args:
+            raw_data: lista mista o dict con 'points'
+            
+        Returns:
+            Lista di soli breakpoints [[t,v], ...] senza marker
+        """
+        if isinstance(raw_data, dict):
+            points_data = raw_data.get('points', [])
+        elif isinstance(raw_data, list):
+            points_data = raw_data
+        else:
+            raise ValueError(f"Formato non valido: {type(raw_data)}")
+        
+        # Filtra solo i breakpoints numerici
+        return [item for item in points_data 
+                if isinstance(item, list) and len(item) >= 2]
+    
+    @staticmethod
+    def scale_envelope_values(
+        raw_data: Union[List, dict], 
+        scale: float
+    ) -> Union[List, dict]:
+        """
+        Scala i VALORI (Y) di un envelope-like object mantenendo struttura.
+        NON scala i tempi (X).
+        
+        Design Pattern: Strategy per scaling
+        Gestisce correttamente marker 'cycle' e strutture dict.
+        
+        Args:
+            raw_data: lista o dict con punti
+            scale: fattore di scala per i valori Y
+            
+        Returns:
+            Stessa struttura di input con valori scalati
+        """
+        if isinstance(raw_data, dict):
+            # Dict: processa ricorsivamente 'points'
+            scaled_dict = dict(raw_data)
+            if 'points' in scaled_dict:
+                scaled_dict['points'] = Envelope.scale_envelope_values(
+                    scaled_dict['points'], 
+                    scale
+                )
+            return scaled_dict
+        
+        elif isinstance(raw_data, list):
+            # Lista: scala solo i breakpoints, preserva marker
+            scaled_list = []
+            for item in raw_data:
+                if isinstance(item, str):
+                    # Marker 'cycle' passa inalterato
+                    scaled_list.append(item)
+                elif isinstance(item, list) and len(item) >= 2:
+                    # Breakpoint [t, y]: scala solo y
+                    t, y = item[0], item[1]
+                    scaled_list.append([t, y * scale])
+                else:
+                    # Safety: passa invariato
+                    scaled_list.append(item)
+            return scaled_list
+        
+        else:
+            raise ValueError(f"Tipo non supportato: {type(raw_data)}")
+    
+    @classmethod
+    def from_raw_with_scaling(
+        cls,
+        raw_data: Union[List, dict],
+        time_scale: float = 1.0,
+        value_scale: float = 1.0
+    ) -> 'Envelope':
+        """
+        Factory method: crea Envelope da raw data con scaling opzionale.
+        
+        Combina funzionalità di create_scaled_envelope + scale_values.
+        
+        Args:
+            raw_data: lista [[t,v],...,'cycle'] o dict
+            time_scale: fattore scala per tempi (per normalized mode)
+            value_scale: fattore scala per valori (per loop_unit scaling)
+            
+        Returns:
+            Envelope con scaling applicato
+        """
+        # 1. Scala valori se richiesto
+        if value_scale != 1.0:
+            raw_data = cls.scale_envelope_values(raw_data, value_scale)
+        
+        # 2. Usa create_scaled_envelope per gestire time scaling
+        return create_scaled_envelope(raw_data, time_scale, 'normalized' if time_scale != 1.0 else 'absolute')
+
+    @staticmethod
+    def _scale_time_values(raw_points: List, time_scale: float) -> List:
+        """
+        Scala solo i TEMPI (X) dei breakpoints, preservando marker 'cycle'.
+        
+        Args:
+            raw_points: lista mista di [t, v] e 'cycle'
+            time_scale: fattore di scala per i tempi
+            
+        Returns:
+            Lista con tempi scalati e marker preservati
+        """
+        scaled = []
+        for item in raw_points:
+            if isinstance(item, str):
+                # Marker 'cycle' passa inalterato
+                scaled.append(item)
+            elif isinstance(item, list) and len(item) >= 2:
+                # Breakpoint: scala solo il tempo (X)
+                t, v = item[0], item[1]
+                scaled.append([t * time_scale, v])
+            else:
+                # Safety fallback
+                scaled.append(item)
+        return scaled
+
+
+    @property
+    def breakpoints(self) -> List[List[float]]:
+        """
+        Restituisce lista flat di tutti i breakpoints (senza marker 'cycle').
+        
+        Aggrega i breakpoints da tutti i segments per backward compatibility
+        con codice che accede direttamente a .breakpoints
+        
+        Returns:
+            Lista di [time, value] ordinati per tempo
+        """
+        all_points = []
+        for segment in self.segments:
+            all_points.extend(segment['breakpoints'])
+        
+        # Ordina per tempo e rimuovi duplicati
+        # (due segments potrebbero condividere punti ai bordi)
+        seen = set()
+        unique_points = []
+        for t, v in sorted(all_points, key=lambda p: p[0]):
+            if t not in seen:
+                seen.add(t)
+                unique_points.append([t, v])
+        
+        return unique_points
+
     def __repr__(self):
         return (
             f"Envelope(type={self.type}, "
@@ -390,55 +584,32 @@ class Envelope:
         )
 
 
+# envelope.py - FIX create_scaled_envelope()
+
 def create_scaled_envelope(
     raw_data: Union[List, dict],
     duration: float = 1.0,
     time_mode: str = 'absolute'
 ) -> Envelope:
-    """
-    Factory function per creare Envelope con gestione scaling temporale.
+    """Factory function per creare Envelope con gestione scaling temporale."""
     
-    Centralizza la logica di creazione/scaling envelope usata da Parser,
-    GateFactory, e qualsiasi altro componente che ne abbia bisogno.
-    
-    Args:
-        raw_data: lista [[t,v], ...] o dict {'points': ..., 'type': ..., 'time_unit': ...}
-        duration: durata stream per scaling (default 1.0 = no scaling)
-        time_mode: 'absolute' (tempi in secondi) o 'normalized' (0-1)
-    
-    Returns:
-        Envelope con tempi scalati se time_mode='normalized'
-    
-    Examples:
-        # Assoluto: nessun scaling
-        env = create_scaled_envelope([[0, 10], [5, 50]], duration=10, time_mode='absolute')
-        
-        # Normalized: 0.5 diventa 5.0
-        env = create_scaled_envelope([[0, 10], [0.5, 50]], duration=10, time_mode='normalized')
-        
-        # Override locale
-        env = create_scaled_envelope(
-            {'points': [[0.5, 50]], 'time_unit': 'absolute'},
-            duration=10, 
-            time_mode='normalized'  # ignorato per time_unit locale
-        )
-    """
     # A) Parse struttura
     if isinstance(raw_data, dict):
         points = raw_data.get('points', [])
         env_type = raw_data.get('type', 'linear')
-        local_time_unit = raw_data.get('time_unit')  # Override locale
+        local_time_unit = raw_data.get('time_unit')
     else:
         points = raw_data
         env_type = 'linear'
         local_time_unit = None
     
-    # B) Determina modalità effettiva (locale vince su globale)
+    # B) Determina modalità effettiva
     effective_mode = local_time_unit if local_time_unit else time_mode
     
     # C) Scala tempi se necessario
     if effective_mode == 'normalized':
-        scaled_points = [[t * duration, v] for t, v in points]
+        # USA IL METODO STATICO per gestire correttamente 'cycle'
+        scaled_points = Envelope._scale_time_values(points, duration)
     else:
         scaled_points = points
     
@@ -447,3 +618,5 @@ def create_scaled_envelope(
         return Envelope({'type': env_type, 'points': scaled_points})
     else:
         return Envelope(scaled_points)
+
+
