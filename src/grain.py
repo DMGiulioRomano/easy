@@ -1,17 +1,24 @@
-class Grain:
-    def __init__(self, onset, duration, pointer_pos, pitch_ratio, volume, pan, sample_table, envelope_table):
-        self.onset = onset         
-        self.duration = duration   
-        self.pointer_pos = pointer_pos
-        self.pitch_ratio = pitch_ratio
-        self.volume = volume
-        self.pan = pan
-        self.sample_table = sample_table
-        self.envelope_table = envelope_table
+from dataclasses import dataclass
 
-    def to_score_line(self):
-        """Genera la linea di score Csound"""
-        return (f'i "Grain" {self.onset:.6f} {self.duration} '
-                f'{self.pointer_pos:.6f} {self.pitch_ratio} '
-                f'{self.volume} {self.pan} '
-                f'{self.sample_table} {self.envelope_table}\n')  
+@dataclass(frozen=True, slots=True)
+class Grain:
+    """
+    Rappresentazione immutabile di un singolo evento granulare.
+    Usa slots=True per ottimizzare la memoria su grandi quantità di istanze.
+    """
+    onset: float
+    duration: float
+    pointer_pos: float
+    pitch_ratio: float
+    volume: float
+    pan: float
+    sample_table: int
+    envelope_table: int
+
+    def to_score_line(self) -> str:
+        """Genera la linea di score Csound."""
+        # Nota: l'accesso agli attributi è più veloce con slots
+        return (f'i "Grain" {self.onset:.6f} {self.duration:.6f} '
+                f'{self.pointer_pos:.6f} {self.pitch_ratio:.6f} '
+                f'{self.volume:.2f} {self.pan:.3f} '
+                f'{self.sample_table} {self.envelope_table}\n')

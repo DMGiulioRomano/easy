@@ -45,9 +45,6 @@ instr Grain
     ; ═══════════════════════════════════════════════════════════════════
     ; GRAIN REVERSE: se flag=1, inverte direzione lettura campioni
     ; ═══════════════════════════════════════════════════════════════════
-    if giTest == 2 then    
-        prints "grainId %d, iStartNorm: %f\n", iId, iStartNorm
-    endif
     iAmp = ampdb(iVolume)
     ;-------------------------------------------------------------------------
     ; AUDIO PROCESSING

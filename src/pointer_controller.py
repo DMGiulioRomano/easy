@@ -63,15 +63,10 @@ class PointerController:
     # =========================================================================
     def _init_params(self, params: dict) -> None:
         # 1. Pre-processing: conversione unita' PRIMA del pipeline
-        #    Unico punto in cui si legge loop_unit dal dizionario grezzo.
-        #    Dopo questa fase i valori sono gia' in secondi assoluti.
         normalized_params = self._pre_normalize_loop_params(params)
 
         # 2. Tutto entra nel pipeline standard. Nessun caso speciale.
-        all_params = self._orchestrator.create_all_parameters(
-            normalized_params, schema=POINTER_PARAMETER_SCHEMA
-        )
-
+        all_params = self._orchestrator.create_all_parameters(normalized_params, schema=POINTER_PARAMETER_SCHEMA)
         # 3. Assegnazione uniforme. Nessun 'continue', nessun fake_params.
         for name, param_obj in all_params.items():
             attr_name = name.replace('pointer_', '')
@@ -126,10 +121,11 @@ class PointerController:
         return value  # Tipo non riconosciuto, passa invariato
 
     def _init_loop_state(self) -> None:
-        """Inizializza stato del phase accumulator per loop."""
         self._in_loop = False
-        self._loop_phase = 0.0           # Fase nel loop (0.0 - 1.0)
-        self._last_linear_pos = None     # Per calcolare delta movimento
+        self._loop_absolute_pos = None      
+        self._last_linear_pos = None
+        self._prev_loop_start = None        
+        self._prev_loop_end = None          
     
     # =========================================================================
     # CALCULATION
@@ -172,7 +168,125 @@ class PointerController:
         if grain_reverse:
             final_pos+=grain_duration
         return wrap_fn(final_pos)        
-    
+
+    def _apply_loop(
+        self,
+        linear_pos: float,
+        elapsed_time: float
+    ) -> tuple[float, float, Callable[[float], float]]:
+        """
+        Applica logica loop con phase accumulator basato su posizione assoluta.
+        
+        Strategia:
+        - Traccia posizione assoluta nel sample (non fase relativa 0-1)
+        - Movimento inerziale: posizione += delta_pos
+        - Se loop bounds cambiano e pointer è fuori → RESET a loop_start
+        - Se loop bounds stabili e pointer supera loop_end → WRAP modulare
+        
+        Returns:
+            tuple: (base_pos, context_length, wrap_function)
+        """
+        # =========================================================================
+        # STEP 1: Valuta loop bounds CORRENTI (possono essere envelope!)
+        # =========================================================================
+        current_loop_start = self.loop_start.get_value(elapsed_time)
+        
+        if self.loop_dur is not None:
+            # Modalità loop_dur (dinamica)
+            current_dur = self.loop_dur.get_value(elapsed_time)
+            current_loop_dur = min(current_dur, self._sample_dur_sec)
+        else:
+            # Modalità loop_end (può essere dinamica ora!)
+            current_loop_end_val = self.loop_end.get_value(elapsed_time)
+            current_loop_dur = current_loop_end_val - current_loop_start
+        
+        current_loop_end = min(current_loop_start + current_loop_dur, self._sample_dur_sec)
+        loop_length = max(current_loop_end - current_loop_start, 0.001)
+        
+        # =========================================================================
+        # STEP 2: Check ENTRATA nel loop (se non siamo ancora dentro)
+        # =========================================================================
+        if not self._in_loop:
+            check_pos = linear_pos % self._sample_dur_sec
+            if current_loop_start <= check_pos < current_loop_end:
+                # ENTRATA nel loop
+                self._in_loop = True
+                self._loop_absolute_pos = check_pos
+                self._last_linear_pos = linear_pos
+                self._prev_loop_start = current_loop_start
+                self._prev_loop_end = current_loop_end
+                
+                # Restituisci posizione di entrata
+                base_pos = check_pos
+                context_length = loop_length
+                
+                def wrap_fn(pos: float) -> float:
+                    rel = pos - current_loop_start
+                    return current_loop_start + (rel % loop_length)
+                
+                return base_pos, context_length, wrap_fn
+        
+        # =========================================================================
+        # STEP 3: Siamo DENTRO il loop
+        # =========================================================================
+        if self._in_loop:
+            # ---------------------------------------------------------------------
+            # STEP 3a: Calcola movimento inerziale del pointer
+            # ---------------------------------------------------------------------
+            if self._last_linear_pos is not None:
+                delta_pos = linear_pos - self._last_linear_pos
+                self._loop_absolute_pos += delta_pos
+            
+            self._last_linear_pos = linear_pos
+            
+            # ---------------------------------------------------------------------
+            # STEP 3b: Rileva se i bounds sono cambiati
+            # ---------------------------------------------------------------------
+            bounds_changed = (
+                self._prev_loop_start is not None and (
+                    self._prev_loop_start != current_loop_start or
+                    self._prev_loop_end != current_loop_end
+                )
+            )
+            
+            # ---------------------------------------------------------------------
+            # STEP 3c: Gestisci fuori-bounds
+            # ---------------------------------------------------------------------
+            if bounds_changed:
+                # I bounds sono cambiati
+                if not (current_loop_start <= self._loop_absolute_pos < current_loop_end):
+                    # Pointer fuori dai nuovi bounds → RESET a loop_start
+                    self._loop_absolute_pos = current_loop_start
+            else:
+                # Bounds stabili, wrap ciclico normale
+                if self._loop_absolute_pos >= current_loop_end:
+                    # Wrap modulare: preserva fase relativa
+                    rel = self._loop_absolute_pos - current_loop_start
+                    self._loop_absolute_pos = current_loop_start + (rel % loop_length)
+                elif self._loop_absolute_pos < current_loop_start:
+                    # Edge case: pointer è "dietro" loop_start (raro, ma possibile)
+                    # Questo può succedere se speed è negativo o con movimenti strani
+                    rel = self._loop_absolute_pos - current_loop_start
+                    self._loop_absolute_pos = current_loop_end + (rel % loop_length)
+            
+            # ---------------------------------------------------------------------
+            # STEP 3d: Aggiorna tracciamento bounds per prossimo frame
+            # ---------------------------------------------------------------------
+            self._prev_loop_start = current_loop_start
+            self._prev_loop_end = current_loop_end
+            
+            # ---------------------------------------------------------------------
+            # STEP 3e: Restituisci risultato
+            # ---------------------------------------------------------------------
+            base_pos = self._loop_absolute_pos
+            context_length = loop_length
+            
+            def wrap_fn(pos: float) -> float:
+                """Wrap function per applicare deviazione dentro i bounds del loop."""
+                rel = pos - current_loop_start
+                return current_loop_start + (rel % loop_length)
+            
+            return base_pos, context_length, wrap_fn
 
     def _calculate_linear_position(self, elapsed_time: float) -> float:
         """
@@ -187,64 +301,7 @@ class PointerController:
         else:
             sample_position = elapsed_time * float(internal_val)
         return self.start + sample_position
-    
 
-    def _apply_loop(
-        self,
-        linear_pos: float,
-        elapsed_time: float
-    ) -> tuple[float, float, Callable[[float], float]]:
-        """
-        Applica logica loop con phase accumulator.
-        
-        Returns:
-            tuple: (base_pos, context_length, wrap_function)
-        """
-        # Calcola loop bounds correnti
-        current_loop_start = self.loop_start
-        
-        if self.loop_dur is not None:
-            # loop_dur dinamico (può essere Envelope)
-            current_dur = self.loop_dur.get_value(elapsed_time)
-            current_loop_dur = min(current_dur, self._sample_dur_sec)
-        else:
-            # loop_end fisso (legacy)
-            current_loop_dur = self.loop_end - self.loop_start
-        
-        current_loop_end = min(current_loop_start + current_loop_dur, self._sample_dur_sec)
-        loop_length = max(current_loop_end - current_loop_start, 0.001)
-        
-        # Phase accumulator logic
-        if not self._in_loop:
-            # Check entrata nel loop
-            check_pos = linear_pos % self._sample_dur_sec
-            if current_loop_start <= check_pos < current_loop_end:
-                self._in_loop = True
-                # Inizializza fase: posizione relativa nel loop (0-1)
-                self._loop_phase = (check_pos - current_loop_start) / loop_length
-                self._last_linear_pos = linear_pos
-        
-        if self._in_loop:
-            if self._last_linear_pos is not None:
-                delta_pos = linear_pos - self._last_linear_pos
-                delta_phase = delta_pos / loop_length
-                self._loop_phase += delta_phase
-                self._loop_phase = self._loop_phase % 1.0
-            
-            self._last_linear_pos = linear_pos
-            base_pos = current_loop_start + self._loop_phase * loop_length
-            context_length = loop_length
-            
-            def wrap_fn(pos: float) -> float:
-                rel = pos - current_loop_start
-                return current_loop_start + (rel % loop_length)
-        else:
-            base_pos = linear_pos % self._sample_dur_sec
-            context_length = self._sample_dur_sec
-            wrap_fn = lambda p: p % self._sample_dur_sec
-        
-        return base_pos, context_length, wrap_fn
-        
     # =========================================================================
     # STATE MANAGEMENT
     # =========================================================================
