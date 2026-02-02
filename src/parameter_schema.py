@@ -135,9 +135,24 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
         dephase_key='pointer',
     ),
     ParameterSpec(
+        name='loop_start',
+        yaml_path='loop_start',
+        default=None,
+        is_smart=False                     
+    ),
+    ParameterSpec(
+        name='loop_end',
+        yaml_path='loop_end',
+        default=None,
+        is_smart=False,                     
+        exclusive_group='loop_bounds',
+        group_priority=1                    
+    ),
+    ParameterSpec(
         name='loop_dur',
         yaml_path='loop_dur',
-        default=None 
+        default=None,
+        exclusive_group='loop_bounds',
     ),
 ]
 

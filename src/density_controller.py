@@ -38,20 +38,20 @@ class DensityController:
         self._orchestrator = ParameterOrchestrator(config=config)
 
         # Create parameters
-        self._params = self._orchestrator.create_all_parameters(
+        self._loaded_params = self._orchestrator.create_all_parameters(
             params,
             schema=DENSITY_PARAMETER_SCHEMA
         )
 
         selected_param_name = self._find_selected_param()
-        param_obj = self._params[selected_param_name]
+        param_obj = self._loaded_params[selected_param_name]
         
         self._strategy = StrategyFactory.create_density_strategy(
             selected_param_name,
             param_obj,
-            self._params  # Passa tutti i params per accedere a 'distribution'
+            self._loaded_params  # Passa tutti i params per accedere a 'distribution'
         )
-        self.distribution_param = self._params['distribution']
+        self.distribution_param = self._loaded_params['distribution']
     
     def _find_selected_param(self) -> str:
         """
@@ -63,13 +63,13 @@ class DensityController:
         semplicemente trova quale chiave sopravvisse, incrociando con
         DENSITY_STRATEGIES come sorgente di verità sui nomi validi.
 
-        Nota: _params contiene anche 'distribution' (non esclusivo),
+        Nota: _loaded_params contiene anche 'distribution' (non esclusivo),
         quindi il filtraggio via DENSITY_STRATEGIES è necessario.
 
         Raises:
             ValueError: se zero o più di un parametro density vengono trovati
         """
-        candidates = [name for name in self._params if name in DENSITY_STRATEGIES]
+        candidates = [name for name in self._loaded_params if name in DENSITY_STRATEGIES and self._loaded_params[name] is not None]
         if len(candidates) != 1:
             raise ValueError(
                 f"Atteso esattamente 1 parametro density dal gruppo esclusivo, "
@@ -131,14 +131,14 @@ class DensityController:
     def fill_factor(self):
         """Espone parametro fill_factor (se attivo), altrimenti None."""
         if self.mode == 'fill_factor':
-            return self._params.get('fill_factor')
+            return self._loaded_params.get('fill_factor')
         return None
 
     @property  
     def density(self):
         """Espone parametro density (se attivo), altrimenti None."""
         if self.mode == 'density':
-            return self._params.get('density')
+            return self._loaded_params.get('density')
         return None
 
     def __repr__(self) -> str:

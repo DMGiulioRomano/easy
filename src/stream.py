@@ -48,9 +48,8 @@ class Stream:
         Args:
             params: dizionario parametri dallo YAML
         """
-
         # === 3. CONFIGURATION ===
-        config = StreamConfig.from_yaml(params,StreamContext.from_yaml(params))
+        config = StreamConfig.from_yaml(params,StreamContext.from_yaml(params, sample_dur_sec=get_sample_duration(params['sample'])))
         self._init_stream_context(params)
         # === 4. PARAMETRI SPECIALI ===
         self._init_grain_reverse(params)
@@ -67,7 +66,7 @@ class Stream:
         self.generated = False
 
     def _init_stream_context(self, params):
-        base = {field.name for field in fields(StreamContext)}
+        base = {field.name for field in fields(StreamContext) if field.name != 'sample_dur_sec'}
         missing = base - set(params.keys())
         if missing:
             missing_list = sorted(missing)
@@ -108,10 +107,8 @@ class Stream:
     def _init_controllers(self, params: dict, config: StreamConfig) -> None:
         """Inizializza tutti i controller con i loro parametri."""
         # POINTER CONTROLLER
-        pointer_params = params.get('pointer', {})
         self._pointer = PointerController(
-            params=pointer_params,
-            sample_dur_sec=self.sample_dur_sec,
+            params=params.get('pointer', {}),
             config=config
         )
         
@@ -133,9 +130,8 @@ class Stream:
         )
 
         # VOICE MANAGER
-        voices_params = params.get('voices', {})
         self._voice_manager = VoiceManager(
-            params=voices_params,
+            params=params.get('voices', {}),
             config=config
         )
     

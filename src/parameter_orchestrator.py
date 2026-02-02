@@ -26,30 +26,35 @@ class ParameterOrchestrator:
         self._param_factory = ParameterFactory(config)
         self._config = config
     
+
     def create_all_parameters(
         self,
         yaml_data: dict,
         schema: list
     ) -> Dict[str, Parameter]:
-        """
-        Crea tutti i parametri con i rispettivi gate.
-        
-        """
         # Seleziona parametri attivi
-        selected_specs, _ = ExclusiveGroupSelector.select_parameters(
+        selected_specs, group_members = ExclusiveGroupSelector.select_parameters(
             schema, yaml_data
         )
-        
+
         result = {}
         for spec_name, spec in selected_specs.items():
             if spec.is_smart:
                 param = self.create_parameter_with_gate(yaml_data, spec)
                 result[spec_name] = param
             else:
-                # Parametri non smart (raw)
                 result[spec_name] = self._param_factory.create_raw_parameter(spec, yaml_data)
+
+        # I perdenti dei gruppi esclusivi vanno a None.
+        # Garantisce che l'output abbia sempre forma completa:
+        # il consumer non deve mai chiedersi quali attributi esistono.
+        for group_specs in group_members.values():
+            for spec in group_specs:
+                if spec.name not in result:
+                    result[spec.name] = None
+
         return result
-    
+
     def create_parameter_with_gate(
         self,
         yaml_data: dict,

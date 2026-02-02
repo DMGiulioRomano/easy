@@ -40,9 +40,8 @@ class PointerController:
     
     def __init__(
         self,
-        params: dict,                      # 1. Dati specifici
-        config: StreamConfig,       # 2. Regole processo
-        sample_dur_sec: float,             # 5. Context audio (se serve)
+        params: dict,       
+        config: StreamConfig
     ):
         """
         Inizializza il controller.
@@ -53,9 +52,8 @@ class PointerController:
             sample_dur_sec: durata del sample in secondi
             time_mode: 'absolute' o 'normalized' (default per envelope)
         """
-        self._sample_dur_sec = sample_dur_sec
-        self._time_mode = config.time_mode  
-        # Create orchestrator
+        self._config = config
+        self._sample_dur_sec = config.context.sample_dur_sec 
         self._orchestrator = ParameterOrchestrator(config=config)
         self._init_params(params)
         self._init_loop_state()
@@ -63,30 +61,70 @@ class PointerController:
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
-    
     def _init_params(self, params: dict) -> None:
-        """
-        Inizializzazione dinamica con mappatura nomi e gestione eccezioni.
-        """
-        # 1. Carica TUTTO usando lo schema specifico
-        # Questo crea: 'pointer_speed', 'pointer_jitter', 'pointer_offset_range', 
-        # 'pointer_start', 'loop_dur' (non scalato!)
+        # 1. Pre-processing: conversione unita' PRIMA del pipeline
+        #    Unico punto in cui si legge loop_unit dal dizionario grezzo.
+        #    Dopo questa fase i valori sono gia' in secondi assoluti.
+        normalized_params = self._pre_normalize_loop_params(params)
+
+        # 2. Tutto entra nel pipeline standard. Nessun caso speciale.
         all_params = self._orchestrator.create_all_parameters(
-            params, schema=POINTER_PARAMETER_SCHEMA
+            normalized_params, schema=POINTER_PARAMETER_SCHEMA
         )
-                
-        # 2. Assegna dinamicamente rimuovendo il prefisso 'pointer_'
+
+        # 3. Assegnazione uniforme. Nessun 'continue', nessun fake_params.
         for name, param_obj in all_params.items():
-            # CASO SPECIALE: loop_dur lo saltiamo qui, lo gestisce _init_loop_params
-            if name == 'loop_dur': continue 
-            # Rimuovi prefisso 'pointer_' se presente per avere self.speed invece di self.pointer_speed
             attr_name = name.replace('pointer_', '')
-            # Assegna (self.speed = param_obj)
             setattr(self, attr_name, param_obj)
-            
-        # 3. Gestione Loop (che gestisce loop_dur manualmente con lo scaling)
-        self._init_loop_params(params)
-    
+
+        # 4. has_loop dipende solo dalla presenza di loop_start
+        self.has_loop = self.loop_start is not None
+        if self.has_loop and self.loop_end is None and self.loop_dur is None:
+            self.loop_end = self._sample_dur_sec
+
+    def _pre_normalize_loop_params(self, params: dict) -> dict:
+        """
+        Conversione di unita' per i parametri loop.
+        
+        Se loop_unit == 'normalized', scala i valori dei parametri loop
+        da [0.0-1.0] a secondi assoluti usando sample_dur_sec dal context.
+        
+        Questo metodo e' l'unico punto nel sistema che legge 'loop_unit'
+        dal dizionario grezzo, ed e' il motivo legittimo: loop_unit e' un
+        meta-parametro che controlla l'interpretazione degli altri, non un
+        valore sintetizzabile.
+        """
+        if 'loop_start' not in params:
+            return params  # Nessun loop configurato
+
+        loop_unit = params.get('loop_unit') or self._config.time_mode
+        if loop_unit != 'normalized':
+            return params  # Valori gia' in secondi assoluti
+
+        scale = self._sample_dur_sec
+
+        # Copia superficiale: non modificare il dizionario originale
+        scaled = dict(params)
+        for key in ('loop_start', 'loop_end', 'loop_dur'):
+            if key in scaled and scaled[key] is not None:
+                scaled[key] = self._scale_value(scaled[key], scale)
+        return scaled
+
+    def _scale_value(self, value, scale: float):
+        """Scala un valore che puo' essere scalare, lista (envelope) o dict."""
+        if isinstance(value, (int, float)):
+            return value * scale
+        if isinstance(value, list):
+            # Envelope come lista di punti [[t, y], ...]
+            # Scala solo le Y (i valori), non i tempi
+            return [[t, y * scale] for t, y in value]
+        if isinstance(value, dict):
+            points = value.get('points', [])
+            scaled = dict(value)
+            scaled['points'] = [[t, y * scale] for t, y in points]
+            return scaled
+        return value  # Tipo non riconosciuto, passa invariato
+
     def _init_loop_params(self, params: dict) -> None:
         """
         Inizializza parametri loop con supporto per normalizzazione.

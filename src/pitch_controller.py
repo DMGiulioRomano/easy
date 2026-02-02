@@ -65,7 +65,7 @@ class PitchController:
         Raises:
             ValueError: se zero o più di un parametro pitch vengono trovati
         """
-        candidates = [name for name in self._loaded_params if name in PITCH_STRATEGIES]
+        candidates = [name for name in self._loaded_params if name in PITCH_STRATEGIES and self._loaded_params[name] is not None]
         if len(candidates) != 1:
             raise ValueError(
                 f"Atteso esattamente 1 parametro pitch dal gruppo esclusivo, "
