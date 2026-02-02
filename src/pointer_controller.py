@@ -15,7 +15,7 @@ from envelope import Envelope
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
 from stream_config import StreamConfig
-
+from logger import log_config_warning
 class PointerController:
     """
     Gestisce il posizionamento della testina di lettura nel sample.
@@ -261,8 +261,22 @@ class PointerController:
         if bounds_changed:
             # I bounds sono cambiati
             if not (current_loop_start <= self._loop_absolute_pos < current_loop_end):
+                # parametro per logging
+                pointer_would_be = self._loop_absolute_pos
+                
                 # Pointer fuori dai nuovi bounds → RESET a loop_start
                 self._loop_absolute_pos = current_loop_start
+
+                # LOG del reset usando log_config_warning
+                log_config_warning(
+                    stream_id=self._config.context.stream_id,
+                    param_name="pointer_position",
+                    raw_value=pointer_would_be,
+                    clipped_value=current_loop_start,
+                    min_val=current_loop_start,
+                    max_val=current_loop_end,
+                    value_type="loop_reset"
+                )
         else:
             # Bounds stabili, wrap ciclico normale
             if self._loop_absolute_pos >= current_loop_end:
@@ -300,7 +314,7 @@ class PointerController:
         Se speed è un Envelope, integra per ottenere la posizione.
         Altrimenti: position = start + time * speed
         """
-        internal_val = self.speed.value
+        internal_val = self.speed_ratio.value
         if isinstance(internal_val, Envelope):
             sample_position = internal_val.integrate(0, elapsed_time)
         else:
@@ -320,7 +334,7 @@ class PointerController:
         Ritorna la velocità istantanea al tempo specificato.
         CORRETTO: Delega al Parameter.
         """
-        return self.speed.get_value(elapsed_time)
+        return self.speed_ratio.get_value(elapsed_time)
         
     # =========================================================================
     # PROPERTIES (Read-only access)
@@ -347,4 +361,4 @@ class PointerController:
     
     def __repr__(self) -> str:
         loop_info = f", loop={self.loop_start:.3f}-{self.loop_end or 'dynamic'}" if self.has_loop else ""
-        return f"PointerController(start={self.start}, speed={self.speed._value}{loop_info})"
+        return f"PointerController(start={self.start}, speed={self.speed_ratio._value}{loop_info})"

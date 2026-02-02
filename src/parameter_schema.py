@@ -123,8 +123,8 @@ POINTER_PARAMETER_SCHEMA: List[ParameterSpec] = [
         is_smart=False  # Valore raw, non usa bounds
     ),
     ParameterSpec(
-        name='pointer_speed',
-        yaml_path='speed',
+        name='pointer_speed_ratio',
+        yaml_path='speed_ratio',
         default=1.0
     ),
     ParameterSpec(

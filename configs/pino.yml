@@ -15,8 +15,8 @@ streams:
     distribution: .5
     pointer:
       speed: 1
-      loop_start: .5
-      loop_dur: .1
+      loop_start: [[0,0],[1,0.3]]
+      loop_dur: [[0,0.1],[1,0.02]]
     grain:
       duration: .05
       #duration_range: .05

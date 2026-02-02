@@ -130,7 +130,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
     # =========================================================================
     # POINTER (PLAYHEAD)
     # =========================================================================  
-    'pointer_speed': ParameterBounds(
+    'pointer_speed_ratio': ParameterBounds(
         min_val=-100.0,
         max_val=100.0
     ),
