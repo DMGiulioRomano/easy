@@ -236,7 +236,6 @@ class PointerController:
         # =========================================================================
         # STEP 3: Siamo DENTRO il loop
         # =========================================================================
-        # A questo punto self._in_loop è sicuramente True
         # ---------------------------------------------------------------------
         # STEP 3a: Calcola movimento inerziale del pointer
         # ---------------------------------------------------------------------
@@ -256,41 +255,44 @@ class PointerController:
             )
         )
         
+
         # ---------------------------------------------------------------------
         # STEP 3c: Gestisci fuori-bounds
         # ---------------------------------------------------------------------
         if bounds_changed:
             # I bounds sono cambiati
             if not (current_loop_start <= self._loop_absolute_pos < current_loop_end):
-                # parametro per logging
                 pointer_would_be = self._loop_absolute_pos
                 
-                # Pointer fuori dai nuovi bounds → RESET a loop_start
-                self._loop_absolute_pos = current_loop_start
+                # RESET DIRECTION-AWARE basato su delta_pos
+                # Se andava avanti (delta_pos >= 0) → reset a loop_start
+                # Se andava indietro (delta_pos < 0) → reset a loop_end
+                if delta_pos >= 0:
+                    self._loop_absolute_pos = current_loop_start
+                    reset_target = "loop_start"
+                else:
+                    self._loop_absolute_pos = current_loop_end
+                    reset_target = "loop_end"
 
-                # LOG del reset usando log_config_warning
+                # LOG del reset direction-aware
                 log_config_warning(
                     stream_id=self._config.context.stream_id,
                     param_name="pointer_position",
                     raw_value=pointer_would_be,
-                    clipped_value=current_loop_start,
+                    clipped_value=self._loop_absolute_pos,
                     min_val=current_loop_start,
                     max_val=current_loop_end,
-                    value_type="loop_reset"
+                    value_type=f"loop_reset_to_{reset_target}"
                 )
         else:
-            # Bounds stabili, wrap ciclico normale
-            if self._loop_absolute_pos >= current_loop_end:
-                # Wrap modulare: preserva fase relativa
+            # Bounds stabili: WRAP MODULARE UNIFICATO
+            # Funziona sia per movimento in avanti che indietro!
+            if not (current_loop_start <= self._loop_absolute_pos < current_loop_end):
                 rel = self._loop_absolute_pos - current_loop_start
                 self._loop_absolute_pos = current_loop_start + (rel % loop_length)
-            elif self._loop_absolute_pos < current_loop_start:
-                # Edge case: pointer è "dietro" loop_start (raro, ma possibile)
-                rel = self._loop_absolute_pos - current_loop_start
-                self._loop_absolute_pos = current_loop_end + (rel % loop_length)
-        
+                
         # ---------------------------------------------------------------------
-        # STEP 3d: Aggiorna tracciamento bounds per prossimo frame
+        # STEP 3d: Aggiorna tracciamento bounds 
         # ---------------------------------------------------------------------
         self._prev_loop_start = current_loop_start
         self._prev_loop_end = current_loop_end
@@ -310,10 +312,10 @@ class PointerController:
 
     def _calculate_linear_position(self, elapsed_time: float) -> float:
         """
-        Calcola posizione lineare da speed (con integrazione per envelope).
+        Calcola posizione lineare da speed_ratio (con integrazione per envelope).
         
-        Se speed è un Envelope, integra per ottenere la posizione.
-        Altrimenti: position = start + time * speed
+        Se speed_ratio è un Envelope, integra per ottenere la posizione.
+        Altrimenti: position = start + time * speed_ratio
         """
         internal_val = self.speed_ratio.value
         if isinstance(internal_val, Envelope):
@@ -331,10 +333,7 @@ class PointerController:
         self._init_loop_state()
 
     def get_speed(self, elapsed_time: float) -> float:
-        """
-        Ritorna la velocità istantanea al tempo specificato.
-        CORRETTO: Delega al Parameter.
-        """
+        """Ritorna la velocità istantanea al tempo specificato."""
         return self.speed_ratio.get_value(elapsed_time)
         
     # =========================================================================
@@ -354,7 +353,22 @@ class PointerController:
     @property
     def loop_phase(self) -> float:
         """Fase corrente nel loop (0.0 - 1.0)."""
-        return self._loop_phase
+        if not self._in_loop or self._loop_absolute_pos is None:
+            return 0.0
+        
+        loop_start = self.loop_start.get_value(0)
+        if self.loop_dur is not None:
+            loop_length = self.loop_dur.get_value(0)
+        else:
+            loop_end = self.loop_end.get_value(0)
+            loop_length = loop_end - loop_start
+        
+        if loop_length <= 0:
+            return 0.0
+        
+        rel_pos = self._loop_absolute_pos - loop_start
+        return (rel_pos % loop_length) / loop_length
+    
     
     # =========================================================================
     # REPR
