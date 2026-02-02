@@ -5,7 +5,7 @@ streams:
   - stream_id: "texture1"
     time_mode: normalized
     onset: 0.0
-    duration: 10
+    duration: 30
     sample: "pino2.wav"
     #range_always_active: 
     distribution_mode: 'gaussian'
@@ -15,8 +15,8 @@ streams:
     distribution: .5
     pointer:
       speed: 1
-      loop_start: [[0,0],[1,0.3]]
-      loop_dur: [[0,0.1],[1,0.02]]
+      loop_start: 0
+      loop_dur: [[0,0.1],[.1,0.02], cycle]
     grain:
       duration: .05
       #duration_range: .05
