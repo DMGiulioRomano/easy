@@ -604,23 +604,6 @@ class TestErrorHandling:
             Envelope("[[0,0],[0.1,1]]")
 
 
-# =============================================================================
-# 10. TEST INTEGRATE (NON SUPPORTATO)
-# =============================================================================
-
-class TestIntegrateNotSupported:
-    """Test che integrate() sollevi NotImplementedError per cicli."""
-    
-    def test_integrate_with_cycle_raises(self, env_single_cycle_linear):
-        """integrate() con ciclo solleva NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="non è ancora supportato"):
-            env_single_cycle_linear.integrate(0.0, 1.0)
-    
-    def test_integrate_with_normal_segment_ok(self, env_normal_only):
-        """integrate() su envelope normale (futuro: dovrebbe funzionare)."""
-        with pytest.raises(NotImplementedError):
-            env_normal_only.integrate(0.0, 1.0)
-
 
 # =============================================================================
 # 11. TEST COMPATIBILITÀ
@@ -752,3 +735,375 @@ class TestPerformance:
         assert result == pytest.approx(1.0, abs=1e-5)
 
 
+# =============================================================================
+# TEST INTEGRATE - ENVELOPE NORMALI
+# =============================================================================
+
+class TestIntegrateNormal:
+    """Test integrale per envelope senza cicli."""
+    
+    def test_integrate_single_constant(self):
+        """Envelope con singolo punto = costante."""
+        env = Envelope([[0, 42]])
+        # Integrale costante: base * altezza = 10 * 42 = 420
+        assert env.integrate(0, 10) == pytest.approx(420.0)
+    
+    def test_integrate_linear_full_triangle(self):
+        """Rampa lineare [0,0]->[10,100]: triangolo completo."""
+        env = Envelope([[0, 0], [10, 100]])
+        # Area triangolo: (base * altezza) / 2 = (10 * 100) / 2 = 500
+        assert env.integrate(0, 10) == pytest.approx(500.0)
+    
+    def test_integrate_linear_partial(self):
+        """Integrale parziale di rampa lineare."""
+        env = Envelope([[0, 0], [10, 100]])
+        # Da 0 a 5: triangolo più piccolo (5 * 50) / 2 = 125
+        assert env.integrate(0, 5) == pytest.approx(125.0)
+        # Da 5 a 10: trapezio con h=5, base1=50, base2=100
+        # Area = h * (b1 + b2) / 2 = 5 * 150 / 2 = 375
+        assert env.integrate(5, 10) == pytest.approx(375.0)
+    
+    def test_integrate_step_single_level(self):
+        """Step con un solo gradino."""
+        env = Envelope({'type': 'step', 'points': [[0, 10], [5, 10]]})
+        # Rettangolo: 5 * 10 = 50
+        assert env.integrate(0, 5) == pytest.approx(50.0)
+    
+    def test_integrate_step_multiple_levels(self):
+        """Step con gradini multipli."""
+        env = Envelope({
+            'type': 'step',
+            'points': [[0, 10], [5, 50], [10, 100]]
+        })
+        # Gradino 1 (0-5): 5 * 10 = 50
+        # Gradino 2 (5-10): 5 * 50 = 250
+        # Totale: 300
+        assert env.integrate(0, 10) == pytest.approx(300.0)
+    
+    def test_integrate_cubic_simple_ramp(self):
+        """Cubic semplice: verifica con integrazione numerica."""
+        env = Envelope({'type': 'cubic', 'points': [[0, 0], [10, 100]]})
+        # Per una rampa semplice, cubic dovrebbe dare circa 500
+        # (tolleranza maggiore per integrazione numerica)
+        assert env.integrate(0, 10) == pytest.approx(500.0, rel=1e-2)
+    
+    def test_integrate_reverse_interval(self):
+        """Integrale da to_time > from_time: negativo."""
+        env = Envelope([[0, 0], [10, 100]])
+        # integrate(10, 0) = -integrate(0, 10)
+        forward = env.integrate(0, 10)
+        backward = env.integrate(10, 0)
+        assert backward == pytest.approx(-forward)
+    
+    def test_integrate_zero_interval(self):
+        """Integrale con from_time == to_time: zero."""
+        env = Envelope([[0, 0], [10, 100]])
+        assert env.integrate(5, 5) == pytest.approx(0.0)
+    
+    def test_integrate_outside_envelope_hold(self):
+        """Integrale oltre i breakpoints: hold ultimo valore."""
+        env = Envelope([[0, 0], [10, 100]])
+        # Da 10 a 15: rettangolo 5 * 100 = 500
+        assert env.integrate(10, 15) == pytest.approx(500.0)
+    
+    def test_integrate_before_envelope_hold(self):
+        """Integrale prima dei breakpoints: hold primo valore."""
+        env = Envelope([[5, 50], [10, 100]])
+        # Da 0 a 5: rettangolo 5 * 50 = 250
+        assert env.integrate(0, 5) == pytest.approx(250.0)
+    
+    def test_integrate_spans_multiple_segments(self):
+        """Integrale che attraversa più segmenti."""
+        env = Envelope([[0, 0], [5, 50], [10, 0]])
+        # Segmento 1 (0-5): triangolo (5 * 50) / 2 = 125
+        # Segmento 2 (5-10): triangolo (5 * 50) / 2 = 125
+        # Totale: 250
+        assert env.integrate(0, 10) == pytest.approx(250.0)
+
+
+# =============================================================================
+# TEST INTEGRATE - CICLI SINGOLI
+# =============================================================================
+
+class TestIntegrateSingleCycle:
+    """Test integrale per envelope con un solo ciclo."""
+    
+    def test_integrate_cycle_single_period(self):
+        """Integrale di esattamente un periodo di ciclo."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        # Un ciclo completo: triangolo (1 * 10) / 2 = 5
+        assert env.integrate(0, 1) == pytest.approx(5.0)
+    
+    def test_integrate_cycle_two_periods(self):
+        """Integrale di due periodi completi."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        # Due cicli completi: 2 * 5 = 10
+        assert env.integrate(0, 2) == pytest.approx(10.0)
+    
+    def test_integrate_cycle_fractional_period(self):
+        """Integrale di 1.5 periodi."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        # 1 ciclo completo = 5
+        # + 0.5 ciclo = (0.5 * 5) / 2 = 1.25
+        # Totale: 6.25
+        assert env.integrate(0, 1.5) == pytest.approx(6.25)
+    
+    def test_integrate_cycle_partial_start(self):
+        """Integrale che inizia a metà del primo ciclo."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        # Da 0.5 a 1.5:
+        # - Fino alla fine del primo ciclo: trapezio
+        # - Un ciclo completo: triangolo = 5
+        # Approssimato: ~7.5
+        result = env.integrate(0.5, 1.5)
+        assert 7.0 < result < 8.0
+    
+    def test_integrate_cycle_many_periods(self):
+        """Integrale di molti periodi (test efficienza)."""
+        env = Envelope([[0, 0], [0.1, 1], 'cycle'])
+        # Ciclo = (0.1 * 1) / 2 = 0.05
+        # 100 cicli = 100 * 0.05 = 5.0
+        assert env.integrate(0, 10) == pytest.approx(5.0, rel=1e-2)
+    
+    def test_integrate_cycle_step_type(self):
+        """Ciclo con interpolazione step."""
+        env = Envelope({
+            'type': 'step',
+            'points': [[0, 5], [1, 5], 'cycle']
+        })
+        # Rettangolo costante: 3 * 5 = 15
+        assert env.integrate(0, 3) == pytest.approx(15.0)
+    
+    def test_integrate_cycle_cubic_type(self):
+        """Ciclo con interpolazione cubic."""
+        env = Envelope({
+            'type': 'cubic',
+            'points': [[0, 0], [0.5, 10], [1, 0], 'cycle']
+        })
+        # Ciclo simmetrico: area circa 5 per ciclo
+        # 2 cicli: circa 10
+        result = env.integrate(0, 2)
+        assert 9.0 < result < 11.0
+
+
+# =============================================================================
+# TEST INTEGRATE - CICLI MULTIPLI
+# =============================================================================
+
+class TestIntegrateMultipleCycles:
+    """Test integrale per envelope con cicli multipli."""
+    
+    def test_integrate_two_separate_cycles(self):
+        """Due cicli separati."""
+        env = Envelope([
+            [0, 0], [1, 10], 'cycle',    # Ciclo 1: area = 5
+            [5, 0], [6, 20], 'cycle'     # Ciclo 2: area = 10
+        ])
+        # Integrale 0-1: primo ciclo = 5
+        assert env.integrate(0, 1) == pytest.approx(5.0)
+        # Integrale 5-6: secondo ciclo = 10
+        assert env.integrate(5, 6) == pytest.approx(10.0)
+        # Integrale che attraversa entrambi: 0-7
+        # Ciclo 1 (0-1): 5
+        # Gap (1-5): 10 * 4 = 40 (hold ultimo valore)
+        # Ciclo 2 (5-6): 10
+        # Dopo ciclo 2 (6-7): 20 * 1 = 20
+        # Totale: 75
+        result = env.integrate(0, 7)
+        assert result == pytest.approx(75.0, rel=1e-2)
+    
+    def test_integrate_adjacent_cycles(self):
+        """Due cicli adiacenti senza gap."""
+        env = Envelope([
+            [0, 0], [1, 10], 'cycle',
+            [1, 0], [2, 5], 'cycle'
+        ])
+        # Primo ciclo (0-1): 5
+        # Secondo ciclo (1-2): 2.5
+        result = env.integrate(0, 2)
+        assert result == pytest.approx(7.5, rel=1e-2)
+
+
+# =============================================================================
+# TEST INTEGRATE - MIX CICLICO + NON CICLICO
+# =============================================================================
+
+class TestIntegrateMixedSegments:
+    """Test integrale per envelope con mix ciclico + normale."""
+    
+    def test_integrate_cycle_then_normal(self):
+        """Ciclo seguito da segmento normale."""
+        env = Envelope([
+            [0, 0], [1, 10], 'cycle',    # Ciclo
+            [5, 10], [10, 0]             # Rampa discendente
+        ])
+        # Integrale completo 0-10:
+        # Ciclo (0-1): 5
+        # Hold (1-5): 10 * 4 = 40
+        # Rampa (5-10): trapezio = 5 * 10 / 2 = 25
+        # Totale: 70
+        result = env.integrate(0, 10)
+        assert result == pytest.approx(70.0, rel=1e-2)
+    
+    def test_integrate_normal_then_cycle(self):
+        """Segmento normale seguito da ciclo."""
+        env = Envelope([
+            [0, 0], [5, 50],             # Rampa ascendente
+            [5, 0], [6, 10], 'cycle'     # Ciclo
+        ])
+        # Rampa (0-5): 125
+        # Ciclo (5-6): 5
+        # Totale: 130
+        result = env.integrate(0, 6)
+        assert result == pytest.approx(130.0, rel=1e-2)
+    
+    def test_integrate_only_normal_part(self):
+        """Integrale solo sul segmento normale di un mix."""
+        env = Envelope([
+            [0, 0], [1, 10], 'cycle',
+            [5, 10], [10, 0]
+        ])
+        # Solo la rampa discendente (5-10): 25
+        result = env.integrate(5, 10)
+        assert result == pytest.approx(25.0, rel=1e-2)
+    
+    def test_integrate_only_cycle_part(self):
+        """Integrale solo sul segmento ciclico di un mix."""
+        env = Envelope([
+            [0, 0], [1, 10], 'cycle',
+            [5, 10], [10, 0]
+        ])
+        # Due periodi del ciclo: 2 * 5 = 10
+        result = env.integrate(0, 2)
+        assert result == pytest.approx(10.0, rel=1e-2)
+
+
+# =============================================================================
+# TEST INTEGRATE - EDGE CASES
+# =============================================================================
+
+class TestIntegrateEdgeCases:
+    """Test casi limite per integrate."""
+    
+    def test_integrate_very_short_cycle(self):
+        """Ciclo molto breve (precisione floating point)."""
+        env = Envelope([[0, 0], [0.001, 1], 'cycle'])
+        # 1000 cicli in 1 secondo
+        # Area ciclo = (0.001 * 1) / 2 = 0.0005
+        # 1000 cicli = 0.5
+        result = env.integrate(0, 1)
+        assert result == pytest.approx(0.5, rel=1e-2)
+    
+    def test_integrate_phase_boundary(self):
+        """Integrale che termina esattamente su un multiplo del ciclo."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        # Esattamente 3 cicli: 3 * 5 = 15
+        assert env.integrate(0, 3) == pytest.approx(15.0)
+        # Esattamente 3.0 con epsilon
+        assert env.integrate(0, 3.0000001) == pytest.approx(15.0, rel=1e-2)
+    
+    def test_integrate_offset_start(self):
+        """Ciclo che non inizia a t=0."""
+        env = Envelope([[2, 0], [3, 10], 'cycle'])
+        # Prima del ciclo (0-2): 0 * 2 = 0
+        # Un ciclo (2-3): 5
+        # Totale (0-3): 5
+        result = env.integrate(0, 3)
+        assert result == pytest.approx(5.0, rel=1e-2)
+    
+    def test_integrate_asymmetric_cycle(self):
+        """Ciclo asimmetrico con salita e discesa diverse."""
+        env = Envelope([[0, 0], [0.3, 10], [1, 0], 'cycle'])
+        # Ciclo asimmetrico: area ≈ 5
+        result = env.integrate(0, 1)
+        assert 4.5 < result < 5.5
+    
+    def test_integrate_tolerance_accumulation(self):
+        """Test che l'errore numerico non si accumuli eccessivamente."""
+        env = Envelope([[0, 0], [0.01, 1], 'cycle'])
+        # 1000 cicli: ogni ciclo area = 0.005
+        # Totale teorico = 5.0
+        result = env.integrate(0, 10)
+        # Tolleranza 1% per accumulo errori numerici
+        assert result == pytest.approx(5.0, rel=1e-2)
+
+
+# =============================================================================
+# TEST INTEGRATE - VERIFICHE MATEMATICHE
+# =============================================================================
+
+class TestIntegrateMathematicalProperties:
+    """Test proprietà matematiche dell'integrale."""
+    
+    def test_integrate_additivity(self):
+        """Proprietà additiva: ∫[a,c] = ∫[a,b] + ∫[b,c]."""
+        env = Envelope([[0, 0], [10, 100]])
+        full = env.integrate(0, 10)
+        part1 = env.integrate(0, 5)
+        part2 = env.integrate(5, 10)
+        assert full == pytest.approx(part1 + part2)
+    
+    def test_integrate_linearity_scaling(self):
+        """Se scaliamo i valori 2x, l'integrale scala 2x."""
+        env1 = Envelope([[0, 0], [10, 50]])
+        env2 = Envelope([[0, 0], [10, 100]])
+        area1 = env1.integrate(0, 10)
+        area2 = env2.integrate(0, 10)
+        # env2 ha valori doppi → area doppia
+        assert area2 == pytest.approx(2 * area1)
+    
+    def test_integrate_time_scaling(self):
+        """Se scaliamo il tempo 2x, l'integrale scala 2x."""
+        env1 = Envelope([[0, 0], [5, 100]])
+        env2 = Envelope([[0, 0], [10, 100]])
+        area1 = env1.integrate(0, 5)
+        area2 = env2.integrate(0, 10)
+        # Stessa altezza, base doppia → area doppia
+        assert area2 == pytest.approx(2 * area1)
+    
+    def test_integrate_symmetry(self):
+        """Envelope simmetrico ha area prevedibile."""
+        # Triangolo simmetrico salita+discesa
+        env = Envelope([[0, 0], [5, 100], [10, 0]])
+        area = env.integrate(0, 10)
+        # Area totale = base * altezza / 2 = 10 * 100 / 2 = 500
+        assert area == pytest.approx(500.0)
+    
+    def test_integrate_cycle_consistency(self):
+        """N cicli = N * (area di 1 ciclo)."""
+        env = Envelope([[0, 0], [1, 10], 'cycle'])
+        one_cycle = env.integrate(0, 1)
+        five_cycles = env.integrate(0, 5)
+        assert five_cycles == pytest.approx(5 * one_cycle)
+
+
+# =============================================================================
+# TEST INTEGRATE - CASI SPECIALI PER CUBIC
+# =============================================================================
+
+class TestIntegrateCubicSpecial:
+    """Test specifici per integrazione cubic (numerica)."""
+    
+    def test_integrate_cubic_flat_plateau(self):
+        """Cubic con plateau piatto."""
+        env = Envelope({
+            'type': 'cubic',
+            'points': [[0, 0], [1, 10], [2, 10], [3, 0]]
+        })
+        # Salita (0-1): ~5
+        # Plateau (1-2): 10
+        # Discesa (2-3): ~5
+        # Totale: ~20
+        result = env.integrate(0, 3)
+        assert 19 < result < 21
+    
+    def test_integrate_cubic_overshoot_prevention(self):
+        """Cubic Fritsch-Carlson non deve overshooting."""
+        # Plateau [1,10]->[2,10] deve restare a 10
+        env = Envelope({
+            'type': 'cubic',
+            'points': [[0, 0], [1, 10], [2, 10], [3, 0]]
+        })
+        # Integrale su plateau (1-2): deve essere esattamente 10
+        result = env.integrate(1, 2)
+        assert result == pytest.approx(10.0, rel=1e-2)
