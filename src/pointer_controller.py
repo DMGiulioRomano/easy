@@ -375,5 +375,13 @@ class PointerController:
     # =========================================================================
     
     def __repr__(self) -> str:
-        loop_info = f", loop={self.loop_start:.3f}-{self.loop_end or 'dynamic'}" if self.has_loop else ""
+        if self.has_loop:
+            loop_start_val = self.loop_start.get_value(0)
+            if self.loop_end is not None:
+                loop_end_val = self.loop_end.get_value(0)
+                loop_info = f", loop={loop_start_val:.3f}-{loop_end_val:.3f}"
+            else:
+                loop_info = f", loop={loop_start_val:.3f}-dynamic"
+        else:
+            loop_info = ""
         return f"PointerController(start={self.start}, speed={self.speed_ratio._value}{loop_info})"

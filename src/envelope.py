@@ -365,7 +365,7 @@ class Envelope:
         Integrale dell'envelope tra from_time e to_time.
         
         Supporta segmenti ciclici e non ciclici.
-        Per segmenti ciclici: calcola l'integrale considerando le ripetizioni.
+        Gestisce hold dei valori fuori dai breakpoints.
         """
         if from_time > to_time:
             return -self.integrate(to_time, from_time)
@@ -376,50 +376,71 @@ class Envelope:
         total_integral = 0.0
         current_time = from_time
         
-        for segment in self.segments:
+        for seg_idx, segment in enumerate(self.segments):
+            if current_time >= to_time:
+                break
+                
             t_start = segment['start_time']
             points = segment['breakpoints']
             
-            if segment['cycle']:
-                # Segmento ciclico
-                cycle_dur = segment['cycle_duration']
-                
-                # Determina dove inizia e finisce l'integrazione rispetto al ciclo
-                # Se siamo prima dell'inizio del ciclo, skippa
-                if to_time <= t_start:
-                    continue
-                
-                if current_time < t_start:
-                    current_time = t_start
-                
-                # Calcola quanto tempo copre questo segmento
-                time_in_segment = min(to_time, float('inf')) - current_time
-                
-                # Per cicli, integra fino a to_time
-                if current_time < to_time:
-                    integral = self._integrate_cyclic_segment(
-                        segment, current_time, to_time
-                    )
-                    total_integral += integral
-                    current_time = to_time
+            # Determina il prossimo segmento o fine envelope
+            if seg_idx < len(self.segments) - 1:
+                next_start = self.segments[seg_idx + 1]['start_time']
             else:
-                # Segmento non ciclico
+                next_start = float('inf')
+            
+            if segment['cycle']:
+                # Segmento ciclico: integra fino al prossimo segmento o to_time
+                seg_end = min(to_time, next_start)
+                
+                if current_time < seg_end:
+                    # Hold prima del ciclo
+                    if current_time < t_start:
+                        hold_end = min(t_start, seg_end)
+                        hold_val = points[0][1]
+                        total_integral += hold_val * (hold_end - current_time)
+                        current_time = hold_end
+                    
+                    # Integra la parte ciclica
+                    if current_time < seg_end:
+                        integral = self._integrate_cyclic_segment(
+                            segment, current_time, seg_end
+                        )
+                        total_integral += integral
+                        current_time = seg_end
+            else:
                 t_end = points[-1][0]
+                # Segmento normale
+                seg_end = min(to_time, next_start)
                 
-                # Skippa se siamo completamente fuori dal segmento
-                if to_time <= t_start or current_time >= t_end:
-                    continue
-                
-                # Limita l'intervallo al segmento
-                seg_start = max(current_time, t_start)
-                seg_end = min(to_time, t_end)
-                
-                if seg_start < seg_end:
-                    integral = self._integrate_normal_segment(
-                        segment, seg_start, seg_end
-                    )
-                    total_integral += integral
-                    current_time = seg_end
+                if current_time < seg_end:
+                    # Hold prima del segmento
+                    if current_time < t_start:
+                        hold_end = min(t_start, seg_end)
+                        hold_val = points[0][1]
+                        total_integral += hold_val * (hold_end - current_time)
+                        current_time = hold_end
+                    
+                    # Integra dentro il segmento
+                    if current_time < seg_end and current_time < t_end:
+                        part_end = min(seg_end, t_end)
+                        integral = self._integrate_normal_segment(
+                            segment, current_time, part_end
+                        )
+                        total_integral += integral
+                        current_time = part_end
+                    
+                    # Hold dopo il segmento
+                    if current_time < seg_end:
+                        hold_val = points[-1][1]
+                        total_integral += hold_val * (seg_end - current_time)
+                        current_time = seg_end
+        
+        # Hold finale (dopo tutti i segmenti)
+        if current_time < to_time:
+            last_segment = self.segments[-1]
+            last_val = last_segment['breakpoints'][-1][1]
+            total_integral += last_val * (to_time - current_time)
         
         return total_integral
 
@@ -429,64 +450,48 @@ class Envelope:
         from_time: float, 
         to_time: float
     ) -> float:
-        """
-        Integra un segmento ciclico tra from_time e to_time.
-        
-        Strategia:
-        1. Calcola l'integrale di un ciclo completo
-        2. Determina quanti cicli completi ci sono nell'intervallo
-        3. Integra le porzioni parziali all'inizio e alla fine
-        """
+        """Integra un segmento ciclico tra from_time e to_time."""
         t_start = segment['start_time']
         cycle_dur = segment['cycle_duration']
         points = segment['breakpoints']
         
-        # Tempi relativi all'inizio del segmento ciclico
+        # Calcola l'integrale di un ciclo completo
+        cycle_integral = self._integrate_points(segment, points, t_start, t_start + cycle_dur)
+        
+        # Tempi relativi all'inizio del ciclo
         rel_from = from_time - t_start
         rel_to = to_time - t_start
         
-        # Se siamo prima del ciclo, inizia dal ciclo
-        if rel_from < 0:
-            rel_from = 0
-        
-        # Calcola l'integrale di un ciclo completo (da t_start a t_start + cycle_dur)
-        cycle_integral = self._integrate_points(points, t_start, t_start + cycle_dur)
-        
-        # Determina la fase iniziale e finale nel ciclo
+        # Fase nel ciclo
         phase_from = rel_from % cycle_dur
         phase_to = rel_to % cycle_dur
         
-        # Quanti cicli completi attraversiamo?
-        cycles_from = rel_from // cycle_dur
-        cycles_to = rel_to // cycle_dur
-        full_cycles = int(cycles_to - cycles_from)
+        # Quanti cicli completi?
+        full_cycles = int(rel_to // cycle_dur) - int(rel_from // cycle_dur)
         
         total = 0.0
         
-        # Caso 1: Tutto nell'intervallo è dentro lo stesso ciclo
+        # Caso semplice: tutto nello stesso ciclo
         if full_cycles == 0:
-            # Integra solo da phase_from a phase_to nello stesso ciclo
             t_abs_from = t_start + phase_from
             t_abs_to = t_start + phase_to
-            total = self._integrate_points(points, t_abs_from, t_abs_to)
+            return self._integrate_points(segment, points, t_abs_from, t_abs_to)
         
-        # Caso 2: Attraversiamo uno o più cicli completi
-        else:
-            # Integrale dalla fase iniziale fino alla fine del primo ciclo
-            if phase_from > 0:
-                t_abs_from = t_start + phase_from
-                t_abs_to = t_start + cycle_dur
-                total += self._integrate_points(points, t_abs_from, t_abs_to)
-                full_cycles -= 1
-            
-            # Aggiungi i cicli completi intermedi
-            total += full_cycles * cycle_integral
-            
-            # Integrale dall'inizio dell'ultimo ciclo fino alla fase finale
-            if phase_to > 0:
-                t_abs_from = t_start
-                t_abs_to = t_start + phase_to
-                total += self._integrate_points(points, t_abs_from, t_abs_to)
+        # Parte finale del primo ciclo
+        if phase_from > 0:
+            t_abs_from = t_start + phase_from
+            t_abs_to = t_start + cycle_dur
+            total += self._integrate_points(segment, points, t_abs_from, t_abs_to)
+            full_cycles -= 1
+        
+        # Cicli completi intermedi
+        total += full_cycles * cycle_integral
+        
+        # Parte iniziale dell'ultimo ciclo
+        if phase_to > 0:
+            t_abs_from = t_start
+            t_abs_to = t_start + phase_to
+            total += self._integrate_points(segment, points, t_abs_from, t_abs_to)
         
         return total
 
@@ -498,117 +503,89 @@ class Envelope:
     ) -> float:
         """Integra un segmento normale (non ciclico)."""
         points = segment['breakpoints']
-        return self._integrate_points(points, from_time, to_time)
+        return self._integrate_points(segment, points, from_time, to_time)
 
     def _integrate_points(
         self, 
+        segment: Dict,
         points: List, 
         from_time: float, 
         to_time: float
     ) -> float:
-        """
-        Integra tra breakpoints usando il tipo di interpolazione corrente.
-        
-        Args:
-            points: Lista di breakpoints [[t,v], ...]
-            from_time: Tempo iniziale
-            to_time: Tempo finale
-        """
+        """Integra tra breakpoints usando il tipo di interpolazione corrente."""
         if from_time >= to_time:
             return 0.0
         
         total = 0.0
         
-        # Trova i segmenti rilevanti
         for i in range(len(points) - 1):
             t0, v0 = points[i]
             t1, v1 = points[i + 1]
             
-            # Skippa segmenti completamente fuori range
+            # Skippa segmenti fuori range
             if to_time <= t0 or from_time >= t1:
                 continue
             
-            # Limita l'intervallo di integrazione al segmento corrente
+            # Limita al segmento corrente
             seg_start = max(from_time, t0)
             seg_end = min(to_time, t1)
             
             if seg_start >= seg_end:
                 continue
             
-            # Integra secondo il tipo
             if self.type == 'step':
-                # Step: valore costante v0 nell'intervallo
+                # Step: valore costante v0
                 total += v0 * (seg_end - seg_start)
             
             elif self.type == 'linear':
-                # Linear: integrale del trapezio
-                # Valuta l'envelope agli estremi
-                v_start = self._interpolate_linear(seg_start, t0, v0, t1, v1)
-                v_end = self._interpolate_linear(seg_end, t0, v0, t1, v1)
-                # Area del trapezio
+                # Linear: area trapezio
+                v_start = v0 + (v1 - v0) * (seg_start - t0) / (t1 - t0)
+                v_end = v0 + (v1 - v0) * (seg_end - t0) / (t1 - t0)
                 total += 0.5 * (v_start + v_end) * (seg_end - seg_start)
             
             elif self.type == 'cubic':
-                # Cubic: integrazione numerica (Simpson o trapezi)
-                total += self._integrate_cubic_segment(
-                    seg_start, seg_end, t0, v0, t1, v1, i
+                # Cubic: integrazione numerica Simpson
+                total += self._integrate_cubic_simpson(
+                    segment, seg_start, seg_end, i
                 )
         
         return total
 
-    def _interpolate_linear(
-        self, 
-        t: float, 
-        t0: float, 
-        v0: float, 
-        t1: float, 
-        v1: float
-    ) -> float:
-        """Interpolazione lineare semplice."""
-        if t1 == t0:
-            return v0
-        s = (t - t0) / (t1 - t0)
-        return v0 + s * (v1 - v0)
-
-    def _integrate_cubic_segment(
+    def _integrate_cubic_simpson(
         self,
+        segment: Dict,
         from_t: float,
         to_t: float,
-        t0: float,
-        v0: float,
-        t1: float,
-        v1: float,
         segment_idx: int
     ) -> float:
-        """
-        Integra un segmento cubic usando la regola di Simpson.
+        """Integra un segmento cubic usando Simpson."""
+        points = segment['breakpoints']
+        tangents = segment['tangents']
         
-        Per Hermite cubic, l'integrale analitico è complesso,
-        quindi usiamo integrazione numerica.
-        """
-        # Ottieni le tangenti per questo segmento
-        m0 = self._tangents[segment_idx]
-        m1 = self._tangents[segment_idx + 1]
+        t0, v0 = points[segment_idx]
+        t1, v1 = points[segment_idx + 1]
+        m0 = tangents[segment_idx]
+        m1 = tangents[segment_idx + 1]
         
-        # Regola di Simpson: divide in sotto-intervalli
-        n_steps = 10  # Numero di sotto-intervalli
-        dt = (to_t - from_t) / n_steps
-        
+        # Simpson con 10 sotto-intervalli
+        n = 10
+        dt = (to_t - from_t) / n
         total = 0.0
-        for i in range(n_steps):
+        
+        for i in range(n):
             t_a = from_t + i * dt
             t_b = from_t + (i + 1) * dt
             t_mid = (t_a + t_b) / 2
             
-            # Valuta l'envelope nei tre punti
-            v_a = self._interpolate_cubic_hermite(t_a, t0, v0, t1, v1, m0, m1)
-            v_mid = self._interpolate_cubic_hermite(t_mid, t0, v0, t1, v1, m0, m1)
-            v_b = self._interpolate_cubic_hermite(t_b, t0, v0, t1, v1, m0, m1)
+            # Valuta ai tre punti
+            v_a = self._cubic_hermite(t_a, t0, v0, m0, t1, v1, m1)
+            v_mid = self._cubic_hermite(t_mid, t0, v0, m0, t1, v1, m1)
+            v_b = self._cubic_hermite(t_b, t0, v0, m0, t1, v1, m1)
             
-            # Formula di Simpson: (b-a)/6 * (f(a) + 4*f(mid) + f(b))
+            # Simpson: (dt/6) * (f(a) + 4*f(mid) + f(b))
             total += (dt / 6) * (v_a + 4 * v_mid + v_b)
         
-        return total    
+        return total
 
     @staticmethod
     def is_envelope_like(obj: Any) -> bool:

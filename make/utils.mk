@@ -1,6 +1,8 @@
 # make/utils.mk
 # Utility per aprire file, git sync, etc.
 
+COMMIT?="." 
+
 .PHONY: open pdf sync rx-stop
 
 open:
@@ -11,7 +13,7 @@ pdf:
 
 sync:
 	git add .
-	git commit -m "."
+	git commit -m "$(COMMIT)"
 	git pull --quiet
 	git push
 
