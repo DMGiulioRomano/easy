@@ -1,146 +1,114 @@
-# envelope.py
+# envelope.py - versione semplificata
 """
 Envelope system with Composite Pattern.
 
-Refactored from God Class to use:
-- InterpolationStrategyFactory for creating strategies
-- List[Segment] instead of List[Dict]
-- Delegation to Segment classes for evaluate/integrate
-
-Maintains 100% backward compatibility with legacy formats:
-- [[0, 0], [0.1, 1], 'cycle']
-- {'type': 'cubic', 'points': [...]}
+Supports:
+- Standard breakpoints: [[t, v], ...]
+- Compact format: [[[x%, y], ...], total_time, n_reps, interp?]
+- Dict format: {'type': 'cubic', 'points': [...]}
 """
 
 from typing import Union, List, Dict, Any
 from envelope_factory import InterpolationStrategyFactory
-from envelope_segment import NormalSegment, CyclicSegment, Segment
+from envelope_segment import NormalSegment, Segment
 from envelope_interpolation import InterpolationStrategy
 
 
 class Envelope:
     """
-    Envelope temporale con supporto cicli multipli posizionali.
+    Envelope temporale con supporto formato compatto.
     
     Supporta interpolazione lineare, cubica e step.
-    Supporta cicli multipli posizionali con marker 'cycle'.
-    
-    Refactored to use Composite Pattern:
-    - InterpolationStrategyFactory creates strategies
-    - List[Segment] for clean delegation
-    - No more if/elif scattered through code
+    Supporta nuovo formato compatto per cicli ripetuti.
     """
     
     def __init__(self, breakpoints):
         """
         Args:
             breakpoints: 
-                - Lista di [time, value] con opzionali 'cycle'
-                - Dict con 'type' e 'points' (con opzionali 'cycle')
+                - Lista di [time, value]
+                - Nuovo formato compatto: [[[x%, y], ...], total_time, n_reps, interp?]
+                - Dict con 'type' e 'points'
             
         Examples:
-            # Singolo ciclo
-            Envelope([[0, 0], [0.05, 1], 'cycle'])
+            # Standard breakpoints
+            Envelope([[0, 0], [0.5, 1], [1.0, 0]])
             
-            # Due cicli
-            Envelope([[0, 0], [0.05, 1], 'cycle', [0.3, 0], [0.39, 1], 'cycle'])
+            # Nuovo formato compatto: 4 ripetizioni in 0.4s
+            Envelope([[[0, 0], [100, 1]], 0.4, 4])
             
-            # Mix ciclico + non ciclico
-            Envelope([[0, 0], [0.05, 1], 'cycle', [0.5, 0.5], [1.0, 0]])
+            # Formato misto
+            Envelope([
+                [[[0, 0], [100, 1]], 0.4, 4],  # Compatto
+                [0.5, 0.5],                     # Standard
+                [1.0, 0]                        # Standard
+            ])
             
-            # Con tipo esplicito
+            # Con tipo esplicito nel dict
             Envelope({
                 'type': 'cubic',
-                'points': [[0, 0], [0.05, 1], 'cycle']
+                'points': [[[0, 0], [50, 0.5], [100, 1]], 0.2, 2]
             })
         """
+        # Import qui per evitare circular import
+        from envelope_builder import EnvelopeBuilder
+        
         # Parse type e raw_points
         if isinstance(breakpoints, dict):
             self.type = breakpoints.get('type', 'linear')
             raw_points = breakpoints['points']
         elif isinstance(breakpoints, list):
-            self.type = 'linear'
+            # Controlla se c'è tipo in formato compatto
+            extracted_type = EnvelopeBuilder.extract_interp_type(breakpoints)
+            self.type = extracted_type or 'linear'
             raw_points = breakpoints
         else:
             raise ValueError(f"Formato envelope non valido: {breakpoints}")
         
+        # ESPANDI formato compatto usando Builder
+        expanded_points = EnvelopeBuilder.parse(raw_points)
+        
         # Crea strategy usando Factory
         self.strategy = InterpolationStrategyFactory.create(self.type)
         
-        # Parse segmenti (normali e ciclici) → List[Segment]
-        self.segments = self._parse_segments(raw_points)
+        # Parse segmenti → List[NormalSegment]
+        self.segments = self._parse_segments(expanded_points)
         
         # Valida
         if not self.segments:
             raise ValueError("Envelope deve contenere almeno un breakpoint.")
     
-    def _parse_segments(self, raw_points: list) -> List[Segment]:
+    def _parse_segments(self, breakpoints: list) -> List[Segment]:
         """
-        Parsa lista mista di [time, value] e 'cycle' in List[Segment].
+        Parsa lista di breakpoints in List[NormalSegment].
+        
+        Nota: Formato compatto già espanso da Builder.
         
         Returns:
-            List[Segment]: Lista di NormalSegment o CyclicSegment
+            List[NormalSegment]: Lista con singolo segmento contenente tutti i breakpoints
         """
-        segments = []
-        current_points = []
+        if not breakpoints:
+            raise ValueError("Lista breakpoints vuota.")
         
-        for item in raw_points:
-            if isinstance(item, str):
-                # Trovato marker 'cycle'
-                if item.lower() != 'cycle':
-                    raise ValueError(
-                        f"Stringa non riconosciuta: '{item}'. "
-                        "Usa 'cycle' (case-insensitive)."
-                    )
-                
-                # Valida punti prima del cycle
-                if len(current_points) < 2:
-                    raise ValueError(
-                        "Ciclo deve avere almeno 2 breakpoints prima di 'cycle'."
-                    )
-                
-                # Crea context per cubic (tangenti)
-                context = self._create_context_for_segment(current_points)
-                
-                # Crea CyclicSegment
-                segment = CyclicSegment(
-                    breakpoints=current_points,
-                    strategy=self.strategy,
-                    context=context
-                )
-                segments.append(segment)
-                
-                # Reset per prossimo segmento
-                current_points = []
-                
-            elif isinstance(item, list):
-                # Breakpoint [time, value]
-                if len(item) != 2:
-                    raise ValueError(
-                        f"Formato breakpoint non valido: {item}. "
-                        "Deve essere [time, value]."
-                    )
-                current_points.append(item)
-            else:
+        # Valida formato breakpoints
+        for item in breakpoints:
+            if not isinstance(item, list) or len(item) != 2:
                 raise ValueError(
-                    f"Elemento non valido: {item}. "
-                    "Deve essere [time, value] o 'cycle'."
+                    f"Formato breakpoint non valido: {item}. "
+                    "Deve essere [time, value]."
                 )
         
-        # Punti rimanenti → NormalSegment
-        if current_points:
-            if len(current_points) < 1:
-                raise ValueError("Segmento normale deve avere almeno 1 breakpoint.")
-            
-            context = self._create_context_for_segment(current_points)
-            segment = NormalSegment(
-                breakpoints=current_points,
-                strategy=self.strategy,
-                context=context
-            )
-            segments.append(segment)
+        # Crea context per cubic (tangenti)
+        context = self._create_context_for_segment(breakpoints)
         
-        return segments
+        # Crea singolo NormalSegment con tutti i breakpoints
+        segment = NormalSegment(
+            breakpoints=breakpoints,
+            strategy=self.strategy,
+            context=context
+        )
+        
+        return [segment]
     
     def _create_context_for_segment(self, points: List[List[float]]) -> Dict[str, Any]:
         """
@@ -208,7 +176,7 @@ class Envelope:
         """
         Valuta l'envelope al tempo t.
         
-        Delegation Pattern: trova il segmento appropriato e delega.
+        Delegation Pattern: delega al singolo NormalSegment.
         
         Args:
             t: Tempo in secondi
@@ -216,42 +184,14 @@ class Envelope:
         Returns:
             float: Valore dell'envelope
         """
-        # Trova il segmento che contiene t
-        for segment in self.segments:
-            # CyclicSegment gestisce wrapping, NormalSegment gestisce hold
-            # Controlliamo se il segmento "si occupa" di questo tempo
-            if segment.is_cyclic:
-                # Segmento ciclico: si occupa di t >= start_time
-                if t >= segment.start_time:
-                    # Controlla se c'è un segmento successivo che "ruba" il tempo
-                    next_seg = self._get_next_segment(segment)
-                    if next_seg is None or t < next_seg.start_time:
-                        return segment.evaluate(t)
-            else:
-                # Segmento normale: delega sempre (gestisce hold interno)
-                # Ma solo se t è "nel suo dominio" o se è l'ultimo
-                next_seg = self._get_next_segment(segment)
-                if next_seg is None or t < next_seg.start_time:
-                    return segment.evaluate(t)
-        
-        # Fallback: ultimo segmento (hold finale)
-        return self.segments[-1].evaluate(t)
-    
-    def _get_next_segment(self, current_segment: Segment) -> Union[Segment, None]:
-        """Ritorna il segmento successivo o None se è l'ultimo."""
-        try:
-            idx = self.segments.index(current_segment)
-            if idx < len(self.segments) - 1:
-                return self.segments[idx + 1]
-        except ValueError:
-            pass
-        return None
+        # Singolo segmento: delega direttamente
+        return self.segments[0].evaluate(t)
     
     def integrate(self, from_time: float, to_time: float) -> float:
         """
         Integrale dell'envelope tra from_time e to_time.
         
-        Orchestra l'integrazione attraverso i segmenti.
+        Delega al singolo NormalSegment.
         
         Args:
             from_time: Tempo iniziale
@@ -266,29 +206,8 @@ class Envelope:
         if from_time == to_time:
             return 0.0
         
-        total_integral = 0.0
-        current_time = from_time
-        
-        for idx, segment in enumerate(self.segments):
-            if current_time >= to_time:
-                break
-            
-            # Determina dove finisce questo segmento (o dove inizia il prossimo)
-            if idx < len(self.segments) - 1:
-                segment_end = self.segments[idx + 1].start_time
-            else:
-                segment_end = float('inf')
-            
-            # Limita all'intervallo richiesto
-            integrate_to = min(to_time, segment_end)
-            
-            # Delega al segmento
-            if current_time < integrate_to:
-                integral_part = segment.integrate(current_time, integrate_to)
-                total_integral += integral_part
-                current_time = integrate_to
-        
-        return total_integral
+        # Singolo segmento: delega direttamente
+        return self.segments[0].integrate(from_time, to_time)
     
     @staticmethod
     def is_envelope_like(obj: Any) -> bool:
@@ -299,24 +218,33 @@ class Envelope:
         - Envelope instances
         - Liste di breakpoints [[t, v], ...]
         - Dict con 'type' e 'points'
+        - Formato compatto
         
         Returns:
             bool: True se l'oggetto è envelope-like
         """
+        from envelope_builder import EnvelopeBuilder
+        
         # Istanza Envelope
         if isinstance(obj, Envelope):
             return True
         
-        # Lista di breakpoints
+        # Lista di breakpoints o formato compatto
         if isinstance(obj, list):
             # Lista vuota: NO
             if not obj:
                 return False
-            # Lista con almeno un [t, v] o 'cycle'
+            
+            # Formato compatto
+            if EnvelopeBuilder._is_compact_format(obj):
+                return True
+            
+            # Lista con almeno un [t, v]
             for item in obj:
                 if isinstance(item, list) and len(item) == 2:
                     return True
-                if isinstance(item, str) and item.lower() == 'cycle':
+                # Formato compatto dentro lista
+                if EnvelopeBuilder._is_compact_format(item):
                     return True
             return False
         
