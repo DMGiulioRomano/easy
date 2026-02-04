@@ -94,9 +94,9 @@ class ExclusiveGroupSelector:
         2. Il valore non è None (a meno che il default non sia None?)
         3. Per liste/dict: se esiste, è specificato
         """
-        from parameter_factory import ParameterFactory  # Import circolare, ma ok per static
-        
-        value = ParameterFactory._get_nested(yaml_data, spec.yaml_path, None)
+        from utils import get_nested
+
+        value = get_nested(yaml_data, spec.yaml_path, None)
         
         # Caso speciale: default è None ma vogliamo comunque considerarlo specificato?
         # Es: semitones: None nel YAML → consideralo specificato (utente vuole None)

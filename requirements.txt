@@ -1,10 +1,12 @@
+# === Python 3.12 COMPATIBLE ===
 # Gestione Audio e Dati
-numpy
-soundfile
-matplotlib
+numpy>=1.24.0
+soundfile>=0.12.1
+matplotlib>=3.7.0
 
-# Parsing Config (necessario per i tuoi file .yml)
-PyYAML
+# Parsing Config
+PyYAML>=6.0
 
-# Testing
-pytest
+# Testing e sviluppo
+pytest>=7.4.0
+pytest-cov>=4.1.0  # Per coverage reports

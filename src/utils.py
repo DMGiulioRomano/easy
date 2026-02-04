@@ -14,3 +14,25 @@ def random_percent(percent: float = 90) -> bool:
     """Ritorna True con probabilità percent%."""
     return (percent / 100) > random.uniform(0, 1)
 
+def get_nested(data: dict, path: str, default: Any) -> Any:
+    """
+    Naviga un dict con dot notation.
+    
+    Args:
+        data: Dizionario da navigare
+        path: Percorso in dot notation (es. 'grain.duration')
+        default: Valore di default se il percorso non esiste
+        
+    Returns:
+        Valore trovato o default
+    """
+    keys = path.split('.')
+    current = data
+    
+    for key in keys:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return default
+    
+    return current
