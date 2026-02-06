@@ -80,9 +80,8 @@ class EnvelopeBuilder:
             return False
         
         # Deve avere 3 o 4 elementi
-        if len(item) not in [3, 4]:
-            return False
-        
+        if len(item) < 3:  # Minimo: [pattern_points, total_time, n_reps]
+            return False        
         # Primo elemento deve essere lista di liste [[x, y], ...]
         if not isinstance(item[0], list):
             return False
@@ -103,9 +102,8 @@ class EnvelopeBuilder:
             return False
         
         # Quarto elemento opzionale: interp_type (str)
-        if len(item) == 4:
-            if not isinstance(item[3], str):
-                return False
+        if len(item) == 4 and not isinstance(item[3], str):
+            return False
         
         return True
     
