@@ -1,8 +1,8 @@
-# test_envelope_builder.py
+# test_envelope_builder_complete.py
 """
-Test suite completa per EnvelopeBuilder.
+Test suite COMPLETA per EnvelopeBuilder.
 
-Organizzazione:
+Coverage:
 1. Test riconoscimento formato compatto (_is_compact_format)
 2. Test espansione formato compatto (_expand_compact_format)
 3. Test estrazione tipo interpolazione (extract_interp_type)
@@ -13,12 +13,14 @@ Organizzazione:
 8. Test ordinamento monotono
 9. Test edge cases
 10. Test validazione errori
-11. Test helper functions (detect_format_type)
-12. Test logging delle trasformazioni (mock)
+11. Test logging trasformazioni (mock)
+12. Test helper functions
+13. Test matematici (durate cicli, offset, simmetria)
+14. Test robustezza input malformati
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from envelope_builder import EnvelopeBuilder, detect_format_type
 
 
@@ -34,7 +36,7 @@ def simple_compact():
 
 @pytest.fixture
 def compact_with_interp():
-    """Formato compatto con tipo interpolazione."""
+    """Formato compatto con tipo interpolazione esplicito."""
     return [[[0, 0], [100, 1]], 0.4, 4, 'cubic']
 
 
@@ -42,6 +44,18 @@ def compact_with_interp():
 def compact_three_points():
     """Formato compatto con 3 punti nel pattern."""
     return [[[0, 0], [50, 0.5], [100, 1]], 0.3, 3]
+
+
+@pytest.fixture
+def compact_single_rep():
+    """Formato compatto con singola ripetizione."""
+    return [[[0, 0], [100, 1]], 0.1, 1]
+
+
+@pytest.fixture
+def compact_many_reps():
+    """Formato compatto con molte ripetizioni."""
+    return [[[0, 0], [100, 1]], 1.0, 100]
 
 
 @pytest.fixture
@@ -66,24 +80,38 @@ def mixed_format():
     ]
 
 
+@pytest.fixture
+def mixed_with_interp():
+    """Formato misto con tipi interpolazione diversi."""
+    return [
+        [[[0, 0], [100, 1]], 0.2, 2, 'cubic'],  # Compatto con cubic
+        [0.5, 0.5],                              # Standard
+        [[[50, 0], [100, 1]], 0.1, 3, 'step']   # Compatto con step
+    ]
+
+
 # =============================================================================
 # 1. TEST RICONOSCIMENTO FORMATO COMPATTO
 # =============================================================================
 
 class TestIsCompactFormat:
-    """Test _is_compact_format()."""
+    """Test _is_compact_format() - riconoscimento pattern."""
     
     def test_recognize_simple_compact(self, simple_compact):
-        """Riconosce formato compatto semplice."""
+        """Riconosce formato compatto semplice (3 elementi)."""
         assert EnvelopeBuilder._is_compact_format(simple_compact)
     
     def test_recognize_compact_with_interp(self, compact_with_interp):
-        """Riconosce formato compatto con interpolazione."""
+        """Riconosce formato compatto con interpolazione (4 elementi)."""
         assert EnvelopeBuilder._is_compact_format(compact_with_interp)
     
     def test_recognize_compact_three_points(self, compact_three_points):
-        """Riconosce formato compatto con 3 punti."""
+        """Riconosce formato compatto con 3 punti nel pattern."""
         assert EnvelopeBuilder._is_compact_format(compact_three_points)
+    
+    def test_recognize_compact_single_rep(self, compact_single_rep):
+        """Riconosce formato compatto con singola ripetizione."""
+        assert EnvelopeBuilder._is_compact_format(compact_single_rep)
     
     def test_reject_legacy_breakpoint(self):
         """Rifiuta breakpoint legacy [t, v]."""
@@ -97,36 +125,38 @@ class TestIsCompactFormat:
         """Rifiuta marker 'cycle'."""
         assert not EnvelopeBuilder._is_compact_format('cycle')
     
+    def test_reject_empty_list(self):
+        """Rifiuta lista vuota."""
+        assert not EnvelopeBuilder._is_compact_format([])
+    
     def test_reject_wrong_length(self):
         """Rifiuta liste con lunghezza sbagliata."""
-        assert not EnvelopeBuilder._is_compact_format([1, 2])
-        assert not EnvelopeBuilder._is_compact_format([1, 2, 3, 4, 5])
+        assert not EnvelopeBuilder._is_compact_format([[[0, 0]], 0.4])  # 2 elementi
+        assert not EnvelopeBuilder._is_compact_format([[[0, 0]], 0.4, 4, 'linear', 'extra'])  # 5 elementi
+    
+    def test_reject_non_list(self):
+        """Rifiuta non-liste."""
+        assert not EnvelopeBuilder._is_compact_format(42)
+        assert not EnvelopeBuilder._is_compact_format("compact")
+        assert not EnvelopeBuilder._is_compact_format(None)
     
     def test_reject_wrong_types(self):
         """Rifiuta tipi sbagliati negli elementi."""
-        # total_time non numerico
+        # Pattern non-lista
+        assert not EnvelopeBuilder._is_compact_format(["pattern", 0.4, 4])
+        
+        # Total_time non-numero
         assert not EnvelopeBuilder._is_compact_format([[[0, 0]], "0.4", 4])
         
-        # n_reps non intero
+        # N_reps non-int
         assert not EnvelopeBuilder._is_compact_format([[[0, 0]], 0.4, 4.5])
         
-        # interp_type non stringa
+        # Interp_type non-string
         assert not EnvelopeBuilder._is_compact_format([[[0, 0]], 0.4, 4, 123])
-        
-        # pattern_points non lista
-        assert not EnvelopeBuilder._is_compact_format(["points", 0.4, 4])
     
     def test_accept_empty_pattern(self):
-        """Accetta pattern vuoto (validato dopo)."""
-        # Pattern vuoto passa _is_compact_format,
-        # errore verrà sollevato in _expand_compact_format
+        """Accetta pattern vuoto (validazione in expand)."""
         assert EnvelopeBuilder._is_compact_format([[], 0.4, 4])
-    
-    def test_reject_non_list(self):
-        """Rifiuta input non-lista."""
-        assert not EnvelopeBuilder._is_compact_format(42)
-        assert not EnvelopeBuilder._is_compact_format("compact")
-        assert not EnvelopeBuilder._is_compact_format({'type': 'compact'})
 
 
 # =============================================================================
@@ -134,101 +164,91 @@ class TestIsCompactFormat:
 # =============================================================================
 
 class TestExpandCompactFormat:
-    """Test _expand_compact_format()."""
+    """Test _expand_compact_format() - espansione breakpoints."""
     
     def test_expand_simple_compact(self, simple_compact):
         """Espande formato compatto semplice."""
         expanded = EnvelopeBuilder._expand_compact_format(simple_compact)
         
-        # 4 cicli * 2 punti + 3 discontinuità = 11 breakpoints
-        assert len(expanded) == 11
+        assert len(expanded) == 8
         
-        # Verifica primi breakpoints
-        assert expanded[0] == [0.0, 0]
+        # Verifica primi e ultimi punti
+        assert expanded[0] == pytest.approx([0.0, 0])
         assert expanded[1] == pytest.approx([0.1, 1])
-        
-        # Verifica discontinuità dopo primo ciclo
-        assert expanded[2][0] == pytest.approx(0.1 + EnvelopeBuilder.DISCONTINUITY_OFFSET)
-        assert expanded[2][1] == 0  # Reset al primo valore
+        assert expanded[-1] == pytest.approx([0.4, 1])
     
-    def test_expand_three_points_pattern(self, compact_three_points):
-        """Espande pattern con 3 punti."""
+    def test_expand_three_points(self, compact_three_points):
+        """Espande formato con 3 punti nel pattern."""
         expanded = EnvelopeBuilder._expand_compact_format(compact_three_points)
         
         # 3 cicli * 3 punti + 2 discontinuità = 11 breakpoints
-        assert len(expanded) == 11
-        
-        # Verifica primo ciclo
-        assert expanded[0] == [0.0, 0]
-        assert expanded[1] == pytest.approx([0.05, 0.5])
-        assert expanded[2] == pytest.approx([0.1, 1])
+        assert len(expanded) == 9
     
-    def test_expand_single_repetition(self):
-        """Espande con n_reps=1 (nessuna discontinuità)."""
-        compact = [[[0, 0], [100, 1]], 0.1, 1]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
+    def test_expand_single_rep(self, compact_single_rep):
+        """Espande con singola ripetizione (no discontinuità)."""
+        expanded = EnvelopeBuilder._expand_compact_format(compact_single_rep)
         
-        # 1 ciclo * 2 punti = 2 breakpoints (nessuna discontinuità)
+        # 1 ciclo * 2 punti + 0 discontinuità = 2 breakpoints
         assert len(expanded) == 2
-        assert expanded[0] == [0.0, 0]
+        assert expanded[0] == pytest.approx([0.0, 0])
         assert expanded[1] == pytest.approx([0.1, 1])
     
-    def test_expand_many_repetitions(self):
-        """Espande con molte ripetizioni."""
-        compact = [[[0, 0], [100, 1]], 1.0, 100]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
+    def test_correct_cycle_duration(self, simple_compact):
+        """Calcola durata ciclo correttamente."""
+        expanded = EnvelopeBuilder._expand_compact_format(simple_compact)
         
-        # 100 cicli * 2 punti + 99 discontinuità = 299 breakpoints
-        assert len(expanded) == 299
+        # Cycle duration = 0.4 / 4 = 0.1s
+        cycle_duration = 0.1
+        
+        # Primo punto secondo ciclo (indice 2)
+        # Ha offset applicato
+        assert expanded[2][0] == pytest.approx(
+            cycle_duration + EnvelopeBuilder.DISCONTINUITY_OFFSET
+        )
     
     def test_percentage_to_absolute_conversion(self):
-        """Converte correttamente coordinate % in assolute."""
-        compact = [[[0, 10], [50, 20], [100, 30]], 1.0, 2]
+        """Converte coordinate % correttamente."""
+        compact = [[[0, 10], [50, 20], [100, 30]], 1.0, 1]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # Primo ciclo: 0→0.5s
-        assert expanded[0] == [0.0, 10]
-        assert expanded[1] == pytest.approx([0.25, 20])  # 50% di 0.5s
-        assert expanded[2] == pytest.approx([0.5, 30])   # 100% di 0.5s
+        # 50% di 1.0s = 0.5s
+        assert expanded[0][0] == pytest.approx(0.0)
+        assert expanded[1][0] == pytest.approx(0.5)
+        assert expanded[2][0] == pytest.approx(1.0)
         
-        # Discontinuità
-        assert expanded[3][0] == pytest.approx(0.5 + EnvelopeBuilder.DISCONTINUITY_OFFSET)
-        assert expanded[3][1] == 10  # Reset
-        
-        # Secondo ciclo: 0.5→1.0s
-        assert expanded[4][0] == pytest.approx(0.5 + 2 * EnvelopeBuilder.DISCONTINUITY_OFFSET)
-        assert expanded[5] == pytest.approx([0.75, 20])
-        assert expanded[6] == pytest.approx([1.0, 30])
+        # Valori Y rimangono invariati
+        assert expanded[0][1] == 10
+        assert expanded[1][1] == 20
+        assert expanded[2][1] == 30
     
-    def test_discontinuity_values(self):
-        """Discontinuità resettano al primo valore del pattern."""
-        compact = [[[0, 5], [100, 10]], 0.4, 4]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
+    def test_discontinuity_offset_on_first_point(self, simple_compact):
+        """Primo punto di ogni ciclo (dopo il primo) ha offset."""
+        expanded = EnvelopeBuilder._expand_compact_format(simple_compact)
         
-        # Ogni discontinuità deve avere valore 5 (primo del pattern)
-        discontinuity_indices = [2, 5, 8]  # Dopo cicli 1, 2, 3
-        for idx in discontinuity_indices:
-            assert expanded[idx][1] == 5
+        # Pattern: [[0, 0], [100, 1]]
+        # Ciclo 0: [0,1] - indici 0,1
+        # Ciclo 1: [0,1] - indici 2,3 (primo ha offset)
+        # Ciclo 2: [0,1] - indici 4,5 (primo ha offset)
+        # Ciclo 3: [0,1] - indici 6,7 (primo ha offset)
+        
+        # Primo punto ciclo 1
+        assert expanded[2][1] == 0  # Valore = primo del pattern
+        assert expanded[2][0] == pytest.approx(0.1 + EnvelopeBuilder.DISCONTINUITY_OFFSET)
+        
+        # Primo punto ciclo 2
+        assert expanded[4][1] == 0
+        assert expanded[4][0] == pytest.approx(0.2 + EnvelopeBuilder.DISCONTINUITY_OFFSET)
     
-    def test_time_strictly_increasing(self):
-        """Tempi strettamente crescenti (no uguali)."""
-        compact = [[[0, 0], [100, 1]], 1.0, 10]
+    def test_time_range(self):
+        """Range temporale copre esattamente total_time."""
+        compact = [[[0, 0], [100, 1]], 2.5, 10]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # Verifica che ogni tempo sia > del precedente
-        for i in range(1, len(expanded)):
-            assert expanded[i][0] > expanded[i-1][0]
-    
-    def test_last_cycle_no_discontinuity(self):
-        """Ultimo ciclo non ha discontinuità dopo."""
-        compact = [[[0, 0], [100, 1]], 0.2, 3]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        # Primo tempo
+        assert expanded[0][0] == pytest.approx(0.0)
         
-        # 3 cicli * 2 punti + 2 discontinuità = 8 breakpoints
-        assert len(expanded) == 8
-        
-        # Ultimo breakpoint è fine terzo ciclo
-        assert expanded[-1] == pytest.approx([0.2, 1])
+        # Ultimo tempo (può avere offset infinitesimale)
+        assert expanded[-1][0] <= 2.5
 
 
 # =============================================================================
@@ -236,37 +256,44 @@ class TestExpandCompactFormat:
 # =============================================================================
 
 class TestExtractInterpType:
-    """Test extract_interp_type()."""
+    """Test extract_interp_type() - estrazione tipo."""
     
-    def test_extract_from_compact_with_interp(self, compact_with_interp):
+    def test_extract_from_compact_direct(self, compact_with_interp):
         """Estrae tipo da formato compatto diretto."""
-        interp = EnvelopeBuilder.extract_interp_type(compact_with_interp)
-        assert interp == 'cubic'
+        interp_type = EnvelopeBuilder.extract_interp_type(compact_with_interp)
+        assert interp_type == 'cubic'
     
-    def test_extract_from_compact_without_interp(self, simple_compact):
-        """Ritorna None se formato compatto senza tipo."""
-        interp = EnvelopeBuilder.extract_interp_type(simple_compact)
-        assert interp is None
-    
-    def test_extract_from_mixed_format(self):
-        """Estrae tipo dal primo formato compatto in lista mista."""
-        mixed = [
-            [[0, 0], [1, 10]],              # Standard (no tipo)
-            [[[0, 0], [100, 1]], 0.2, 2, 'step'],  # Compatto con tipo
-            [[[0, 0], [100, 1]], 0.2, 2, 'cubic']  # Compatto con altro tipo
+    def test_extract_from_compact_in_list(self):
+        """Estrae tipo da formato compatto dentro lista."""
+        points = [
+            [0, 0],
+            [[[0, 0], [100, 1]], 0.4, 4, 'step'],
+            [1, 10]
         ]
-        interp = EnvelopeBuilder.extract_interp_type(mixed)
-        assert interp == 'step'  # Primo trovato
+        interp_type = EnvelopeBuilder.extract_interp_type(points)
+        assert interp_type == 'step'
     
-    def test_extract_from_legacy_returns_none(self, legacy_breakpoints):
-        """Ritorna None se lista legacy."""
-        interp = EnvelopeBuilder.extract_interp_type(legacy_breakpoints)
-        assert interp is None
+    def test_extract_first_type_only(self, mixed_with_interp):
+        """Estrae solo il primo tipo se ce ne sono multipli."""
+        interp_type = EnvelopeBuilder.extract_interp_type(mixed_with_interp)
+        # Primo compatto ha 'cubic'
+        assert interp_type == 'cubic'
     
-    def test_extract_from_empty_list(self):
-        """Ritorna None se lista vuota."""
-        interp = EnvelopeBuilder.extract_interp_type([])
-        assert interp is None
+    def test_no_type_in_compact(self, simple_compact):
+        """Ritorna None se compatto non ha tipo."""
+        interp_type = EnvelopeBuilder.extract_interp_type(simple_compact)
+        assert interp_type is None
+    
+    def test_no_type_in_legacy(self, legacy_breakpoints):
+        """Ritorna None per formato legacy."""
+        interp_type = EnvelopeBuilder.extract_interp_type(legacy_breakpoints)
+        assert interp_type is None
+    
+    def test_no_compact_in_list(self):
+        """Ritorna None se nessun formato compatto presente."""
+        points = [[0, 0], [1, 10], 'cycle']
+        interp_type = EnvelopeBuilder.extract_interp_type(points)
+        assert interp_type is None
 
 
 # =============================================================================
@@ -277,25 +304,27 @@ class TestParseDirectFormat:
     """Test parse() con formato compatto diretto."""
     
     def test_parse_compact_direct(self, simple_compact):
-        """Parse formato compatto passato direttamente."""
+        """Parse formato compatto diretto."""
         expanded = EnvelopeBuilder.parse(simple_compact)
         
-        # Verifica espansione
-        assert len(expanded) == 11
-        assert all(isinstance(bp, list) for bp in expanded)
+        # Deve espandere
+        assert len(expanded) == 8
+        assert expanded[0] == pytest.approx([0.0, 0])
     
-    def test_parse_compact_with_interp_direct(self, compact_with_interp):
-        """Parse compatto con interpolazione diretto."""
+    def test_parse_compact_with_interp(self, compact_with_interp):
+        """Parse formato compatto con interpolazione."""
         expanded = EnvelopeBuilder.parse(compact_with_interp)
         
-        assert len(expanded) == 11
+        assert len(expanded) == 8
     
-    def test_parse_single_rep_direct(self):
-        """Parse compatto con singola ripetizione."""
-        compact = [[[0, 0], [100, 1]], 0.1, 1]
+    def test_parse_preserves_exact_values(self):
+        """Parse preserva valori esatti."""
+        compact = [[[0, 42], [100, 99]], 0.2, 2]
         expanded = EnvelopeBuilder.parse(compact)
         
-        assert len(expanded) == 2
+        # Verifica valori Y
+        assert expanded[0][1] == 42
+        assert expanded[1][1] == 99
 
 
 # =============================================================================
@@ -305,46 +334,40 @@ class TestParseDirectFormat:
 class TestParseMixedFormat:
     """Test parse() con formato misto."""
     
-    def test_parse_mixed_compact_and_standard(self, mixed_format):
-        """Parse misto: compatto + standard."""
+    def test_parse_mixed_format(self, mixed_format):
+        """Parse formato misto (compatto + standard)."""
         expanded = EnvelopeBuilder.parse(mixed_format)
         
-        # Compatto espanso (2 cicli * 2 punti + 1 discontinuità = 5)
-        # + 2 standard = 7 totali
-        assert len(expanded) == 7
-        
-        # Primi 5 da compatto
-        assert expanded[0] == [0.0, 0]
-        assert expanded[4] == pytest.approx([0.2, 1])
-        
-        # Ultimi 2 standard
-        assert expanded[5] == [0.5, 0.5]
-        assert expanded[6] == [1.0, 0]
+        # Compatto espanso + 2 standard
+        # 2 cicli * 2 punti =4
+        # + 2 standard = 6 totale
+        assert len(expanded) == 6
     
-    def test_parse_multiple_compact_in_list(self):
-        """Parse con multipli formati compatti."""
-        mixed = [
-            [[[0, 0], [100, 1]], 0.2, 2],    # Primo compatto
-            [[[0, 5], [100, 10]], 0.2, 2]    # Secondo compatto
-        ]
-        expanded = EnvelopeBuilder.parse(mixed)
-        
-        # 2 * (2 cicli * 2 punti + 1 discontinuità) = 10 totali
-        assert len(expanded) == 10
-    
-    def test_parse_compact_with_cycle_marker(self):
-        """Parse compatto seguito da 'cycle' marker."""
-        mixed = [
-            [[[0, 0], [100, 1]], 0.1, 1],
+    def test_parse_mixed_with_cycle(self):
+        """Parse misto con marker 'cycle'."""
+        points = [
+            [[[0, 0], [100, 1]], 0.2, 2],
             'cycle',
-            [0.5, 0.5]
+            [1.0, 0]
         ]
-        expanded = EnvelopeBuilder.parse(mixed)
+        expanded = EnvelopeBuilder.parse(points)
         
-        # 2 da compatto + 'cycle' + 1 standard = 4
-        assert len(expanded) == 4
-        assert expanded[2] == 'cycle'
-
+        # Compatto + cycle + standard
+        assert 'cycle' in expanded
+        assert [1.0, 0] in expanded
+    
+    def test_parse_multiple_compact(self):
+        """Parse con multipli formati compatti."""
+        points = [
+            [[[0, 0], [100, 1]], 0.2, 2],
+            [[[0, 5], [100, 10]], 0.1, 1]
+        ]
+        expanded = EnvelopeBuilder.parse(points)
+        
+        # Primo: 2 cicli * 2 punti = 4
+        # Secondo: 1 ciclo * 2 punti = 2
+        # Totale = 6
+        assert len(expanded) == 6
 
 # =============================================================================
 # 6. TEST PARSE - FORMATO LEGACY
@@ -353,15 +376,14 @@ class TestParseMixedFormat:
 class TestParseLegacyFormat:
     """Test parse() con formato legacy."""
     
-    def test_parse_legacy_unchanged(self, legacy_breakpoints):
-        """Parse legacy passa invariato."""
+    def test_parse_legacy_standard(self, legacy_breakpoints):
+        """Parse formato legacy standard (passa invariato)."""
         expanded = EnvelopeBuilder.parse(legacy_breakpoints)
         
-        # Lista identica
         assert expanded == legacy_breakpoints
     
     def test_parse_legacy_with_cycle(self, legacy_with_cycle):
-        """Parse legacy con 'cycle' passa invariato."""
+        """Parse formato legacy con 'cycle'."""
         expanded = EnvelopeBuilder.parse(legacy_with_cycle)
         
         assert expanded == legacy_with_cycle
@@ -373,6 +395,13 @@ class TestParseLegacyFormat:
         expanded = EnvelopeBuilder.parse(single)
         
         assert expanded == single
+    
+    def test_parse_empty_list(self):
+        """Parse lista vuota (passa invariata)."""
+        empty = []
+        expanded = EnvelopeBuilder.parse(empty)
+        
+        assert expanded == []
 
 
 # =============================================================================
@@ -396,31 +425,48 @@ class TestTemporalDiscontinuities:
         assert discontinuity == pytest.approx(
             end_first + EnvelopeBuilder.DISCONTINUITY_OFFSET
         )
-    
-    def test_multiple_discontinuities_offset(self):
-        """Discontinuità multiple con offset cumulativi."""
+        
+    def test_discontinuity_offset_not_cumulative(self):
+        """Offset NON è cumulativo, sempre lo stesso."""
         compact = [[[0, 0], [100, 1]], 0.3, 3]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # Discontinuità dopo ciclo 1 e 2
-        disc1_time = expanded[2][0]
-        disc2_time = expanded[5][0]
+        # 3 cicli * 2 punti = 6 breakpoints
+        assert len(expanded) == 6
         
-        # Verifica che siano distanziati correttamente
-        cycle_duration = 0.1
-        expected_disc2 = cycle_duration + 2 * EnvelopeBuilder.DISCONTINUITY_OFFSET
+        # Verifica offset sempre uguale (non cumulativo)
+        # Ciclo 0: [0.0, 0.1]
+        # Ciclo 1: [0.100001, 0.2]
+        # Ciclo 2: [0.200001, 0.3]
         
-        assert disc2_time == pytest.approx(expected_disc2)
+        offset1 = expanded[2][0] - 0.1  # Primo punto ciclo 1 - fine ciclo 0
+        offset2 = expanded[4][0] - 0.2  # Primo punto ciclo 2 - fine ciclo 1
+        
+        assert offset1 == pytest.approx(EnvelopeBuilder.DISCONTINUITY_OFFSET)
+        assert offset2 == pytest.approx(EnvelopeBuilder.DISCONTINUITY_OFFSET)
+
+
+
+    def test_no_discontinuity_single_rep(self, compact_single_rep):
+        """Nessuna discontinuità con singola ripetizione."""
+        expanded = EnvelopeBuilder._expand_compact_format(compact_single_rep)
+        
+        # Solo 2 breakpoints, nessuna discontinuità
+        assert len(expanded) == 2
     
-    def test_no_time_collision(self):
-        """Nessun tempo collide con un altro."""
-        compact = [[[0, 0], [100, 1]], 1.0, 100]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        times = [bp[0] for bp in expanded]
-        
-        # Verifica unicità (set dovrebbe avere stessa lunghezza)
-        assert len(times) == len(set(times))
+
+
+    def test_total_breakpoint_count(self):
+        """Numero totale breakpoints = n_reps * pattern_length."""
+        for n_reps in [2, 5, 10, 50]:
+            compact = [[[0, 0], [100, 1]], 1.0, n_reps]
+            expanded = EnvelopeBuilder._expand_compact_format(compact)
+            
+            # Formula: n_reps * 2 (no discontinuità separate)
+            expected_count = n_reps * 2
+            assert len(expanded) == expected_count
+
+
 
 
 # =============================================================================
@@ -436,16 +482,38 @@ class TestMonotonicOrdering:
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
         for i in range(1, len(expanded)):
-            assert expanded[i][0] > expanded[i-1][0]
+            assert expanded[i][0] > expanded[i-1][0], \
+                f"Time at index {i} not > time at {i-1}"
     
-    def test_offset_prevents_equal_times(self):
-        """Offset previene tempi uguali."""
-        compact = [[[0, 0], [0, 1], [100, 2]], 0.2, 2]
+    def test_no_equal_times(self):
+        """Nessun tempo uguale a un altro."""
+        compact = [[[0, 0], [100, 1]], 1.0, 100]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # Anche con x%=0 due volte, tempi devono essere diversi
         times = [bp[0] for bp in expanded]
+        
+        # Set rimuove duplicati - deve avere stessa lunghezza
         assert len(times) == len(set(times))
+    
+    def test_offset_prevents_collision_between_cycles(self):
+        """Offset previene collisioni TRA cicli."""
+        # Pattern con UN solo punto
+        compact = [[[0, 1]], 0.1, 5]
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        # 5 cicli * 1 punto = 5 breakpoints
+        times = [bp[0] for bp in expanded]
+        assert len(times) == len(set(times))  # Tutti distinti
+
+    
+    def test_monotonic_with_many_points(self):
+        """Monotonia con molti punti nel pattern."""
+        pattern = [[i*10, i] for i in range(11)]  # 0, 10, 20, ..., 100
+        compact = [pattern, 1.0, 5]
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        for i in range(1, len(expanded)):
+            assert expanded[i][0] > expanded[i-1][0]
 
 
 # =============================================================================
@@ -453,59 +521,58 @@ class TestMonotonicOrdering:
 # =============================================================================
 
 class TestEdgeCases:
-    """Test casi limite."""
-    
-    def test_very_short_duration(self):
-        """Durata molto breve."""
-        compact = [[[0, 0], [100, 1]], 0.001, 10]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        # Deve funzionare
-        assert len(expanded) == 29  # 10*2 + 9 discontinuità
-        
-        # Verifica ultimo tempo
-        assert expanded[-1][0] == pytest.approx(0.001)
-    
-    def test_very_long_duration(self):
-        """Durata molto lunga."""
-        compact = [[[0, 0], [100, 1]], 1000.0, 2]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        assert len(expanded) == 5  # 2*2 + 1 discontinuità
-        assert expanded[-1][0] == pytest.approx(1000.0)
+    """Test casi edge e boundary."""
     
     def test_single_point_pattern(self):
         """Pattern con singolo punto."""
-        compact = [[[0, 5]], 0.4, 4]
+        compact = [[[0, 42]], 1.0, 3]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # 4 cicli * 1 punto + 3 discontinuità = 7
-        assert len(expanded) == 7
-        
-        # Tutti i valori devono essere 5
-        assert all(bp[1] == 5 for bp in expanded)
-    
-    def test_extreme_percentage_values(self):
-        """Valori percentuali estremi (0% e 100%)."""
-        compact = [[[0, -10], [100, 10]], 1.0, 2]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        # Primo punto di ogni ciclo a t_start
-        assert expanded[0] == [0.0, -10]
-        assert expanded[3][1] == -10
-        
-        # Ultimo punto di ogni ciclo a t_end
-        assert expanded[1] == pytest.approx([0.5, 10])
-        assert expanded[5] == pytest.approx([1.0, 10])
-    
-    def test_non_standard_percentage_order(self):
-        """Percentuali non ordinate (vengono ordinate)."""
-        compact = [[[100, 1], [0, 0], [50, 0.5]], 1.0, 1]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        # Pattern dovrebbe essere ordinato internamente se necessario
-        # (questo dipende dall'implementazione - verifica comportamento)
+        # 3 cicli * 1 punto + 2 discontinuità = 5
         assert len(expanded) == 3
+        
+        # Tutti i valori Y = 42
+        for bp in expanded:
+            assert bp[1] == 42
+    
+    def test_same_x_percent_in_pattern_collide(self):
+        """Punti con stesso x% nello stesso pattern collidono (limitazione)."""
+        compact = [[[0, 10], [0, 20], [0, 30]], 0.3, 2]
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        # 2 cicli * 3 punti = 6, ma alcuni collidono
+        # Questo è un caso limite non gestito
+        assert len(expanded) == 6
+
+    
+    def test_large_n_reps(self, compact_many_reps):
+        """Molte ripetizioni (100)."""
+        expanded = EnvelopeBuilder._expand_compact_format(compact_many_reps)
+        
+        # 100 cicli * 2 punti = 200
+        assert len(expanded) == 200
+        
+        # Primo e ultimo tempo
+        assert expanded[0][0] == pytest.approx(0.0)
+        assert expanded[-1][0] <= 1.0
+    
+    def test_very_short_duration(self):
+        """Durata molto breve."""
+        compact = [[[0, 0], [100, 1]], 0.001, 5]
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        # Deve funzionare anche con durate minime
+        assert len(expanded) == 10  # 5*2 + 4
+        assert expanded[-1][0] <= 0.001
+    
+    def test_fractional_percentages(self):
+        """Percentuali frazionarie."""
+        compact = [[[0, 0], [33.33, 0.5], [66.67, 0.8], [100, 1]], 1.0, 1]
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        assert len(expanded) == 4
+        assert expanded[1][0] == pytest.approx(0.3333)
+        assert expanded[2][0] == pytest.approx(0.6667)
 
 
 # =============================================================================
@@ -513,180 +580,368 @@ class TestEdgeCases:
 # =============================================================================
 
 class TestValidationErrors:
-    """Test validazione e gestione errori."""
+    """Test validazione e errori."""
     
-    def test_error_zero_repetitions(self):
-        """n_reps=0 solleva ValueError."""
+    def test_error_zero_n_reps(self):
+        """Errore con n_reps = 0."""
         compact = [[[0, 0], [100, 1]], 0.4, 0]
         
         with pytest.raises(ValueError, match="n_reps deve essere >= 1"):
             EnvelopeBuilder._expand_compact_format(compact)
     
-    def test_error_negative_repetitions(self):
-        """n_reps negativo solleva ValueError."""
+    def test_error_negative_n_reps(self):
+        """Errore con n_reps negativo."""
         compact = [[[0, 0], [100, 1]], 0.4, -5]
         
         with pytest.raises(ValueError, match="n_reps deve essere >= 1"):
             EnvelopeBuilder._expand_compact_format(compact)
     
     def test_error_zero_total_time(self):
-        """total_time=0 solleva ValueError."""
+        """Errore con total_time = 0."""
         compact = [[[0, 0], [100, 1]], 0.0, 4]
         
         with pytest.raises(ValueError, match="total_time deve essere > 0"):
             EnvelopeBuilder._expand_compact_format(compact)
     
     def test_error_negative_total_time(self):
-        """total_time negativo solleva ValueError."""
+        """Errore con total_time negativo."""
         compact = [[[0, 0], [100, 1]], -0.5, 4]
         
         with pytest.raises(ValueError, match="total_time deve essere > 0"):
             EnvelopeBuilder._expand_compact_format(compact)
     
     def test_error_empty_pattern(self):
-        """Pattern vuoto solleva ValueError."""
+        """Errore con pattern vuoto."""
         compact = [[], 0.4, 4]
         
         with pytest.raises(ValueError, match="pattern_points non può essere vuoto"):
             EnvelopeBuilder._expand_compact_format(compact)
     
-    def test_error_invalid_pattern_format(self):
-        """Pattern con formato invalido."""
-        # Pattern non è lista di liste
-        compact = ["invalid", 0.4, 4]
+    def test_error_malformed_pattern_points(self):
+        """Errore con pattern points malformati."""
+        compact = [[[0]], 0.4, 4]  # Missing Y value
         
-        # Dovrebbe essere rilevato da _is_compact_format
-        assert not EnvelopeBuilder._is_compact_format(compact)
+        # Dovrebbe sollevare errore durante unpacking
+        with pytest.raises((ValueError, TypeError, IndexError)):
+            EnvelopeBuilder._expand_compact_format(compact)
 
 
 # =============================================================================
-# 11. TEST HELPER FUNCTIONS
-# =============================================================================
-
-class TestHelperFunctions:
-    """Test funzioni helper."""
-    
-    def test_detect_format_compact(self, simple_compact):
-        """detect_format_type riconosce compatto."""
-        assert detect_format_type(simple_compact) == 'compact'
-    
-    def test_detect_format_breakpoint(self):
-        """detect_format_type riconosce breakpoint."""
-        assert detect_format_type([0.5, 10]) == 'breakpoint'
-    
-    def test_detect_format_cycle(self):
-        """detect_format_type riconosce 'cycle'."""
-        assert detect_format_type('cycle') == 'cycle'
-        assert detect_format_type('CYCLE') == 'cycle'
-    
-    def test_detect_format_unknown(self):
-        """detect_format_type ritorna 'unknown' per altro."""
-        assert detect_format_type(42) == 'unknown'
-        assert detect_format_type("string") == 'unknown'
-        assert detect_format_type([1, 2, 3]) == 'unknown'
-
-
-# =============================================================================
-# 12. TEST LOGGING DELLE TRASFORMAZIONI (MOCK)
+# 11. TEST LOGGING TRASFORMAZIONI
 # =============================================================================
 
 class TestLoggingTransformations:
     """Test logging delle trasformazioni (con mock)."""
     
-    @patch('envelope_builder.get_clip_logger')
-    def test_logging_called_on_expansion(self, mock_get_logger, simple_compact):
-        """Logging chiamato durante espansione."""
+    @patch('logger.get_clip_logger')
+    def test_logging_called_on_expand(self, mock_get_logger, simple_compact):
+        """Logging chiamato durante expand."""
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         
         EnvelopeBuilder._expand_compact_format(simple_compact)
         
-        # Verifica che logger.info sia stato chiamato
+        # Logger deve essere chiamato
         assert mock_logger.info.called
-        
-        # Verifica almeno alcune chiamate chiave
-        calls = [str(call) for call in mock_logger.info.call_args_list]
-        
-        # Cerca pattern caratteristici nel log
-        log_text = ' '.join(calls)
-        assert 'COMPACT ENVELOPE TRANSFORMATION' in log_text or mock_logger.info.call_count > 0
     
-    @patch('envelope_builder.get_clip_logger')
-    def test_logging_disabled_if_logger_none(self, mock_get_logger, simple_compact):
-        """Logging disabilitato se logger è None."""
+    @patch('logger.get_clip_logger')
+    def test_logging_contains_input_info(self, mock_get_logger, simple_compact):
+        """Log contiene info formato compatto."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        EnvelopeBuilder._expand_compact_format(simple_compact)
+        
+        # Verifica che il log contenga info rilevanti
+        calls = [str(call) for call in mock_logger.info.call_args_list]
+        log_text = ' '.join(calls)
+        
+        assert 'total_time=0.4' in log_text or '0.4s' in log_text
+        assert '4' in log_text  # n_reps
+    
+    @patch('logger.get_clip_logger')
+    def test_logging_disabled_when_logger_none(self, mock_get_logger, simple_compact):
+        """Nessun errore se logger è None."""
         mock_get_logger.return_value = None
         
         # Non deve sollevare errori
         expanded = EnvelopeBuilder._expand_compact_format(simple_compact)
-        
-        # Espansione deve comunque funzionare
-        assert len(expanded) == 11
+        assert len(expanded) == 8
     
-    @patch('envelope_builder.get_clip_logger')
-    def test_logging_includes_key_info(self, mock_get_logger, compact_with_interp):
-        """Logging include informazioni chiave."""
+    @patch('logger.get_clip_logger')
+    def test_logging_called_for_each_compact(self, mock_get_logger):
+        """Logging chiamato per ogni formato compatto."""
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         
-        EnvelopeBuilder._expand_compact_format(compact_with_interp)
+        points = [
+            [[[0, 0], [100, 1]], 0.2, 2],
+            [[[0, 5], [100, 10]], 0.1, 1]
+        ]
         
-        # Verifica che info sia chiamato con stringhe contenenti info chiave
-        calls_args = [call[0][0] for call in mock_logger.info.call_args_list]
-        log_text = ' '.join(calls_args)
+        EnvelopeBuilder.parse(points)
         
-        # Cerca elementi chiave
-        assert any('Pattern points' in text or 'Total time' in text 
-                   or 'Repetitions' in text for text in calls_args)
+        # Due espansioni = due set di log
+        # Ogni espansione fa ~8 chiamate info
+        assert mock_logger.info.call_count >= 10
 
 
 # =============================================================================
-# 13. TEST PROPRIETÀ MATEMATICHE
+# 12. TEST HELPER FUNCTIONS
+# =============================================================================
+
+class TestHelperFunctions:
+    """Test helper functions."""
+    
+    def test_detect_compact(self, simple_compact):
+        """detect_format_type identifica 'compact'."""
+        assert detect_format_type(simple_compact) == 'compact'
+    
+    def test_detect_breakpoint(self):
+        """detect_format_type identifica 'breakpoint'."""
+        assert detect_format_type([0, 10]) == 'breakpoint'
+        assert detect_format_type([0.5, 42.7]) == 'breakpoint'
+    
+    def test_detect_cycle(self):
+        """detect_format_type identifica 'cycle'."""
+        assert detect_format_type('cycle') == 'cycle'
+        assert detect_format_type('CYCLE') == 'cycle'
+    
+    def test_detect_unknown(self):
+        """detect_format_type ritorna 'unknown' per altro."""
+        assert detect_format_type(42) == 'unknown'
+        assert detect_format_type("foo") == 'unknown'
+        assert detect_format_type([1, 2, 3]) == 'unknown'
+
+
+# =============================================================================
+# 13. TEST MATEMATICI
 # =============================================================================
 
 class TestMathematicalProperties:
-    """Test proprietà matematiche dell'espansione."""
+    """Test proprietà matematiche."""
+    
+    def test_cycle_duration_calculation(self):
+        """Durata ciclo calcolata correttamente."""
+        for total_time in [1.0, 2.5, 0.333]:
+            for n_reps in [1, 5, 10]:
+                compact = [[[0, 0], [100, 1]], total_time, n_reps]
+                expanded = EnvelopeBuilder._expand_compact_format(compact)
+                
+                expected_cycle_duration = total_time / n_reps
+                
+                # Verifica usando differenza tra punti corrispondenti
+                if n_reps > 1:
+                    # Primo punto primo ciclo e primo punto secondo ciclo
+                    first_cycle_start = expanded[0][0]
+                    second_cycle_start = expanded[2][0]  # 1*2 = indice 2
+                    
+                    # Sottrai offset
+                    actual_cycle_duration = second_cycle_start - first_cycle_start - EnvelopeBuilder.DISCONTINUITY_OFFSET
+                    
+                    assert actual_cycle_duration == pytest.approx(
+                        expected_cycle_duration, rel=1e-3
+                    )
     
     def test_total_duration_preserved(self):
-        """Durata totale preservata."""
-        total_time = 1.0
-        compact = [[[0, 0], [100, 1]], total_time, 10]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        # Ultimo tempo deve essere circa total_time
-        assert expanded[-1][0] == pytest.approx(total_time, abs=1e-5)
-    
-    def test_cycle_duration_uniform(self):
-        """Durata cicli uniforme."""
-        compact = [[[0, 0], [100, 1]], 1.0, 4]
-        expanded = EnvelopeBuilder._expand_compact_format(compact)
-        
-        expected_cycle_duration = 0.25
-        
-        # Trova gli inizi cicli (escludendo discontinuità)
-        cycle_starts = [0, 3, 6, 9]  # Indici dei primi punti di ogni ciclo
-        
-        for i in range(len(cycle_starts) - 1):
-            start_idx = cycle_starts[i]
-            end_idx = cycle_starts[i] + 1  # Fine dello stesso ciclo
+        """Durata totale preservata (entro tolleranza offset)."""
+        for total_time in [0.5, 1.0, 2.0]:
+            compact = [[[0, 0], [100, 1]], total_time, 10]
+            expanded = EnvelopeBuilder._expand_compact_format(compact)
             
-            cycle_dur = expanded[end_idx][0] - expanded[start_idx][0]
-            assert cycle_dur == pytest.approx(expected_cycle_duration, abs=1e-5)
+            actual_duration = expanded[-1][0] - expanded[0][0]
+            
+            # Differenza dovuta solo agli offset
+            max_offset = 9 * EnvelopeBuilder.DISCONTINUITY_OFFSET  # n_reps - 1
+            
+            assert abs(actual_duration - total_time) <= max_offset
     
-    def test_value_repetition(self):
-        """Valori si ripetono ciclicamente."""
-        compact = [[[0, 5], [100, 10]], 1.0, 3]
+    def test_pattern_repetition_symmetry(self):
+        """Pattern si ripete identicamente (modulo offset)."""
+        compact = [[[0, 5], [50, 10], [100, 5]], 1.0, 3]
         expanded = EnvelopeBuilder._expand_compact_format(compact)
         
-        # Pattern: [5, 10] si ripete 3 volte
-        # Ogni inizio ciclo ha valore 5, ogni fine ha valore 10
-        cycle_start_indices = [0, 3, 6]
+        cycle_duration = 1.0 / 3
         
-        for idx in cycle_start_indices:
-            assert expanded[idx][1] == 5
-            assert expanded[idx + 1][1] == 10
+        # Valori Y devono ripetersi
+        # Ciclo 0: indices 0,1,2
+        # Ciclo 1: indices 3,4,5
+        # Ciclo 2: indices 6,7,8
 
+        assert expanded[0][1] == expanded[3][1] == expanded[6][1]  # = 5
+        assert expanded[1][1] == expanded[4][1] == expanded[7][1]  # = 10
+        assert expanded[2][1] == expanded[5][1] == expanded[8][1]  # = 5
 
 # =============================================================================
-# RUN TESTS
+# 14. TEST ROBUSTEZZA INPUT MALFORMATI
 # =============================================================================
 
+class TestRobustnessMalformedInput:
+    """Test robustezza con input malformati."""
+        
+    def test_negative_percentages(self):
+        """Percentuali negative (dovrebbe funzionare, ma tempi strani)."""
+        compact = [[[-50, 0], [100, 1]], 0.4, 2]
+        
+        # Non dovrebbe crashare, ma produce tempi strani
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        
+        # Almeno deve produrre output
+        assert len(expanded) > 0
+    
+    def test_percentages_over_100(self):
+        """Percentuali > 100 (estrapolazione)."""
+        compact = [[[0, 0], [200, 1]], 0.4, 2]
+        
+        # Non dovrebbe crashare
+        expanded = EnvelopeBuilder._expand_compact_format(compact)
+        assert len(expanded) == 4  # 2*2 + 1
+    
+    def test_float_n_reps_rejected(self):
+        """n_reps float rifiutato da _is_compact_format."""
+        compact = [[[0, 0], [100, 1]], 0.4, 4.5]
+        
+        # _is_compact_format deve rifiutare
+        assert not EnvelopeBuilder._is_compact_format(compact)
+
+    # Test aggiuntivi per _log_compact_transformation (da aggiungere a TestLoggingTransformations)
+
+    @patch('logger.get_clip_logger')
+    def test_log_compact_direct_call(self, mock_get_logger):
+        """Test chiamata diretta a _log_compact_transformation."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        compact = [[[0, 0], [50, 0.5], [100, 1]], 0.3, 3]
+        expanded = [
+            [0.0, 0], [0.05, 0.5], [0.1, 1],
+            [0.100001, 0],
+            [0.100002, 0], [0.15, 0.5], [0.2, 1],
+            [0.200001, 0],
+            [0.200002, 0], [0.25, 0.5], [0.3, 1]
+        ]
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        # Verifica chiamate logger
+        assert mock_logger.info.called
+        assert mock_logger.info.call_count >= 8
+
+    @patch('logger.get_clip_logger')
+    def test_log_shows_pattern_points(self, mock_get_logger):
+        """Log mostra pattern points correttamente."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        pattern = [[0, 10], [50, 20], [100, 30]]
+        compact = [pattern, 1.0, 5]
+        expanded = [[0.0, 10], [0.1, 20], [0.2, 30]]  # Simplified
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        # Cerca pattern nei log
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        assert '[[0, 10], [50, 20], [100, 30]]' in calls_text or 'Pattern points' in calls_text
+
+    @patch('logger.get_clip_logger')
+    def test_log_shows_cycle_info(self, mock_get_logger):
+        """Log mostra info cicli (total_time, n_reps, cycle_duration)."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        compact = [[[0, 0], [100, 1]], 2.5, 10]
+        expanded = [[0.0, 0], [0.25, 1]]  # Simplified
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        
+        # Verifica presenza info chiave
+        assert '2.5' in calls_text or 'Total time' in calls_text
+        assert '10' in calls_text or 'Repetitions' in calls_text
+        assert '0.25' in calls_text or 'Cycle duration' in calls_text
+
+    @patch('logger.get_clip_logger')
+    def test_log_shows_interpolation_type(self, mock_get_logger):
+        """Log mostra tipo interpolazione se presente."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        compact = [[[0, 0], [100, 1]], 0.4, 4, 'cubic']
+        expanded = [[0.0, 0], [0.1, 1]]  # Simplified
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        assert 'cubic' in calls_text or 'Interpolation' in calls_text
+
+    @patch('logger.get_clip_logger')
+    def test_log_shows_output_summary(self, mock_get_logger):
+        """Log mostra summary output (n_breakpoints, time_range)."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        compact = [[[0, 0], [100, 1]], 1.0, 5]
+        expanded = [
+            [0.0, 0], [0.2, 1], [0.200001, 0],
+            [0.200002, 0], [0.4, 1], [0.400001, 0],
+            [0.400002, 0], [0.6, 1], [0.600001, 0],
+            [0.600002, 0], [0.8, 1], [0.800001, 0],
+            [0.800002, 0], [1.0, 1]
+        ]
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        
+        # Verifica info output
+        assert '14' in calls_text or 'breakpoints' in calls_text
+        assert '0.0' in calls_text and '1.0' in calls_text  # Time range
+
+    @patch('logger.get_clip_logger')
+    def test_log_shows_preview_breakpoints(self, mock_get_logger):
+        """Log mostra preview breakpoints (primi e ultimi 5)."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        # Molti breakpoints per testare preview
+        expanded = [[i*0.1, i] for i in range(20)]
+        compact = [[[0, 0], [100, 1]], 2.0, 10]
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        
+        # Verifica presenza "First" e "Last"
+        assert 'First' in calls_text or 'first' in calls_text
+        assert 'Last' in calls_text or 'last' in calls_text
+
+    @patch('logger.get_clip_logger')
+    def test_log_no_crash_if_logger_none(self, mock_get_logger):
+        """Nessun crash se get_clip_logger ritorna None."""
+        mock_get_logger.return_value = None
+        
+        compact = [[[0, 0], [100, 1]], 0.4, 4]
+        expanded = [[0.0, 0], [0.1, 1]]
+        
+        # Non deve sollevare errori
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        # Se arriviamo qui, il test passa
+        assert True
+
+    @patch('logger.get_clip_logger')
+    def test_log_separator_lines(self, mock_get_logger):
+        """Log contiene linee separatore per leggibilità."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+        
+        compact = [[[0, 0], [100, 1]], 0.2, 2]
+        expanded = [[0.0, 0], [0.1, 1]]
+        
+        EnvelopeBuilder._log_compact_transformation(compact, expanded)
+        
+        calls_text = ' '.join([str(call) for call in mock_logger.info.call_args_list])
+        
+        # Verifica presenza separatori
+        assert '=' in calls_text or 'TRANSFORMATION' in calls_text

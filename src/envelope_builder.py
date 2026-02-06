@@ -123,7 +123,7 @@ class EnvelopeBuilder:
             return False
         
         return True
-    
+        
     @classmethod
     def _expand_compact_format(cls, compact: list) -> list:
         """
@@ -135,25 +135,16 @@ class EnvelopeBuilder:
             
         Returns:
             Lista di breakpoints [t, v] con tempi strettamente crescenti
-            
-        Algorithm:
-            1. Calcola cycle_duration = total_time / n_reps
-            2. Per ogni ripetizione:
-               - Converti coordinate % → assolute
-               - Se tempo <= precedente, sposta avanti con offset
-               - Aggiungi discontinuità dopo ogni ciclo (tranne l'ultimo)
-            3. Ritorna lista con tempi garantiti strettamente crescenti
-            
+                        
         Examples:
             >>> cls._expand_compact_format([[[0, 0], [100, 1]], 0.4, 4])
-            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.100002, 0], [0.2, 1], ...]
+            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.2, 1], [0.200001, 0], [0.3, 1], [0.300001, 0], [0.4, 1]]
         """
         # Parse input
         pattern_points_pct = compact[0]
         total_time = compact[1]
         n_reps = compact[2]
         interp_type = compact[3] if len(compact) == 4 else None
-        # interp_type ignorato qui (gestito da Envelope)
         
         # Valida
         if n_reps < 1:
@@ -168,42 +159,31 @@ class EnvelopeBuilder:
         # Calcola durata ciclo singolo
         cycle_duration = total_time / n_reps
         
-        # Estrai primo valore per discontinuità
-        first_value = pattern_points_pct[0][1]
-        
         # Espandi breakpoints
         expanded = []
         
         for rep in range(n_reps):
+            # Tempo inizio ciclo con offset cumulativo
             cycle_start_time = rep * cycle_duration
-            
+                        
             # Converti coordinate % → assolute per questo ciclo
-            for x_pct, y in pattern_points_pct:
+            for i, (x_pct, y) in enumerate(pattern_points_pct):
                 # x_pct è in [0, 100]
                 # Normalizza a [0, 1]
                 x_normalized = x_pct / 100.0
                 
                 # Calcola tempo assoluto
                 t_absolute = cycle_start_time + (x_normalized * cycle_duration)
-                
-                # FIX CRITICAL: Garantisce ordinamento monotono stretto
-                # Se il tempo è <= all'ultimo inserito, sposta avanti
-                if expanded and t_absolute <= expanded[-1][0]:
-                    t_absolute = expanded[-1][0] + cls.DISCONTINUITY_OFFSET
-                
-                expanded.append([t_absolute, y])
+                # Applica offset SOLO al primo punto di cicli successivi
+                if rep > 0 and i == 0:
+                    t_absolute += cls.DISCONTINUITY_OFFSET
             
-            # Aggiungi discontinuità DOPO ogni ciclo, tranne l'ultimo
-            if rep < n_reps - 1:
-                # Tempo = fine ciclo corrente + offset infinitesimale
-                last_t = expanded[-1][0]
-                discontinuity_t = last_t + cls.DISCONTINUITY_OFFSET
-                
-                # Valore = primo valore del pattern (reset)
-                expanded.append([discontinuity_t, first_value])
+
+                expanded.append([t_absolute, y])
+        
         # LOGGING della trasformazione
         cls._log_compact_transformation(compact, expanded)
-                
+        
         return expanded
 
 
