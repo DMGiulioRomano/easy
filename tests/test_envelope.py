@@ -191,12 +191,12 @@ class TestEvaluateCompact:
     
     def test_evaluate_second_cycle(self, env_compact_simple):
         """Secondo ciclo (0.1-0.2s)."""
-        assert env_compact_simple.evaluate(0.15) == pytest.approx(0.5)
+        assert env_compact_simple.evaluate(0.15) == pytest.approx(0.5, abs=1e-4)
         assert env_compact_simple.evaluate(0.2) == pytest.approx(1.0)
     
     def test_evaluate_last_cycle(self, env_compact_simple):
         """Ultimo ciclo (0.3-0.4s)."""
-        assert env_compact_simple.evaluate(0.35) == pytest.approx(0.5)
+        assert env_compact_simple.evaluate(0.35) == pytest.approx(0.5, abs=1e-4)
         assert env_compact_simple.evaluate(0.4) == pytest.approx(1.0)
     
     def test_evaluate_after_compact(self, env_compact_simple):
@@ -406,7 +406,7 @@ class TestMixedFormats:
         
         # Transizione (tra i due segmenti compatti)
         # Dopo espansione, ci sono breakpoints connessi
-        assert env.evaluate(0.3) == pytest.approx(0.5)
+        assert env.evaluate(0.3) == pytest.approx(0.5, abs=1e-4)
     
     def test_dict_with_compact_points(self):
         """Dict con formato compatto in 'points'."""
@@ -470,7 +470,7 @@ class TestEdgeCases:
         
         # Verifica alcuni valori
         assert env.evaluate(0.005) == pytest.approx(0.5)  # Metà primo ciclo
-        assert env.evaluate(0.505) == pytest.approx(0.5)  # Metà 51° ciclo
+        assert env.evaluate(0.505) == pytest.approx(0.5, abs=1e-4)  # Metà 51° ciclo
 
 
 # =============================================================================

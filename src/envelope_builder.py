@@ -6,6 +6,12 @@ Design Pattern: Builder
 - Separa logica di parsing da Envelope
 - Gestisce formato legacy: [[t, v], ..., 'cycle']
 - Gestisce nuovo formato: [[[x%, y], ...], total_time, n_reps, interp_type?]
+
+FIXES APPLICATI:
+1. parse() riconosce formato compatto diretto
+2. extract_interp_type() controlla raw_points stesso prima di iterare
+3. _expand_compact_format() garantisce ordinamento temporale monotono
+4. _is_compact_format() accetta pattern vuoti (validazione in _expand_compact_format)
 """
 
 from typing import List, Union, Tuple, Optional
@@ -30,25 +36,31 @@ class EnvelopeBuilder:
         Parsa lista mista di formati, espandendo formato compatto.
         
         Args:
-            raw_points: Lista con mix di:
-                - [time, value] (legacy)
-                - 'cycle' marker
-                - [[[x%, y], ...], total_time, n_reps, interp?] (compact)
+            raw_points: 
+                - [[[x%, y], ...], total_time, n_reps, interp?] (formato compatto diretto)
+                - Lista con mix di:
+                    * [time, value] (legacy)
+                    * 'cycle' marker
+                    * [[[x%, y], ...], total_time, n_reps, interp?] (compact wrapped)
                 
         Returns:
             Lista espansa con solo [time, value] e 'cycle'
             
         Examples:
+            # Formato compatto DIRETTO (caso più comune)
+            >>> EnvelopeBuilder.parse([[[0, 0], [100, 1]], 0.4, 4])
+            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.100002, 0], [0.2, 1], ...]
+            
             # Legacy passa invariato
             >>> EnvelopeBuilder.parse([[0, 0], [1, 10], 'cycle'])
             [[0, 0], [1, 10], 'cycle']
-            
-            # Compact viene espanso
-            >>> EnvelopeBuilder.parse([
-            ...     [[[0, 0], [100, 1]], 0.4, 4]
-            ... ])
-            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.2, 1], ...]
         """
+        # FIX 1: Controlla PRIMA se raw_points STESSO è un formato compatto
+        if cls._is_compact_format(raw_points):
+            # Espandi direttamente e ritorna
+            return cls._expand_compact_format(raw_points)
+        
+        # Altrimenti, itera sugli elementi (formato legacy o misto)
         expanded = []
         
         for item in raw_points:
@@ -57,7 +69,7 @@ class EnvelopeBuilder:
                 compact_expanded = cls._expand_compact_format(item)
                 expanded.extend(compact_expanded)
             else:
-                # Legacy: passa invariato
+                # Legacy: passa invariato ([t, v] o 'cycle')
                 expanded.append(item)
         
         return expanded
@@ -81,17 +93,22 @@ class EnvelopeBuilder:
         
         # Deve avere 3 o 4 elementi
         if len(item) < 3:  # Minimo: [pattern_points, total_time, n_reps]
-            return False        
-        # Primo elemento deve essere lista di liste [[x, y], ...]
+            return False
+        
+        if len(item) > 4:  # Massimo: [pattern_points, total_time, n_reps, interp]
+            return False
+        
+        # Primo elemento deve essere lista (anche se vuota)
         if not isinstance(item[0], list):
             return False
         
-        if not item[0]:  # Lista vuota
-            return False
+        # FIX 4: NON rifiutare pattern vuoti qui
+        # La validazione "pattern_points non può essere vuoto" è in _expand_compact_format
         
-        # Verifica che sia lista di [x, y]
-        if not all(isinstance(p, list) and len(p) == 2 for p in item[0]):
-            return False
+        # Se pattern NON vuoto, verifica formato [x, y]
+        if item[0]:
+            if not all(isinstance(p, list) and len(p) == 2 for p in item[0]):
+                return False
         
         # Secondo elemento: total_time (float/int)
         if not isinstance(item[1], (int, float)):
@@ -111,24 +128,25 @@ class EnvelopeBuilder:
     def _expand_compact_format(cls, compact: list) -> list:
         """
         Espande formato compatto in breakpoints assoluti con discontinuità.
+        Garantisce ordinamento temporale monotono stretto.
         
         Args:
             compact: [[[x%, y], ...], total_time, n_reps, interp?]
             
         Returns:
-            Lista di breakpoints [t, v] espansi
+            Lista di breakpoints [t, v] con tempi strettamente crescenti
             
         Algorithm:
             1. Calcola cycle_duration = total_time / n_reps
             2. Per ogni ripetizione:
                - Converti coordinate % → assolute
-               - Aggiungi discontinuità (offset 0.000001) tranne dopo ultimo ciclo
-            3. Ritorna lista espansa
+               - Se tempo <= precedente, sposta avanti con offset
+               - Aggiungi discontinuità dopo ogni ciclo (tranne l'ultimo)
+            3. Ritorna lista con tempi garantiti strettamente crescenti
             
         Examples:
             >>> cls._expand_compact_format([[[0, 0], [100, 1]], 0.4, 4])
-            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.2, 1], 
-             [0.200001, 0], [0.3, 1], [0.300001, 0], [0.4, 1]]
+            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.100002, 0], [0.2, 1], ...]
         """
         # Parse input
         pattern_points_pct = compact[0]
@@ -149,7 +167,7 @@ class EnvelopeBuilder:
         # Calcola durata ciclo singolo
         cycle_duration = total_time / n_reps
         
-        # Estrai primo e ultimo valore per discontinuità
+        # Estrai primo valore per discontinuità
         first_value = pattern_points_pct[0][1]
         
         # Espandi breakpoints
@@ -158,7 +176,7 @@ class EnvelopeBuilder:
         for rep in range(n_reps):
             cycle_start_time = rep * cycle_duration
             
-            # Converti coordinate % → assolute
+            # Converti coordinate % → assolute per questo ciclo
             for x_pct, y in pattern_points_pct:
                 # x_pct è in [0, 100]
                 # Normalizza a [0, 1]
@@ -166,6 +184,11 @@ class EnvelopeBuilder:
                 
                 # Calcola tempo assoluto
                 t_absolute = cycle_start_time + (x_normalized * cycle_duration)
+                
+                # FIX CRITICAL: Garantisce ordinamento monotono stretto
+                # Se il tempo è <= all'ultimo inserito, sposta avanti
+                if expanded and t_absolute <= expanded[-1][0]:
+                    t_absolute = expanded[-1][0] + cls.DISCONTINUITY_OFFSET
                 
                 expanded.append([t_absolute, y])
             
@@ -193,6 +216,14 @@ class EnvelopeBuilder:
         Returns:
             str or None: Tipo interpolazione ('linear', 'cubic', 'step')
         """
+        # FIX 2: Controlla PRIMA se raw_points STESSO è formato compatto con tipo
+        if cls._is_compact_format(raw_points):
+            # Formato compatto con 4 elementi include interp_type
+            if len(raw_points) == 4:
+                return raw_points[3]
+            return None
+        
+        # Altrimenti itera sugli elementi (formato misto)
         for item in raw_points:
             if cls._is_compact_format(item):
                 # Formato compatto con 4 elementi include interp_type
