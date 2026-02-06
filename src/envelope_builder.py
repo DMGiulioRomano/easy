@@ -152,6 +152,7 @@ class EnvelopeBuilder:
         pattern_points_pct = compact[0]
         total_time = compact[1]
         n_reps = compact[2]
+        interp_type = compact[3] if len(compact) == 4 else None
         # interp_type ignorato qui (gestito da Envelope)
         
         # Valida
@@ -200,9 +201,86 @@ class EnvelopeBuilder:
                 
                 # Valore = primo valore del pattern (reset)
                 expanded.append([discontinuity_t, first_value])
-        
+        # LOGGING della trasformazione
+        cls._log_compact_transformation(compact, expanded)
+                
         return expanded
+
+
+    @classmethod
+    def _log_compact_transformation(cls, compact: list, expanded: list):
+        """
+        Logga la trasformazione da formato compatto a espanso.
+        
+        Args:
+            compact: Formato originale [[[x%, y], ...], total_time, n_reps, interp?]
+            expanded: Lista espansa di breakpoints [[t, v], ...]
+        """
+        # Importa logger locale per evitare circular imports
+        from logger import get_clip_logger
+        
+        logger = get_clip_logger()
+        if logger is None:
+            return
+        
+        # Parse compact format
+        pattern_points_pct = compact[0]
+        total_time = compact[1]
+        n_reps = compact[2]
+        interp_type = compact[3] if len(compact) == 4 else 'linear'
+        
+        # Formato compatto rappresentazione string
+        compact_repr = (
+            f"[{pattern_points_pct}, "
+            f"total_time={total_time}s, "
+            f"n_reps={n_reps}"
+        )
+        if len(compact) == 4:
+            compact_repr += f", interp='{interp_type}'"
+        compact_repr += "]"
+        
+        # Conta breakpoints espansi (escludendo discontinuità artificiali)
+        n_breakpoints = len(expanded)
+        cycle_duration = total_time / n_reps
+        
+        # Log header
+        logger.info(
+            f"\n{'='*80}\n"
+            f"COMPACT ENVELOPE TRANSFORMATION\n"
+            f"{'='*80}"
+        )
+        
+        # Log formato compatto
+        logger.info(f"\n[INPUT] Compact format:")
+        logger.info(f"  Pattern points: {pattern_points_pct}")
+        logger.info(f"  Total time: {total_time}s")
+        logger.info(f"  Repetitions: {n_reps}")
+        logger.info(f"  Cycle duration: {cycle_duration:.6f}s")
+        if len(compact) == 4:
+            logger.info(f"  Interpolation: {interp_type}")
+        
+        # Log risultato espanso
+        logger.info(f"\n[OUTPUT] Expanded format:")
+        logger.info(f"  Total breakpoints: {n_breakpoints}")
+        logger.info(f"  Time range: {expanded[0][0]:.6f}s → {expanded[-1][0]:.6f}s")
+        
+        # Log primi e ultimi breakpoints per verifica
+        preview_count = min(5, len(expanded))
+        logger.info(f"\n  First {preview_count} breakpoints:")
+        for i in range(preview_count):
+            t, v = expanded[i]
+            logger.info(f"    [{i}] t={t:.6f}s, v={v}")
+        
+        if len(expanded) > preview_count:
+            logger.info(f"  ...")
+            logger.info(f"  Last {preview_count} breakpoints:")
+            for i in range(len(expanded) - preview_count, len(expanded)):
+                t, v = expanded[i]
+                logger.info(f"    [{i}] t={t:.6f}s, v={v}")
+        
+        logger.info(f"{'='*80}\n")
     
+
     @classmethod
     def extract_interp_type(cls, raw_points: list) -> Optional[str]:
         """

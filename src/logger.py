@@ -15,6 +15,7 @@ CLIP_LOG_CONFIG = {
     'log_dir': './logs',                # Directory per i file di log
     'log_filename': None,               # None = auto-genera con timestamp
     'validation_mode': 'strict',
+    'log_transformations': True,        # Logga trasformazioni envelope compatti
 }
 
 _clip_logger = None
@@ -30,10 +31,11 @@ def configure_clip_logger(
     console_enabled=True,
     file_enabled=True,
     log_dir='./logs',
-    yaml_name=None        # <-- NUOVO: nome del file YAML
+    yaml_name=None,
+    log_transformations=True
 ):
     """
-    Configura il logger per i clip warnings.
+    Configura il logger per i clip warnings e trasformazioni envelope.
     Chiamare PRIMA di creare qualsiasi Stream.
     
     Args:
@@ -51,7 +53,8 @@ def configure_clip_logger(
     CLIP_LOG_CONFIG['file_enabled'] = file_enabled
     CLIP_LOG_CONFIG['log_dir'] = log_dir
     CLIP_LOG_CONFIG['yaml_name'] = yaml_name  # <-- NUOVO
-    
+    CLIP_LOG_CONFIG['log_transformations'] = log_transformations
+
     # Reset logger per ri-inizializzazione
     _clip_logger = None
     _clip_logger_initialized = False
@@ -84,7 +87,7 @@ def get_clip_logger():
     
     # Crea logger
     _clip_logger = logging.getLogger('envelope_clip')
-    _clip_logger.setLevel(logging.WARNING)
+    _clip_logger.setLevel(logging.INFO)
     _clip_logger.handlers = []  # Pulisci handler esistenti
     
     # === FILE HANDLER ===
@@ -109,7 +112,7 @@ def get_clip_logger():
         log_path = os.path.join(log_dir, log_filename)
         
         file_handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
-        file_handler.setLevel(logging.WARNING)
+        file_handler.setLevel(logging.INFO)
         file_format = logging.Formatter(
             '%(asctime)s | %(message)s',
             datefmt='%H:%M:%S'
