@@ -15,9 +15,30 @@ class Grain:
     sample_table: int
     envelope_table: int
 
+    def __post_init__(self):
+        """Valida i tipi degli attributi al momento dell'inizializzazione."""
+        # Validazione campi numerici (float/int accettabili)
+        numeric_fields = ['onset', 'duration', 'pointer_pos', 'pitch_ratio', 'volume', 'pan']
+        for field_name in numeric_fields:
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"Field '{field_name}' must be a number (int or float), "
+                    f"got {type(value).__name__}"
+                )
+        
+        # Validazione campi interi
+        int_fields = ['sample_table', 'envelope_table']
+        for field_name in int_fields:
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise TypeError(
+                    f"Field '{field_name}' must be an int, "
+                    f"got {type(value).__name__}"
+                )
+
     def to_score_line(self) -> str:
         """Genera la linea di score Csound."""
-        # Nota: l'accesso agli attributi è più veloce con slots
         return (f'i "Grain" {self.onset:.6f} {self.duration:.6f} '
                 f'{self.pointer_pos:.6f} {self.pitch_ratio:.6f} '
                 f'{self.volume:.2f} {self.pan:.3f} '
