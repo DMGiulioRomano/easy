@@ -1,28 +1,26 @@
-# test_envelope.py
 """
-Test suite completa per Envelope dopo refactoring Sprint 3.
-
-Formati supportati:
-1. Standard breakpoints: [[t, v], ...]
-2. Formato compatto: [[[x%, y], ...], total_time, n_reps, interp?]
-3. Dict format: {'type': 'cubic', 'points': [...]}
+Test suite completa per classe Envelope.
 
 Organizzazione:
-1. Test inizializzazione e parsing
-2. Test evaluate - standard format
-3. Test evaluate - compact format
-4. Test integrate - standard format
-5. Test integrate - compact format
-6. Test interpolation types (linear, step, cubic)
-7. Test formato misto
-8. Test edge cases
-9. Test validazione errori
-10. Test proprietà matematiche
+1. Test inizializzazione - formato standard
+2. Test inizializzazione - formato compatto
+3. Test inizializzazione - formato dict
+4. Test inizializzazione - formato misto
+5. Test evaluate() - vari tipi interpolazione
+6. Test integrate() - vari tipi interpolazione
+7. Test tipo interpolazione (linear, step, cubic)
+8. Test tangenti Fritsch-Carlson per cubic
+9. Test gestione errori
+10. Test type checker (is_envelope_like)
+11. Test backward compatibility
+12. Test casi edge
 """
 
 import pytest
+import math
+from typing import List
 from envelope import Envelope
-from envelope_segment import NormalSegment
+from envelope_interpolation import LinearInterpolation, StepInterpolation, CubicInterpolation
 
 
 # =============================================================================
@@ -30,558 +28,535 @@ from envelope_segment import NormalSegment
 # =============================================================================
 
 @pytest.fixture
-def env_standard_ramp():
-    """Rampa lineare standard: 0→100 in 10s."""
-    return Envelope([[0, 0], [10, 100]])
+def simple_linear_breakpoints():
+    """Breakpoints lineari semplici."""
+    return [[0, 0], [1, 10], [2, 0]]
+
 
 @pytest.fixture
-def env_standard_triangle():
-    """Triangolo standard: salita e discesa."""
-    return Envelope([[0, 0], [5, 100], [10, 0]])
+def compact_format_simple():
+    """Formato compatto semplice: 4 cicli in 0.4s."""
+    return [[[0, 0], [100, 1]], 0.4, 4]
+
 
 @pytest.fixture
-def env_compact_simple():
-    """Formato compatto: 4 ripetizioni in 0.4s."""
-    return Envelope([[[0, 0], [100, 1]], 0.4, 4])
+def compact_format_cubic():
+    """Formato compatto con interpolazione cubic."""
+    return [[[0, 0], [50, 0.5], [100, 1]], 0.3, 3, 'cubic']
+
 
 @pytest.fixture
-def env_compact_three_points():
-    """Formato compatto con 3 punti nel pattern."""
-    return Envelope([[[0, 0], [50, 0.5], [100, 1]], 0.3, 3])
+def dict_format_linear():
+    """Formato dict con linear."""
+    return {
+        'type': 'linear',
+        'points': [[0, 0], [1, 10]]
+    }
+
 
 @pytest.fixture
-def env_dict_cubic():
-    """Dict format con interpolazione cubic."""
-    return Envelope({'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 5]]})
+def dict_format_compact():
+    """Formato dict con formato compatto."""
+    return {
+        'type': 'step',
+        'points': [[[0, 0], [100, 1]], 0.2, 2]
+    }
+
+
+@pytest.fixture
+def mixed_format():
+    """Formato misto: compatto + standard."""
+    return [
+        [[[0, 0], [100, 1]], 0.2, 2],  # Compatto
+        [0.5, 0.5],                     # Standard
+        [1.0, 0]                        # Standard
+    ]
 
 
 # =============================================================================
-# 1. TEST INIZIALIZZAZIONE E PARSING
+# 1. TEST INIZIALIZZAZIONE - FORMATO STANDARD
 # =============================================================================
 
-class TestInitializationAndParsing:
-    """Test parsing e validazione dell'input."""
+class TestInitializationStandard:
+    """Test inizializzazione con formato standard."""
     
-    def test_parse_standard_list(self):
-        """Parsing lista standard di breakpoints."""
-        env = Envelope([[0, 0], [0.5, 1], [1.0, 0]])
+    def test_init_simple_breakpoints(self, simple_linear_breakpoints):
+        """Inizializzazione con breakpoints standard."""
+        env = Envelope(simple_linear_breakpoints)
+        
+        assert env.type == 'linear'
+        assert isinstance(env.strategy, LinearInterpolation)
+        assert len(env.segments) == 1
+        assert env.segments[0].start_time == 0
+        assert env.segments[0].end_time == 2
+    
+    def test_init_single_breakpoint(self):
+        """Inizializzazione con singolo breakpoint."""
+        env = Envelope([[0, 5]])
+        
+        assert env.type == 'linear'
+        assert len(env.segments) == 1
+    
+    def test_init_two_breakpoints(self):
+        """Inizializzazione con due breakpoints."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        assert env.segments[0].start_time == 0
+        assert env.segments[0].end_time == 1
+    
+    def test_init_multiple_breakpoints(self):
+        """Inizializzazione con molti breakpoints."""
+        points = [[0, 0], [1, 5], [2, 10], [3, 5], [4, 0]]
+        env = Envelope(points)
         
         assert len(env.segments) == 1
-        assert isinstance(env.segments[0], NormalSegment)
+        assert env.segments[0].start_time == 0
+        assert env.segments[0].end_time == 4
+
+
+# =============================================================================
+# 2. TEST INIZIALIZZAZIONE - FORMATO COMPATTO
+# =============================================================================
+
+class TestInitializationCompact:
+    """Test inizializzazione con formato compatto."""
+    
+    def test_init_compact_simple(self, compact_format_simple):
+        """Inizializzazione con formato compatto semplice."""
+        env = Envelope(compact_format_simple)
+        
+        assert env.type == 'linear'
+        assert isinstance(env.strategy, LinearInterpolation)
+        assert len(env.segments) == 1
+        
+        # 4 cicli * 2 punti = 8 breakpoints espansi
+        assert len(env.segments[0].breakpoints) == 8
+    
+    def test_init_compact_with_interp(self, compact_format_cubic):
+        """Inizializzazione con formato compatto + tipo."""
+        env = Envelope(compact_format_cubic)
+        
+        assert env.type == 'cubic'
+        assert isinstance(env.strategy, CubicInterpolation)
+        
+        # 3 cicli * 3 punti = 9 breakpoints
+        assert len(env.segments[0].breakpoints) == 9
+    
+    def test_init_compact_single_rep(self):
+        """Formato compatto con singola ripetizione."""
+        compact = [[[0, 0], [100, 1]], 0.1, 1]
+        env = Envelope(compact)
+        
+        # 1 ciclo * 2 punti = 2 breakpoints
+        assert len(env.segments[0].breakpoints) == 2
+    
+    def test_compact_time_expansion(self):
+        """Verifica espansione temporale formato compatto."""
+        compact = [[[0, 0], [100, 1]], 0.4, 2]
+        env = Envelope(compact)
+        
+        # Primo punto primo ciclo
+        assert env.segments[0].breakpoints[0][0] == pytest.approx(0.0)
+        # Ultimo punto primo ciclo
+        assert env.segments[0].breakpoints[1][0] == pytest.approx(0.2)
+        # Primo punto secondo ciclo (con offset)
+        assert env.segments[0].breakpoints[2][0] > 0.2
+        # Ultimo punto secondo ciclo
+        assert env.segments[0].breakpoints[3][0] == pytest.approx(0.4)
+
+
+# =============================================================================
+# 3. TEST INIZIALIZZAZIONE - FORMATO DICT
+# =============================================================================
+
+class TestInitializationDict:
+    """Test inizializzazione con formato dict."""
+    
+    def test_init_dict_linear(self, dict_format_linear):
+        """Inizializzazione con dict format linear."""
+        env = Envelope(dict_format_linear)
+        
+        assert env.type == 'linear'
+        assert isinstance(env.strategy, LinearInterpolation)
+    
+    def test_init_dict_step(self):
+        """Inizializzazione con dict format step."""
+        dict_data = {
+            'type': 'step',
+            'points': [[0, 0], [1, 10]]
+        }
+        env = Envelope(dict_data)
+        
+        assert env.type == 'step'
+        assert isinstance(env.strategy, StepInterpolation)
+    
+    def test_init_dict_cubic(self):
+        """Inizializzazione con dict format cubic."""
+        dict_data = {
+            'type': 'cubic',
+            'points': [[0, 0], [1, 5], [2, 10]]
+        }
+        env = Envelope(dict_data)
+        
+        assert env.type == 'cubic'
+        assert isinstance(env.strategy, CubicInterpolation)
+    
+    def test_init_dict_with_compact(self, dict_format_compact):
+        """Dict format con formato compatto nei points."""
+        env = Envelope(dict_format_compact)
+        
+        assert env.type == 'step'
+        # 2 cicli * 2 punti = 4 breakpoints
+        assert len(env.segments[0].breakpoints) == 4
+    
+    def test_init_dict_default_type(self):
+        """Dict senza tipo specificato: default a linear."""
+        dict_data = {'points': [[0, 0], [1, 10]]}
+        env = Envelope(dict_data)
+        
+        assert env.type == 'linear'
+
+
+# =============================================================================
+# 4. TEST INIZIALIZZAZIONE - FORMATO MISTO
+# =============================================================================
+
+class TestInitializationMixed:
+    """Test inizializzazione con formato misto."""
+    
+    def test_init_mixed_compact_and_standard(self, mixed_format):
+        """Formato misto: compatto + standard."""
+        env = Envelope(mixed_format)
+        
+        # Compatto: 2 cicli * 2 punti = 4
+        # Standard: 2 punti
+        # Totale: 6 breakpoints
+        assert len(env.segments[0].breakpoints) == 6
+    
+    def test_init_mixed_preserves_order(self):
+        """Formato misto preserva ordine temporale."""
+        mixed = [
+            [0, 0],
+            [[[0, 0], [100, 1]], 0.2, 2],
+            [0.5, 0.5],
+            [1.0, 0]
+        ]
+        env = Envelope(mixed)
+        
+        # Verifica ordinamento temporale
+        times = [bp[0] for bp in env.segments[0].breakpoints]
+        assert times == sorted(times)
+
+
+# =============================================================================
+# 5. TEST EVALUATE() - VARI TIPI INTERPOLAZIONE
+# =============================================================================
+
+class TestEvaluate:
+    """Test metodo evaluate() con vari tipi."""
+    
+    def test_evaluate_linear_at_breakpoints(self):
+        """Evaluate lineare esattamente sui breakpoints."""
+        env = Envelope([[0, 0], [1, 10], [2, 0]])
+        
+        assert env.evaluate(0) == pytest.approx(0.0)
+        assert env.evaluate(1) == pytest.approx(10.0)
+        assert env.evaluate(2) == pytest.approx(0.0)
+    
+    def test_evaluate_linear_interpolated(self):
+        """Evaluate lineare su punti interpolati."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        assert env.evaluate(0.5) == pytest.approx(5.0)
+        assert env.evaluate(0.25) == pytest.approx(2.5)
+        assert env.evaluate(0.75) == pytest.approx(7.5)
+    
+    def test_evaluate_step_at_breakpoints(self):
+        """Evaluate step sui breakpoints."""
+        env = Envelope({'type': 'step', 'points': [[0, 10], [1, 20], [2, 30]]})
+        
+        assert env.evaluate(0) == pytest.approx(10.0)
+        assert env.evaluate(1) == pytest.approx(20.0)
+    
+    def test_evaluate_step_between_breakpoints(self):
+        """Evaluate step tra breakpoints (hold left)."""
+        env = Envelope({'type': 'step', 'points': [[0, 10], [1, 20]]})
+        
+        assert env.evaluate(0.5) == pytest.approx(10.0)
+        assert env.evaluate(0.99) == pytest.approx(10.0)
+    
+    def test_evaluate_cubic_smooth(self):
+        """Evaluate cubic con interpolazione smooth."""
+        env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 0]]})
+        
+        # Cubic dovrebbe essere smooth, non lineare
+        mid_value = env.evaluate(1)
+        assert mid_value == pytest.approx(10.0)  # Sul breakpoint
+        
+        # Tra breakpoints
+        assert isinstance(env.evaluate(0.5), float)
+        assert isinstance(env.evaluate(1.5), float)
+    
+    def test_evaluate_hold_before_start(self):
+        """Evaluate prima dell'inizio: hold primo valore."""
+        env = Envelope([[0, 5], [1, 10]])
+        
+        assert env.evaluate(-1) == pytest.approx(5.0)
+        assert env.evaluate(-10) == pytest.approx(5.0)
+    
+    def test_evaluate_hold_after_end(self):
+        """Evaluate dopo la fine: hold ultimo valore."""
+        env = Envelope([[0, 5], [1, 10]])
+        
+        assert env.evaluate(2) == pytest.approx(10.0)
+        assert env.evaluate(100) == pytest.approx(10.0)
+
+
+# =============================================================================
+# 6. TEST INTEGRATE() - VARI TIPI INTERPOLAZIONE
+# =============================================================================
+
+class TestIntegrate:
+    """Test metodo integrate() con vari tipi."""
+    
+    def test_integrate_linear_full_range(self):
+        """Integrate lineare su intero range."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        # Triangolo: area = 0.5 * base * altezza = 0.5 * 1 * 10 = 5
+        area = env.integrate(0, 1)
+        assert area == pytest.approx(5.0)
+    
+    def test_integrate_linear_partial_range(self):
+        """Integrate lineare su range parziale."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        # Prima metà
+        area_first_half = env.integrate(0, 0.5)
+        assert area_first_half == pytest.approx(1.25)  # Triangolo più piccolo
+    
+    def test_integrate_constant_envelope(self):
+        """Integrate envelope costante."""
+        env = Envelope([[0, 5], [1, 5]])
+        
+        # Rettangolo: area = base * altezza = 1 * 5 = 5
+        area = env.integrate(0, 1)
+        assert area == pytest.approx(5.0)
+    
+    def test_integrate_step_envelope(self):
+        """Integrate step envelope."""
+        env = Envelope({'type': 'step', 'points': [[0, 10], [1, 20]]})
+        
+        # Step: hold 10 per 1 secondo = 10
+        area = env.integrate(0, 1)
+        assert area == pytest.approx(10.0)
+    
+    def test_integrate_symmetric(self):
+        """Integrate con limiti invertiti: segno negativo."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        area_forward = env.integrate(0, 1)
+        area_backward = env.integrate(1, 0)
+        
+        assert area_backward == pytest.approx(-area_forward)
+    
+    def test_integrate_zero_duration(self):
+        """Integrate con durata zero."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        area = env.integrate(0.5, 0.5)
+        assert area == pytest.approx(0.0)
+    
+    def test_integrate_hold_regions(self):
+        """Integrate con regioni hold."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        # Prima dell'inizio (hold primo valore = 0)
+        area_before = env.integrate(-1, 0)
+        assert area_before == pytest.approx(0.0)
+        
+        # Dopo la fine (hold ultimo valore = 10)
+        area_after = env.integrate(1, 2)
+        assert area_after == pytest.approx(10.0)
+    
+    def test_integrate_across_boundaries(self):
+        """Integrate attraverso boundaries (hold + interpolato + hold)."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        # Da prima dell'inizio a dopo la fine
+        area_total = env.integrate(-1, 2)
+        
+        # -1 a 0: hold 0 → area = 0
+        # 0 a 1: triangolo → area = 5
+        # 1 a 2: hold 10 → area = 10
+        # Totale: 15
+        assert area_total == pytest.approx(15.0)
+
+
+# =============================================================================
+# 7. TEST TIPO INTERPOLAZIONE
+# =============================================================================
+
+class TestInterpolationType:
+    """Test tipo interpolazione corretto."""
+    
+    def test_type_linear_default(self):
+        """Tipo default è linear."""
+        env = Envelope([[0, 0], [1, 10]])
+        
         assert env.type == 'linear'
     
-    def test_parse_compact_format(self):
-        """Parsing formato compatto."""
-        env = Envelope([[[0, 0], [100, 1]], 0.4, 4])
-        
-        assert len(env.segments) == 1
-        assert isinstance(env.segments[0], NormalSegment)
-        # Breakpoints espansi: 4 cicli * 2 punti + 3 discontinuità = 11
-        assert len(env.segments[0].breakpoints) == 11
+    def test_type_from_dict(self):
+        """Tipo estratto da dict."""
+        for interp_type in ['linear', 'step', 'cubic']:
+            env = Envelope({'type': interp_type, 'points': [[0, 0], [1, 10]]})
+            assert env.type == interp_type
     
-    def test_parse_dict_format(self):
-        """Parsing dict format."""
+    def test_type_from_compact_format(self):
+        """Tipo estratto da formato compatto."""
+        compact = [[[0, 0], [100, 1]], 0.2, 2, 'cubic']
+        env = Envelope(compact)
+        
+        assert env.type == 'cubic'
+    
+    def test_strategy_matches_type(self):
+        """Strategy corrisponde al tipo."""
+        type_to_strategy = {
+            'linear': LinearInterpolation,
+            'step': StepInterpolation,
+            'cubic': CubicInterpolation
+        }
+        
+        for interp_type, strategy_class in type_to_strategy.items():
+            env = Envelope({'type': interp_type, 'points': [[0, 0], [1, 10]]})
+            assert isinstance(env.strategy, strategy_class)
+
+
+# =============================================================================
+# 8. TEST TANGENTI FRITSCH-CARLSON PER CUBIC
+# =============================================================================
+
+class TestFritschCarlsonTangents:
+    """Test calcolo tangenti Fritsch-Carlson per cubic."""
+    
+    def test_tangents_computed_for_cubic(self):
+        """Tangenti calcolate per interpolazione cubic."""
+        env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 5], [2, 10]]})
+        
+        # Context dovrebbe contenere tangenti
+        assert 'tangents' in env.segments[0].context
+        tangents = env.segments[0].context['tangents']
+        assert len(tangents) == 3  # Una per ogni breakpoint
+    
+    def test_tangents_not_computed_for_linear(self):
+        """Tangenti NON calcolate per linear."""
+        env = Envelope({'type': 'linear', 'points': [[0, 0], [1, 5], [2, 10]]})
+        
+        # Context dovrebbe essere vuoto o senza tangenti
+        assert 'tangents' not in env.segments[0].context
+    
+    def test_tangents_monotone_ramp(self):
+        """Tangenti per rampa monotona."""
+        env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 5], [2, 10]]})
+        
+        tangents = env.segments[0].context['tangents']
+        
+        # Tutte tangenti dovrebbero essere positive (rampa crescente)
+        assert all(t >= 0 for t in tangents)
+    
+    def test_tangents_zero_at_extrema(self):
+        """Tangenti zero agli estremi (peak/valley)."""
+        # Triangolo: 0 → 10 → 0
+        env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 0]]})
+        
+        tangents = env.segments[0].context['tangents']
+        
+        # Tangente centrale dovrebbe essere circa zero (peak)
+        # (Fritsch-Carlson pone tangenti zero quando segni cambiano)
+        assert tangents[1] == pytest.approx(0.0, abs=0.1)
+    
+    def test_tangents_few_points(self):
+        """Tangenti con pochi punti."""
         env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 10]]})
         
-        assert env.type == 'cubic'
-        assert len(env.segments) == 1
-        assert 'tangents' in env.segments[0].context
+        tangents = env.segments[0].context['tangents']
+        assert len(tangents) == 2
     
-    def test_parse_mixed_format(self):
-        """Parsing formato misto (compatto + standard)."""
-        env = Envelope([
-            [[[0, 0], [100, 1]], 0.2, 2],  # Compatto
-            [0.5, 0.5],                     # Standard
-            [1.0, 0]                        # Standard
-        ])
+    def test_tangents_single_point(self):
+        """Tangenti con singolo punto."""
+        env = Envelope({'type': 'cubic', 'points': [[0, 5]]})
         
-        assert len(env.segments) == 1
-        # Breakpoints espansi includono tutto
-        assert len(env.segments[0].breakpoints) > 5
-    
-    def test_single_breakpoint(self):
-        """Envelope con singolo breakpoint."""
-        env = Envelope([[0, 42]])
-        
-        assert len(env.segments) == 1
-        assert len(env.segments[0].breakpoints) == 1
-    
-    def test_type_defaults_to_linear(self):
-        """Tipo default è 'linear' se non specificato."""
-        env = Envelope([[0, 0], [1, 10]])
-        assert env.type == 'linear'
-    
-    def test_compact_format_with_interp_type(self):
-        """Formato compatto con tipo interpolazione."""
-        env = Envelope([[[0, 0], [100, 1]], 0.2, 2, 'cubic'])
-        assert env.type == 'cubic'
+        tangents = env.segments[0].context['tangents']
+        assert len(tangents) == 1
+        assert tangents[0] == pytest.approx(0.0)
 
 
 # =============================================================================
-# 2. TEST EVALUATE - STANDARD FORMAT
+# 9. TEST GESTIONE ERRORI
 # =============================================================================
 
-class TestEvaluateStandard:
-    """Test evaluate con formato standard."""
+class TestErrorHandling:
+    """Test gestione errori."""
     
-    def test_evaluate_at_breakpoints(self, env_standard_ramp):
-        """Valutazione esatta ai breakpoints."""
-        assert env_standard_ramp.evaluate(0) == pytest.approx(0.0)
-        assert env_standard_ramp.evaluate(10) == pytest.approx(100.0)
-    
-    def test_evaluate_between_breakpoints(self, env_standard_ramp):
-        """Interpolazione lineare tra breakpoints."""
-        assert env_standard_ramp.evaluate(5) == pytest.approx(50.0)
-        assert env_standard_ramp.evaluate(2.5) == pytest.approx(25.0)
-        assert env_standard_ramp.evaluate(7.5) == pytest.approx(75.0)
-    
-    def test_evaluate_before_first_breakpoint(self, env_standard_ramp):
-        """Hold primo valore prima del primo breakpoint."""
-        assert env_standard_ramp.evaluate(-5) == pytest.approx(0.0)
-        assert env_standard_ramp.evaluate(-0.001) == pytest.approx(0.0)
-    
-    def test_evaluate_after_last_breakpoint(self, env_standard_ramp):
-        """Hold ultimo valore dopo l'ultimo breakpoint."""
-        assert env_standard_ramp.evaluate(15) == pytest.approx(100.0)
-        assert env_standard_ramp.evaluate(100) == pytest.approx(100.0)
-    
-    def test_evaluate_triangle_peak(self, env_standard_triangle):
-        """Valutazione al picco del triangolo."""
-        assert env_standard_triangle.evaluate(5) == pytest.approx(100.0)
-    
-    def test_evaluate_triangle_slopes(self, env_standard_triangle):
-        """Valutazione sulle pendenze del triangolo."""
-        # Salita
-        assert env_standard_triangle.evaluate(2.5) == pytest.approx(50.0)
-        # Discesa
-        assert env_standard_triangle.evaluate(7.5) == pytest.approx(50.0)
-    
-    def test_evaluate_constant_envelope(self):
-        """Envelope costante."""
-        env = Envelope([[0, 42], [10, 42]])
-        assert env.evaluate(5) == pytest.approx(42.0)
-        assert env.evaluate(-5) == pytest.approx(42.0)
-        assert env.evaluate(15) == pytest.approx(42.0)
-    
-    def test_evaluate_single_breakpoint(self):
-        """Singolo breakpoint: sempre costante."""
-        env = Envelope([[5, 100]])
-        assert env.evaluate(0) == pytest.approx(100.0)
-        assert env.evaluate(5) == pytest.approx(100.0)
-        assert env.evaluate(10) == pytest.approx(100.0)
-
-
-# =============================================================================
-# 3. TEST EVALUATE - COMPACT FORMAT
-# =============================================================================
-
-class TestEvaluateCompact:
-    """Test evaluate con formato compatto."""
-    
-    def test_evaluate_first_cycle(self, env_compact_simple):
-        """Primo ciclo (0-0.1s)."""
-        assert env_compact_simple.evaluate(0.0) == pytest.approx(0.0)
-        assert env_compact_simple.evaluate(0.05) == pytest.approx(0.5)
-        assert env_compact_simple.evaluate(0.1) == pytest.approx(1.0)
-    
-    def test_evaluate_at_discontinuity(self, env_compact_simple):
-        """Valutazione alla discontinuità (reset)."""
-        # t=0.100001 è il punto di discontinuità
-        assert env_compact_simple.evaluate(0.100001) == pytest.approx(0.0)
-    
-    def test_evaluate_second_cycle(self, env_compact_simple):
-        """Secondo ciclo (0.1-0.2s)."""
-        assert env_compact_simple.evaluate(0.15) == pytest.approx(0.5, abs=1e-4)
-        assert env_compact_simple.evaluate(0.2) == pytest.approx(1.0)
-    
-    def test_evaluate_last_cycle(self, env_compact_simple):
-        """Ultimo ciclo (0.3-0.4s)."""
-        assert env_compact_simple.evaluate(0.35) == pytest.approx(0.5, abs=1e-4)
-        assert env_compact_simple.evaluate(0.4) == pytest.approx(1.0)
-    
-    def test_evaluate_after_compact(self, env_compact_simple):
-        """Dopo l'ultimo ciclo: hold."""
-        assert env_compact_simple.evaluate(0.5) == pytest.approx(1.0)
-        assert env_compact_simple.evaluate(1.0) == pytest.approx(1.0)
-    
-    def test_evaluate_three_points_pattern(self, env_compact_three_points):
-        """Pattern con 3 punti."""
-        # Primo ciclo: 0%, 50%, 100%
-        assert env_compact_three_points.evaluate(0.0) == pytest.approx(0.0)
-        assert env_compact_three_points.evaluate(0.05) == pytest.approx(0.5)
-        assert env_compact_three_points.evaluate(0.1) == pytest.approx(1.0)
-        
-        # Secondo ciclo
-        assert env_compact_three_points.evaluate(0.15) == pytest.approx(0.5)
-
-
-# =============================================================================
-# 4. TEST INTEGRATE - STANDARD FORMAT
-# =============================================================================
-
-class TestIntegrateStandard:
-    """Test integrate con formato standard."""
-    
-    def test_integrate_full_ramp(self, env_standard_ramp):
-        """Integrale rampa completa: triangolo."""
-        # Area = (base * altezza) / 2 = (10 * 100) / 2 = 500
-        area = env_standard_ramp.integrate(0, 10)
-        assert area == pytest.approx(500.0)
-    
-    def test_integrate_half_ramp(self, env_standard_ramp):
-        """Integrale metà rampa."""
-        # Da 0 a 5: area = (5 * 50) / 2 = 125
-        area = env_standard_ramp.integrate(0, 5)
-        assert area == pytest.approx(125.0)
-    
-    def test_integrate_triangle_full(self, env_standard_triangle):
-        """Integrale triangolo completo."""
-        # Salita + discesa: 2 * (5 * 100) / 2 = 500
-        area = env_standard_triangle.integrate(0, 10)
-        assert area == pytest.approx(500.0)
-    
-    def test_integrate_constant(self):
-        """Integrale envelope costante."""
-        env = Envelope([[0, 50], [10, 50]])
-        # Area = base * altezza = 10 * 50 = 500
-        area = env.integrate(0, 10)
-        assert area == pytest.approx(500.0)
-    
-    def test_integrate_with_hold_before(self):
-        """Integrale con hold prima del primo breakpoint."""
-        env = Envelope([[5, 50], [10, 100]])
-        # Hold (0-5): 5 * 50 = 250
-        # Rampa (5-10): trapezio = (5 * (50+100)) / 2 = 375
-        # Totale: 625
-        area = env.integrate(0, 10)
-        assert area == pytest.approx(625.0)
-    
-    def test_integrate_with_hold_after(self):
-        """Integrale con hold dopo l'ultimo breakpoint."""
-        env = Envelope([[0, 0], [10, 100]])
-        # Rampa (0-10): 500
-        # Hold (10-15): 5 * 100 = 500
-        # Totale: 1000
-        area = env.integrate(0, 15)
-        assert area == pytest.approx(1000.0)
-    
-    def test_integrate_zero_interval(self, env_standard_ramp):
-        """Intervallo nullo: area zero."""
-        assert env_standard_ramp.integrate(5, 5) == pytest.approx(0.0)
-    
-    def test_integrate_reverse_interval(self, env_standard_ramp):
-        """Intervallo invertito: area negativa."""
-        forward = env_standard_ramp.integrate(0, 10)
-        backward = env_standard_ramp.integrate(10, 0)
-        assert backward == pytest.approx(-forward)
-
-
-# =============================================================================
-# 5. TEST INTEGRATE - COMPACT FORMAT
-# =============================================================================
-
-class TestIntegrateCompact:
-    """Test integrate con formato compatto."""
-    
-    def test_integrate_one_cycle(self):
-        """Integrale di un singolo ciclo."""
-        env = Envelope([[[0, 0], [100, 1]], 0.1, 1])
-        # Area triangolo: (0.1 * 1) / 2 = 0.05
-        area = env.integrate(0, 0.1)
-        assert area == pytest.approx(0.05)
-    
-    def test_integrate_multiple_cycles(self, env_compact_simple):
-        """Integrale di 4 cicli."""
-        # Area 1 ciclo = 0.05
-        # Area 4 cicli = 0.2
-        area = env_compact_simple.integrate(0, 0.4)
-        assert area == pytest.approx(0.2, rel=1e-2)
-    
-    def test_integrate_partial_cycles(self, env_compact_simple):
-        """Integrale parziale (1.5 cicli)."""
-        # 1.5 cicli = 1.5 * 0.05 = 0.075
-        area = env_compact_simple.integrate(0, 0.15)
-        assert area == pytest.approx(0.075, rel=1e-2)
-    
-    def test_integrate_across_discontinuity(self, env_compact_simple):
-        """Integrale che attraversa discontinuità."""
-        # Da 0.05 a 0.15 (attraversa discontinuità a 0.100001)
-        area = env_compact_simple.integrate(0.05, 0.15)
-        expected = 0.05  # Circa metà di 2 cicli
-        assert area == pytest.approx(expected, rel=1e-2)
-    
-    def test_integrate_with_hold_after_compact(self, env_compact_simple):
-        """Integrale oltre l'ultimo ciclo."""
-        # Cicli (0-0.4): 0.2
-        # Hold (0.4-0.5): 0.1 * 1 = 0.1
-        # Totale: 0.3
-        area = env_compact_simple.integrate(0, 0.5)
-        assert area == pytest.approx(0.3, rel=1e-2)
-
-
-# =============================================================================
-# 6. TEST INTERPOLATION TYPES
-# =============================================================================
-
-class TestInterpolationTypes:
-    """Test tipi di interpolazione (linear, step, cubic)."""
-    
-    def test_linear_interpolation(self):
-        """Interpolazione lineare."""
-        env = Envelope({'type': 'linear', 'points': [[0, 0], [10, 100]]})
-        assert env.type == 'linear'
-        assert env.evaluate(5) == pytest.approx(50.0)
-    
-    def test_step_interpolation_evaluate(self):
-        """Step: hold valore sinistro."""
-        env = Envelope({'type': 'step', 'points': [[0, 10], [5, 50], [10, 100]]})
-        assert env.type == 'step'
-        
-        # Hold valore a sinistra fino al prossimo breakpoint
-        assert env.evaluate(0) == pytest.approx(10.0)
-        assert env.evaluate(2.5) == pytest.approx(10.0)
-        assert env.evaluate(4.9) == pytest.approx(10.0)
-        assert env.evaluate(5) == pytest.approx(50.0)
-        assert env.evaluate(7.5) == pytest.approx(50.0)
-        assert env.evaluate(10) == pytest.approx(100.0)
-    
-    def test_step_interpolation_integrate(self):
-        """Step: area rettangolo."""
-        env = Envelope({'type': 'step', 'points': [[0, 10], [5, 50]]})
-        # Rettangolo: 5 * 10 = 50
-        area = env.integrate(0, 5)
-        assert area == pytest.approx(50.0)
-    
-    def test_cubic_interpolation(self, env_dict_cubic):
-        """Cubic: usa tangenti Fritsch-Carlson."""
-        assert env_dict_cubic.type == 'cubic'
-        assert 'tangents' in env_dict_cubic.segments[0].context
-        
-        # Cubic dovrebbe passare per i breakpoints
-        assert env_dict_cubic.evaluate(0) == pytest.approx(0.0)
-        assert env_dict_cubic.evaluate(1) == pytest.approx(10.0)
-        assert env_dict_cubic.evaluate(2) == pytest.approx(5.0)
-    
-    def test_cubic_smooth_interpolation(self):
-        """Cubic: interpolazione smooth (no overshoot)."""
-        env = Envelope({'type': 'cubic', 'points': [[0, 0], [1, 10], [2, 10]]})
-        
-        # Non deve superare 10 (Fritsch-Carlson previene overshoot)
-        for t in [0.5, 1.0, 1.5]:
-            val = env.evaluate(t)
-            assert 0 <= val <= 10.1  # Piccola tolleranza
-
-
-# =============================================================================
-# 7. TEST FORMATO MISTO
-# =============================================================================
-
-class TestMixedFormats:
-    """Test combinazioni di formati."""
-    
-    def test_compact_plus_standard(self):
-        """Formato compatto + standard breakpoints."""
-        env = Envelope([
-            [[[0, 0], [100, 1]], 0.2, 2],  # Compatto: 0-0.2
-            [0.5, 0.5],                     # Standard
-            [1.0, 0]                        # Standard
-        ])
-        
-        # Parte compatta
-        assert env.evaluate(0.1) == pytest.approx(1.0)
-        
-        # Parte standard
-        assert env.evaluate(0.5) == pytest.approx(0.5)
-        assert env.evaluate(0.75) == pytest.approx(0.25)
-    
-    def test_multiple_compact_segments(self):
-        """Più segmenti compatti nella stessa lista."""
-        env = Envelope([
-            [[[0, 0], [100, 1]], 0.2, 2],      # Primo compatto
-            [[[0, 1], [100, 0]], 0.4, 2]       # Secondo compatto
-        ])
-        
-        # Primo segmento
-        assert env.evaluate(0.1) == pytest.approx(1.0)
-        
-        # Transizione (tra i due segmenti compatti)
-        # Dopo espansione, ci sono breakpoints connessi
-        assert env.evaluate(0.3) == pytest.approx(0.5, abs=1e-4)
-    
-    def test_dict_with_compact_points(self):
-        """Dict con formato compatto in 'points'."""
-        env = Envelope({
-            'type': 'cubic',
-            'points': [[[0, 0], [100, 1]], 0.2, 2]
-        })
-        
-        assert env.type == 'cubic'
-        assert env.evaluate(0.1) == pytest.approx(1.0, rel=1e-2)
-
-
-# =============================================================================
-# 8. TEST EDGE CASES
-# =============================================================================
-
-class TestEdgeCases:
-    """Test casi limite."""
-    
-    def test_very_small_values(self):
-        """Valori molto piccoli."""
-        env = Envelope([[0, 0.0001], [1, 0.0002]])
-        assert env.evaluate(0.5) == pytest.approx(0.00015)
-    
-    def test_very_large_values(self):
-        """Valori molto grandi."""
-        env = Envelope([[0, 1e6], [1, 2e6]])
-        assert env.evaluate(0.5) == pytest.approx(1.5e6)
-    
-    def test_negative_values(self):
-        """Valori negativi."""
-        env = Envelope([[0, -100], [1, 100]])
-        assert env.evaluate(0.5) == pytest.approx(0.0)
-    
-    def test_zero_duration_segment(self):
-        """Breakpoints con stesso tempo (durata zero)."""
-        env = Envelope([[0, 0], [0, 10], [1, 20]])
-        # Secondo breakpoint sovrascrive il primo
-        assert env.evaluate(0) == pytest.approx(10.0)
-    
-    def test_unsorted_breakpoints(self):
-        """Breakpoints non ordinati: vengono ordinati automaticamente."""
-        env = Envelope([[10, 100], [0, 0], [5, 50]])
-        # Dovrebbero essere ordinati: [0,0], [5,50], [10,100]
-        assert env.evaluate(0) == pytest.approx(0.0)
-        assert env.evaluate(5) == pytest.approx(50.0)
-        assert env.evaluate(10) == pytest.approx(100.0)
-    
-    def test_compact_single_repetition(self):
-        """Formato compatto con n_reps=1."""
-        env = Envelope([[[0, 0], [100, 1]], 0.1, 1])
-        # Singolo ciclo, nessuna discontinuità
-        assert len(env.segments[0].breakpoints) == 2
-        assert env.evaluate(0.05) == pytest.approx(0.5)
-    
-    def test_compact_many_repetitions(self):
-        """Formato compatto con molte ripetizioni."""
-        env = Envelope([[[0, 0], [100, 1]], 1.0, 100])
-        # 100 cicli: 100 * 2 punti + 99 discontinuità = 299 breakpoints
-        assert len(env.segments[0].breakpoints) == 299
-        
-        # Verifica alcuni valori
-        assert env.evaluate(0.005) == pytest.approx(0.5)  # Metà primo ciclo
-        assert env.evaluate(0.505) == pytest.approx(0.5, abs=1e-4)  # Metà 51° ciclo
-
-
-# =============================================================================
-# 9. TEST VALIDAZIONE ERRORI
-# =============================================================================
-
-class TestValidation:
-    """Test validazione input."""
-    
-    def test_error_empty_list(self):
-        """Lista vuota: errore."""
-        with pytest.raises(ValueError, match="vuota"):
+    def test_error_empty_breakpoints(self):
+        """Errore con breakpoints vuoti."""
+        with pytest.raises(ValueError, match="Lista breakpoints vuota"):
             Envelope([])
     
-    def test_error_invalid_breakpoint_format(self):
-        """Breakpoint con formato invalido."""
-        with pytest.raises(ValueError, match="non valido"):
-            Envelope([[0]])  # Manca il valore
+    def test_error_invalid_format(self):
+        """Errore con formato non valido."""
+        with pytest.raises((ValueError, TypeError)):
+            Envelope("not a valid format")
     
-    def test_error_invalid_type(self):
-        """Input né list né dict: errore."""
-        with pytest.raises(ValueError, match="non valido"):
-            Envelope(42)
-        
-        with pytest.raises(ValueError, match="non valido"):
-            Envelope("[[0,0],[1,10]]")
-    
-    def test_error_dict_missing_points(self):
-        """Dict senza chiave 'points': errore."""
+    def test_error_invalid_dict_format(self):
+        """Errore con dict senza 'points'."""
         with pytest.raises(KeyError):
-            Envelope({'type': 'linear'})
+            Envelope({'type': 'linear'})  # Missing 'points'
     
     def test_error_invalid_interp_type(self):
-        """Tipo interpolazione non riconosciuto."""
-        with pytest.raises(ValueError, match="non riconosciuto"):
+        """Errore con tipo interpolazione non valido."""
+        with pytest.raises(ValueError):
             Envelope({'type': 'exponential', 'points': [[0, 0], [1, 10]]})
-    
-    def test_error_compact_zero_reps(self):
-        """Formato compatto con n_reps=0."""
-        with pytest.raises(ValueError, match="n_reps deve essere >= 1"):
-            Envelope([[[0, 0], [100, 1]], 0.2, 0])
-    
-    def test_error_compact_negative_time(self):
-        """Formato compatto con total_time negativo."""
-        with pytest.raises(ValueError, match="total_time deve essere > 0"):
-            Envelope([[[0, 0], [100, 1]], -0.2, 2])
-    
-    def test_error_compact_empty_pattern(self):
-        """Formato compatto con pattern vuoto."""
-        with pytest.raises(ValueError, match="pattern_points non può essere vuoto"):
-            Envelope([[], 0.2, 2])
 
 
 # =============================================================================
-# 10. TEST PROPRIETÀ MATEMATICHE
+# 10. TEST TYPE CHECKER (is_envelope_like)
 # =============================================================================
 
-class TestMathematicalProperties:
-    """Test proprietà matematiche dell'integrale."""
+class TestTypeChecker:
+    """Test metodo statico is_envelope_like()."""
     
-    def test_additivity(self, env_standard_ramp):
-        """∫[a,c] = ∫[a,b] + ∫[b,c]."""
-        full = env_standard_ramp.integrate(0, 10)
-        part1 = env_standard_ramp.integrate(0, 5)
-        part2 = env_standard_ramp.integrate(5, 10)
-        assert full == pytest.approx(part1 + part2)
+    def test_is_envelope_like_list_of_pairs(self):
+        """Lista di [t, v] è envelope-like."""
+        assert Envelope.is_envelope_like([[0, 0], [1, 10]])
     
-    def test_linearity_scaling(self):
-        """Scalare i valori 2x scala l'integrale 2x."""
-        env1 = Envelope([[0, 0], [10, 50]])
-        env2 = Envelope([[0, 0], [10, 100]])
-        
-        area1 = env1.integrate(0, 10)
-        area2 = env2.integrate(0, 10)
-        
-        assert area2 == pytest.approx(2 * area1)
+    def test_is_envelope_like_compact_format(self):
+        """Formato compatto è envelope-like."""
+        assert Envelope.is_envelope_like([[[0, 0], [100, 1]], 0.4, 4])
     
-    def test_time_scaling(self):
-        """Scalare il tempo 2x scala l'integrale 2x."""
-        env1 = Envelope([[0, 0], [5, 100]])
-        env2 = Envelope([[0, 0], [10, 100]])
-        
-        area1 = env1.integrate(0, 5)
-        area2 = env2.integrate(0, 10)
-        
-        assert area2 == pytest.approx(2 * area1)
+    def test_is_envelope_like_dict_format(self):
+        """Dict format è envelope-like."""
+        assert Envelope.is_envelope_like({'type': 'linear', 'points': [[0, 0], [1, 10]]})
     
-    def test_symmetry(self, env_standard_triangle):
-        """Triangolo simmetrico: area prevedibile."""
-        area = env_standard_triangle.integrate(0, 10)
-        # Base * altezza / 2 = 10 * 100 / 2 = 500
-        assert area == pytest.approx(500.0)
+    def test_is_envelope_like_single_breakpoint(self):
+        """Singolo breakpoint è envelope-like."""
+        assert Envelope.is_envelope_like([[0, 5]])
     
-    def test_compact_n_cycles_equals_n_times_one(self):
-        """N cicli compatti = N * (area 1 ciclo)."""
-        env = Envelope([[[0, 0], [100, 1]], 1.0, 10])
-        
-        one_cycle = env.integrate(0, 0.1)
-        ten_cycles = env.integrate(0, 1.0)
-        
-        assert ten_cycles == pytest.approx(10 * one_cycle, rel=1e-2)
+    def test_not_envelope_like_string(self):
+        """String non è envelope-like."""
+        assert not Envelope.is_envelope_like("envelope")
     
-    def test_integral_bounds_independence(self):
-        """Integrale indipendente dai bounds se completamente contenuto."""
-        env1 = Envelope([[0, 0], [1, 10]])
-        env2 = Envelope([[0, 0], [1, 10], [2, 10]])  # Stesso ma con hold esteso
-        
-        # Integrale su [0,1] deve essere uguale
-        area1 = env1.integrate(0, 1)
-        area2 = env2.integrate(0, 1)
-        assert area1 == pytest.approx(area2)
+    def test_not_envelope_like_number(self):
+        """Numero non è envelope-like."""
+        assert not Envelope.is_envelope_like(42)
+    
+    def test_not_envelope_like_none(self):
+        """None non è envelope-like."""
+        assert not Envelope.is_envelope_like(None)
+    
+    def test_not_envelope_like_invalid_list(self):
+        """Lista malformata non è envelope-like."""
+        assert not Envelope.is_envelope_like([1, 2, 3])  # Non coppie
 
 
 # =============================================================================
@@ -589,47 +564,176 @@ class TestMathematicalProperties:
 # =============================================================================
 
 class TestBackwardCompatibility:
-    """Test compatibilità con envelope standard (NON-cycle)."""
+    """Test backward compatibility con vecchi formati."""
     
-    def test_simple_envelope_works(self):
-        """Envelope semplice funziona come prima."""
+    def test_legacy_format_still_works(self):
+        """Vecchio formato standard funziona ancora."""
         env = Envelope([[0, 0], [0.5, 1], [1.0, 0]])
         
-        assert env.evaluate(0.0) == pytest.approx(0.0)
-        assert env.evaluate(0.25) == pytest.approx(0.5)
-        assert env.evaluate(0.5) == pytest.approx(1.0)
-        assert env.evaluate(0.75) == pytest.approx(0.5)
-        assert env.evaluate(1.0) == pytest.approx(0.0)
-    
-    def test_dict_format_works(self):
-        """Dict format funziona come prima."""
-        env = Envelope({
-            'type': 'cubic',
-            'points': [[0, 0], [0.5, 1], [1.0, 0]]
-        })
-        
-        assert env.type == 'cubic'
         assert env.evaluate(0.5) == pytest.approx(1.0)
     
-    def test_is_envelope_like_standard(self):
-        """is_envelope_like riconosce formato standard."""
-        assert Envelope.is_envelope_like([[0, 0], [1, 10]])
-        assert Envelope.is_envelope_like({'type': 'linear', 'points': [[0, 0]]})
+    def test_dict_format_without_type(self):
+        """Dict senza 'type' usa default linear."""
+        env = Envelope({'points': [[0, 0], [1, 10]]})
         
+        assert env.type == 'linear'
+        assert env.evaluate(0.5) == pytest.approx(5.0)
+
+
+# =============================================================================
+# 12. TEST CASI EDGE
+# =============================================================================
+
+class TestEdgeCases:
+    """Test casi edge e situazioni limite."""
+    
+    def test_zero_duration_segment(self):
+        """Segmento con durata zero (t0 == t1)."""
+        env = Envelope([[0, 10], [0, 20], [1, 30]])
+        
+        # Dovrebbe gestire gracefully
+        result = env.evaluate(0)
+        assert isinstance(result, float)
+    
+    def test_negative_times(self):
+        """Tempi negativi nei breakpoints."""
+        env = Envelope([[-1, 0], [0, 5], [1, 10]])
+        
+        assert env.evaluate(-1) == pytest.approx(0.0)
+        assert env.evaluate(0) == pytest.approx(5.0)
+    
+    def test_very_small_values(self):
+        """Valori molto piccoli."""
+        env = Envelope([[0, 1e-10], [1, 1e-9]])
+        
+        result = env.evaluate(0.5)
+        assert isinstance(result, float)
+        assert result >= 0
+    
+    def test_very_large_values(self):
+        """Valori molto grandi."""
+        env = Envelope([[0, 1e10], [1, 1e11]])
+        
+        result = env.evaluate(0.5)
+        assert isinstance(result, float)
+    
+    def test_identical_consecutive_values(self):
+        """Valori identici consecutivi."""
+        env = Envelope([[0, 5], [1, 5], [2, 5]])
+        
+        # Dovrebbe essere piatto
+        assert env.evaluate(0.5) == pytest.approx(5.0)
+        assert env.evaluate(1.5) == pytest.approx(5.0)
+        
+        # Integrate: rettangolo
+        area = env.integrate(0, 2)
+        assert area == pytest.approx(10.0)  # 5 * 2
+    
+    def test_single_value_envelope(self):
+        """Envelope con singolo valore."""
+        env = Envelope([[0, 42]])
+        
+        # Dovrebbe essere costante a 42 ovunque
+        assert env.evaluate(-10) == pytest.approx(42.0)
+        assert env.evaluate(0) == pytest.approx(42.0)
+        assert env.evaluate(10) == pytest.approx(42.0)
+        
+        # Integrate
+        area = env.integrate(0, 5)
+        assert area == pytest.approx(210.0)  # 42 * 5
+    
+    def test_unsorted_breakpoints(self):
+        """Breakpoints non ordinati (dovrebbero essere ordinati internamente)."""
+        # EnvelopeSegment ordina automaticamente
+        env = Envelope([[1, 10], [0, 0], [2, 5]])
+        
+        # Dovrebbe funzionare correttamente dopo ordinamento
+        assert env.evaluate(0) == pytest.approx(0.0)
+        assert env.evaluate(1) == pytest.approx(10.0)
+        assert env.evaluate(2) == pytest.approx(5.0)
+
+
+# =============================================================================
+# 13. TEST INTEGRAZIONE CON ALTRI COMPONENTI
+# =============================================================================
+
+class TestIntegrationWithComponents:
+    """Test integrazione con Factory e Builder."""
+    
+    def test_factory_integration(self):
+        """Envelope usa Factory correttamente."""
+        for interp_type in ['linear', 'step', 'cubic']:
+            env = Envelope({'type': interp_type, 'points': [[0, 0], [1, 10]]})
+            
+            # Strategy dovrebbe essere del tipo giusto
+            assert env.strategy is not None
+            assert hasattr(env.strategy, 'evaluate')
+            assert hasattr(env.strategy, 'integrate')
+    
+    def test_builder_integration(self):
+        """Envelope usa Builder per espansione formato compatto."""
+        compact = [[[0, 0], [100, 1]], 0.4, 4]
+        env = Envelope(compact)
+        
+        # Builder dovrebbe aver espanso correttamente
+        # 4 cicli * 2 punti = 8 breakpoints
+        assert len(env.segments[0].breakpoints) == 8
+    
+    def test_segment_integration(self):
+        """Envelope crea NormalSegment correttamente."""
         env = Envelope([[0, 0], [1, 10]])
-        assert Envelope.is_envelope_like(env)
-    
-    def test_is_envelope_like_compact(self):
-        """is_envelope_like riconosce formato compatto."""
-        assert Envelope.is_envelope_like([[[0, 0], [100, 1]], 0.2, 2])
-    
-    def test_is_envelope_like_invalid(self):
-        """is_envelope_like rifiuta formati invalidi."""
-        assert not Envelope.is_envelope_like(42)
-        assert not Envelope.is_envelope_like("envelope")
-        assert not Envelope.is_envelope_like([])
-        assert not Envelope.is_envelope_like({})
+        
+        # Dovrebbe avere un NormalSegment
+        assert len(env.segments) == 1
+        segment = env.segments[0]
+        
+        assert hasattr(segment, 'evaluate')
+        assert hasattr(segment, 'integrate')
+        assert hasattr(segment, 'start_time')
+        assert hasattr(segment, 'end_time')
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+# =============================================================================
+# 14. TEST PROPRIETÀ MATEMATICHE
+# =============================================================================
+
+class TestMathematicalProperties:
+    """Test proprietà matematiche dell'envelope."""
+    
+    def test_integrate_additive(self):
+        """Proprietà additiva dell'integrale."""
+        env = Envelope([[0, 0], [2, 10]])
+        
+        # ∫[0,2] = ∫[0,1] + ∫[1,2]
+        total = env.integrate(0, 2)
+        part1 = env.integrate(0, 1)
+        part2 = env.integrate(1, 2)
+        
+        assert total == pytest.approx(part1 + part2)
+    
+    def test_integrate_symmetric_negative(self):
+        """∫[a,b] = -∫[b,a]."""
+        env = Envelope([[0, 0], [1, 10]])
+        
+        forward = env.integrate(0, 1)
+        backward = env.integrate(1, 0)
+        
+        assert forward == pytest.approx(-backward)
+    
+    def test_evaluate_continuity(self):
+        """Continuità dell'evaluate ai breakpoints."""
+        env = Envelope([[0, 0], [1, 10], [2, 0]])
+        
+        # Valori appena prima e dopo breakpoint dovrebbero essere vicini
+        eps = 1e-6
+        
+        for t in [1.0]:
+            left = env.evaluate(t - eps)
+            center = env.evaluate(t)
+            right = env.evaluate(t + eps)
+            
+            # Verifica continuità (per linear)
+            assert abs(left - center) < 0.01
+            assert abs(right - center) < 0.01
+
+

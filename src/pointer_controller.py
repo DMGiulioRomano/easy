@@ -89,8 +89,9 @@ class PointerController:
         meta-parametro che controlla l'interpretazione degli altri, non un
         valore sintetizzabile.
         """
-        if 'loop_start' not in params:
-            return params  # Nessun loop configurato
+        # gestisce sia params=None che params senza 'loop_start'
+        if params is None or 'loop_start' not in params:
+            return params if params is not None else {}
 
         loop_unit = params.get('loop_unit') or self._config.time_mode
         if loop_unit != 'normalized':

@@ -12,7 +12,7 @@ from typing import Union, List, Dict, Any
 from envelope_factory import InterpolationStrategyFactory
 from envelope_segment import NormalSegment, Segment
 from envelope_interpolation import InterpolationStrategy
-
+import copy
 
 class Envelope:
     """
@@ -208,7 +208,30 @@ class Envelope:
         
         # Singolo segmento: delega direttamente
         return self.segments[0].integrate(from_time, to_time)
-    
+        
+    @property
+    def breakpoints(self) -> List[List[float]]:
+        """
+        Property per accesso ai breakpoints (backward compatibility).
+        
+        Dopo il refactoring, i breakpoints sono contenuti nei segments.
+        Questa property fornisce accesso diretto per codice legacy.
+        
+        Returns:
+            List[List[float]]: Lista di breakpoints [[t, v], ...]
+        """
+        # Tipicamente c'è un solo segment con tutti i breakpoints
+        if len(self.segments) == 1:
+            return self.segments[0].breakpoints
+        
+        # Nel caso di multi-segmento (futuro), concatena
+        all_breakpoints = []
+        for seg in self.segments:
+            all_breakpoints.extend(seg.breakpoints)
+        return all_breakpoints
+
+
+
     @staticmethod
     def is_envelope_like(obj: Any) -> bool:
         """
@@ -253,3 +276,111 @@ class Envelope:
             return 'points' in obj
         
         return False
+    
+    @staticmethod
+    def scale_envelope_values(raw_data: Union[List, Dict], scale_factor: float) -> 'Envelope':
+        """
+        Crea un Envelope scalando i VALORI Y (non il tempo).
+        Usato da PointerController per loop normalizzati (0-1 -> 0-SampleDur).
+        """
+        from envelope_builder import EnvelopeBuilder
+        
+        # Helper interno per scalare lista mista
+        def _scale_list_y(points_list):
+            scaled = []
+            for item in points_list:
+                if EnvelopeBuilder._is_compact_format(item):
+                    # Formato compatto: [[[x%, y], ...], time, reps]
+                    # Scaliamo i valori Y dentro il pattern
+                    pattern = item[0]
+                    scaled_pattern = [[p[0], p[1] * scale_factor] for p in pattern]
+                    new_item = list(item)
+                    new_item[0] = scaled_pattern
+                    scaled.append(new_item)
+                elif isinstance(item, list) and len(item) == 2:
+                    # [t, v] -> [t, v * scale]
+                    scaled.append([item[0], item[1] * scale_factor])
+                else:
+                    scaled.append(item)
+            return scaled
+
+        # Gestione Dict
+        if isinstance(raw_data, dict):
+            new_data = copy.deepcopy(raw_data)
+            if 'points' in new_data:
+                new_data['points'] = _scale_list_y(new_data['points'])
+            return Envelope(new_data)
+        
+        # Gestione Lista (Compatta diretta o Breakpoints)
+        if isinstance(raw_data, list):
+            if EnvelopeBuilder._is_compact_format(raw_data):
+                # Compatto diretto
+                pattern = raw_data[0]
+                scaled_pattern = [[p[0], p[1] * scale_factor] for p in pattern]
+                new_data = list(raw_data)
+                new_data[0] = scaled_pattern
+                return Envelope(new_data)
+            else:
+                # Lista breakpoints/mista
+                return Envelope(_scale_list_y(raw_data))
+        
+        raise ValueError(f"Formato non supportato per scale_envelope_values: {raw_data}")
+
+def create_scaled_envelope(
+    raw_data: Union[List, Dict],
+    duration: float,
+    time_mode: str = 'absolute'
+    ) -> Envelope:
+    """
+    Factory helper per creare Envelope con scaling TEMPORALE (X axis).
+    Sostituisce la vecchia logica integrandosi con EnvelopeBuilder.
+    code Code
+
+    Se time_mode='normalized', moltiplica i tempi [t, v] per 'duration'.
+    Nota: I formati compatti (che usano total_time esplicito) NON vengono scalati.
+    """
+    from envelope_builder import EnvelopeBuilder
+
+    # 1. Gestione DICT
+    if isinstance(raw_data, dict):
+        local_unit = raw_data.get('time_unit', time_mode)
+        points = raw_data.get('points', [])
+        
+        if local_unit == 'normalized':
+            scaled_points = _scale_time_recursive(points, duration)
+            return Envelope({'type': raw_data.get('type', 'linear'), 'points': scaled_points})
+        return Envelope(raw_data)
+
+    # 2. Gestione LIST
+    # Se il modo globale è normalized, scaliamo solo i breakpoint semplici
+    if time_mode == 'normalized':
+        scaled_points = _scale_time_recursive(raw_data, duration)
+        return Envelope(scaled_points)
+
+    return Envelope(raw_data)
+
+
+def _scale_time_recursive(points: List, factor: float) -> List:
+    """
+    Scala ricorsivamente i tempi solo per i breakpoint standard [t, v].
+    I formati compatti vengono preservati (assumiamo abbiano duration esplicita in sec).
+    """
+    from envelope_builder import EnvelopeBuilder
+
+    # Se l'intera lista è un formato compatto, non tocchiamo nulla
+    # (Esempio: [[[0,0], [100,1]], 0.4, 4] -> 0.4 è già secondi assoluti)
+    if EnvelopeBuilder._is_compact_format(points):
+        return points
+
+    scaled = []
+    for item in points:
+        if EnvelopeBuilder._is_compact_format(item):
+            # Compatto annidato: passa invariato
+            scaled.append(item)
+        elif isinstance(item, list) and len(item) == 2:
+            # Standard breakpoint: [t, v] -> [t * factor, v]
+            scaled.append([item[0] * factor, item[1]])
+        else:
+            # Altro (es. 'cycle')
+            scaled.append(item)
+    return scaled

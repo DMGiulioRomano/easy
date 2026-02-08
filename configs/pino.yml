@@ -13,12 +13,12 @@ streams:
     #fill_factor: [[0,.3],[.1,4], cycle]
     density: 
       type: cubic
-      points: [[0,10],[.1,50], cycle]
+      points: [[[0,10],[.1,50], [1,100]], 1.0, 5]
     distribution: .5
     pointer:
-      speed_ratio: [[0,-1],[.25,1],cycle]
-      loop_start: [[0,0.3],[.1,0.3],[0.2,0.3],[.3,0.4], cycle]
-      loop_dur: [[0,0.2],[.1,0.02], cycle]
+      #speed_ratio: [[0,-1],[.25,1],cycle]
+      #loop_start: [[0,0.3],[.1,0.3],[0.2,0.3],[.3,0.4], cycle]
+      #loop_dur: [[0,0.2],[.1,0.02], cycle]
     grain:
       duration: .05
       #duration_range: .05
