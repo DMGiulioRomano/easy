@@ -13,7 +13,7 @@ streams:
     #fill_factor: [[0,.3],[.1,4], cycle]
     density: 
       type: cubic
-      points: [[[0,10],[.1,50], [1,100]], 1.0, 5]
+      points: [[0,10],[.3,10],[[[0,30],[.1,50], [1,100]], 1.0, 5]]
     distribution: .5
     pointer:
       #speed_ratio: [[0,-1],[.25,1],cycle]

@@ -15,7 +15,7 @@ FIXES APPLICATI:
 """
 
 from typing import List, Union, Tuple, Optional
-
+from time_distribution import TimeDistributionFactory
 
 class EnvelopeBuilder:
     """
@@ -73,193 +73,163 @@ class EnvelopeBuilder:
                 expanded.append(item)
         
         return expanded
-    
+
     @classmethod
-    def _is_compact_format(cls, item) -> bool:
+    def _is_compact_format(cls, item: Any) -> bool:
         """
-        Rileva se item è formato compatto.
+        Riconosce formato compatto.
         
-        Formato compatto: [pattern_points, total_time, n_reps, interp?]
-        - pattern_points è lista di liste [[x%, y], ...]
-        - total_time è float/int
-        - n_reps è int
-        - interp è str opzionale
-        
-        Returns:
-            True se è formato compatto
+        PRIMA: [pattern, total_time, n_reps, interp?]
+        DOPO:  [pattern, total_time, n_reps, interp?, time_dist?]
         """
         if not isinstance(item, list):
             return False
         
-        # Deve avere 3 o 4 elementi
-        if len(item) < 3:  # Minimo: [pattern_points, total_time, n_reps]
+        # MODIFICA: Era 3-4, ora 3-5
+        if len(item) < 3 or len(item) > 5:
             return False
         
-        if len(item) > 4:  # Massimo: [pattern_points, total_time, n_reps, interp]
-            return False
-        
-        # Primo elemento deve essere lista (anche se vuota)
+        # [0]: pattern_points (list)
         if not isinstance(item[0], list):
             return False
         
-        # FIX 4: NON rifiutare pattern vuoti qui
-        # La validazione "pattern_points non può essere vuoto" è in _expand_compact_format
-        
-        # Se pattern NON vuoto, verifica formato [x, y]
-        if item[0]:
-            if not all(isinstance(p, list) and len(p) == 2 for p in item[0]):
-                return False
-        
-        # Secondo elemento: total_time (float/int)
+        # [1]: total_time (float/int)
         if not isinstance(item[1], (int, float)):
             return False
         
-        # Terzo elemento: n_reps (int)
+        # [2]: n_reps (int)
         if not isinstance(item[2], int):
             return False
         
-        # Quarto elemento opzionale: interp_type (str)
-        if len(item) == 4 and not isinstance(item[3], str):
-            return False
+        # [3]: interp_type (str, opzionale)
+        if len(item) >= 4 and item[3] is not None:
+            if not isinstance(item[3], str):
+                return False
+        
+        # [4]: time_dist (str/dict, opzionale) - NUOVO
+        if len(item) == 5 and item[4] is not None:
+            if not isinstance(item[4], (str, dict)):
+                return False
         
         return True
-        
+
+
+
     @classmethod
     def _expand_compact_format(cls, compact: list) -> list:
         """
-        Espande formato compatto in breakpoints assoluti con discontinuità.
-        Garantisce ordinamento temporale monotono stretto.
+        Espande formato compatto usando TimeDistributionStrategy.
         
         Args:
-            compact: [[[x%, y], ...], total_time, n_reps, interp?]
-            
-        Returns:
-            Lista di breakpoints [t, v] con tempi strettamente crescenti
-                        
-        Examples:
-            >>> cls._expand_compact_format([[[0, 0], [100, 1]], 0.4, 4])
-            [[0.0, 0], [0.1, 1], [0.100001, 0], [0.2, 1], [0.200001, 0], [0.3, 1], [0.300001, 0], [0.4, 1]]
+            compact: [pattern, total_time, n_reps, interp?, time_dist?]
         """
         # Parse input
         pattern_points_pct = compact[0]
         total_time = compact[1]
         n_reps = compact[2]
-        interp_type = compact[3] if len(compact) == 4 else None
+        interp_type = compact[3] if len(compact) >= 4 else None
+        time_dist_spec = compact[4] if len(compact) == 5 else None  # NUOVO
         
-        # Valida
+        # Validazione (come prima)
         if n_reps < 1:
             raise ValueError(f"n_reps deve essere >= 1, ricevuto: {n_reps}")
-        
         if total_time <= 0:
             raise ValueError(f"total_time deve essere > 0, ricevuto: {total_time}")
-        
         if not pattern_points_pct:
             raise ValueError("pattern_points non può essere vuoto")
         
-        # Calcola durata ciclo singolo
-        cycle_duration = total_time / n_reps
+        # NUOVO: Crea strategia di distribuzione temporale
+        distributor = TimeDistributionFactory.create(time_dist_spec)
         
-        # Espandi breakpoints
+        # NUOVO: Ottieni distribuzione cicli
+        cycle_start_times, cycle_durations = distributor.calculate_distribution(
+            total_time, 
+            n_reps
+        )
+        
+        # Espandi breakpoints usando la distribuzione
         expanded = []
         
         for rep in range(n_reps):
-            # Tempo inizio ciclo con offset cumulativo
-            cycle_start_time = rep * cycle_duration
-                        
+            # MODIFICA: Usa cycle_start_times e cycle_durations calcolati
+            cycle_start_time = cycle_start_times[rep]
+            cycle_duration = cycle_durations[rep]
+            
             # Converti coordinate % → assolute per questo ciclo
             for i, (x_pct, y) in enumerate(pattern_points_pct):
-                # x_pct è in [0, 100]
-                # Normalizza a [0, 1]
                 x_normalized = x_pct / 100.0
-                
-                # Calcola tempo assoluto
                 t_absolute = cycle_start_time + (x_normalized * cycle_duration)
-                # Applica offset SOLO al primo punto di cicli successivi
+                
+                # Applica offset discontinuità
                 if rep > 0 and i == 0:
                     t_absolute += cls.DISCONTINUITY_OFFSET
-            
-
+                
                 expanded.append([t_absolute, y])
         
-        # LOGGING della trasformazione
-        cls._log_compact_transformation(compact, expanded)
+        # MODIFICA: Logging esteso (opzionale)
+        cls._log_compact_transformation(compact, expanded, distributor)
         
         return expanded
 
 
     @classmethod
-    def _log_compact_transformation(cls, compact: list, expanded: list):
+    def _log_compact_transformation(
+        cls, 
+        compact: list, 
+        expanded: list,
+        distributor = None  # NUOVO parametro
+    ):
         """
-        Logga la trasformazione da formato compatto a espanso.
+        Logga trasformazione con info distribuzione temporale.
         
-        Args:
-            compact: Formato originale [[[x%, y], ...], total_time, n_reps, interp?]
-            expanded: Lista espansa di breakpoints [[t, v], ...]
+        MODIFICA: Aggiungi parametro distributor opzionale
         """
-        # Importa logger locale per evitare circular imports
         from logger import get_clip_logger
         
         logger = get_clip_logger()
         if logger is None:
             return
         
-        # Parse compact format
+        # Parse compact
         pattern_points_pct = compact[0]
         total_time = compact[1]
         n_reps = compact[2]
-        interp_type = compact[3] if len(compact) == 4 else 'linear'
-        
-        # Formato compatto rappresentazione string
-        compact_repr = (
-            f"[{pattern_points_pct}, "
-            f"total_time={total_time}s, "
-            f"n_reps={n_reps}"
-        )
-        if len(compact) == 4:
-            compact_repr += f", interp='{interp_type}'"
-        compact_repr += "]"
-        
-        # Conta breakpoints espansi (escludendo discontinuità artificiali)
-        n_breakpoints = len(expanded)
-        cycle_duration = total_time / n_reps
+        interp_type = compact[3] if len(compact) >= 4 else None
+        time_dist_spec = compact[4] if len(compact) == 5 else None  # NUOVO
         
         # Log header
-        logger.info(
-            f"\n{'='*80}\n"
-            f"COMPACT ENVELOPE TRANSFORMATION\n"
-            f"{'='*80}"
-        )
+        logger.info(f"\n{'='*80}\nCOMPACT ENVELOPE TRANSFORMATION\n{'='*80}")
         
-        # Log formato compatto
+        # Input
         logger.info(f"\n[INPUT] Compact format:")
         logger.info(f"  Pattern points: {pattern_points_pct}")
         logger.info(f"  Total time: {total_time}s")
         logger.info(f"  Repetitions: {n_reps}")
-        logger.info(f"  Cycle duration: {cycle_duration:.6f}s")
-        if len(compact) == 4:
+        if interp_type:
             logger.info(f"  Interpolation: {interp_type}")
+        if time_dist_spec:  # NUOVO
+            logger.info(f"  Time distribution: {time_dist_spec}")
+        if distributor:  # NUOVO
+            logger.info(f"  Distribution strategy: {distributor.name}")
         
-        # Log risultato espanso
+        # Output
         logger.info(f"\n[OUTPUT] Expanded format:")
-        logger.info(f"  Total breakpoints: {n_breakpoints}")
+        logger.info(f"  Total breakpoints: {len(expanded)}")
         logger.info(f"  Time range: {expanded[0][0]:.6f}s → {expanded[-1][0]:.6f}s")
         
-        # Log primi e ultimi breakpoints per verifica
-        preview_count = min(5, len(expanded))
-        logger.info(f"\n  First {preview_count} breakpoints:")
-        for i in range(preview_count):
-            t, v = expanded[i]
-            logger.info(f"    [{i}] t={t:.6f}s, v={v}")
-        
-        if len(expanded) > preview_count:
-            logger.info(f"  ...")
-            logger.info(f"  Last {preview_count} breakpoints:")
-            for i in range(len(expanded) - preview_count, len(expanded)):
-                t, v = expanded[i]
-                logger.info(f"    [{i}] t={t:.6f}s, v={v}")
+        # Mostra distribuzione cicli
+        if distributor and n_reps > 1:
+            starts, durations = distributor.calculate_distribution(total_time, n_reps)
+            logger.info(f"\n[CYCLE DISTRIBUTION]:")
+            for i in range(n_reps):
+                logger.info(
+                    f"  Cycle {i}: {starts[i]:.3f}s - {starts[i] + durations[i]:.3f}s "
+                    f"(duration: {durations[i]:.3f}s)"
+                )
         
         logger.info(f"{'='*80}\n")
-    
+
+
 
     @classmethod
     def extract_interp_type(cls, raw_points: list) -> Optional[str]:
@@ -288,6 +258,19 @@ class EnvelopeBuilder:
                 if len(item) == 4:
                     return item[3]
         
+        return None
+
+    @classmethod
+    def extract_time_dist(cls, raw_points: list) -> Optional[Union[str, dict]]:
+        """
+        Estrae specifica distribuzione temporale da formato compatto.
+        
+        Returns:
+            time_dist spec (str o dict) o None
+        """
+        if cls._is_compact_format(raw_points):
+            if len(raw_points) == 5:
+                return raw_points[4]
         return None
 
 

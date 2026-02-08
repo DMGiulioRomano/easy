@@ -359,28 +359,39 @@ def create_scaled_envelope(
 
     return Envelope(raw_data)
 
-
 def _scale_time_recursive(points: List, factor: float) -> List:
     """
-    Scala ricorsivamente i tempi solo per i breakpoint standard [t, v].
-    I formati compatti vengono preservati (assumiamo abbiano duration esplicita in sec).
+    Scala ricorsivamente i tempi per breakpoint standard [t, v].
+    Scala anche total_time per formati compatti quando time_mode='normalized'.
+    
+    Args:
+        points: Lista di breakpoints, formati compatti, o mix
+        factor: Fattore di scaling (duration dello stream)
+    
+    Returns:
+        Lista con tempi scalati
     """
     from envelope_builder import EnvelopeBuilder
 
-    # Se l'intera lista è un formato compatto, non tocchiamo nulla
-    # (Esempio: [[[0,0], [100,1]], 0.4, 4] -> 0.4 è già secondi assoluti)
+    # CASO 1: L'intera lista è un formato compatto
     if EnvelopeBuilder._is_compact_format(points):
-        return points
+        # NUOVO: Scala il total_time (elemento [1])
+        scaled_compact = list(points)
+        scaled_compact[1] = points[1] * factor
+        return scaled_compact
 
+    # CASO 2: Lista di elementi misti
     scaled = []
     for item in points:
         if EnvelopeBuilder._is_compact_format(item):
-            # Compatto annidato: passa invariato
-            scaled.append(item)
+            scaled_compact = list(item)
+            scaled_compact[1] = item[1] * factor
+            scaled.append(scaled_compact)
         elif isinstance(item, list) and len(item) == 2:
             # Standard breakpoint: [t, v] -> [t * factor, v]
             scaled.append([item[0] * factor, item[1]])
         else:
-            # Altro (es. 'cycle')
+            # Altro (es. 'cycle', marker speciali)
             scaled.append(item)
+    
     return scaled

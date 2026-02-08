@@ -59,18 +59,24 @@ class TestTimeScaling:
         assert env.type == 'cubic'
         assert env.segments[0].end_time == 4.0  # 1.0 * 4.0
 
-    def test_scale_time_compact_format_ignored(self):
-        """
-        Formato compatto ha i suoi tempi espliciti (total_time).
-        NON deve essere scalato dal duration globale dello stream.
-        """
-        # Compact: dura 0.4s esplicitamente
-        raw_data = [[[0, 0], [100, 1]], 0.4, 4] 
+    def test_scale_time_compact_format_normalized(self):
+        raw_data = [[[0, 0], [100, 1]], 1.0, 4]  # total_time=1.0 (normalizzato)
         stream_duration = 60.0
         
         env = create_scaled_envelope(raw_data, stream_duration, time_mode='normalized')
         
-        # Deve rispettare 0.4s del compatto, non 60s
+        # ✓ Test corretto: total_time=1.0 deve scalare a 60s
+        last_point_time = env.segments[0].breakpoints[-1][0]
+        assert last_point_time == pytest.approx(60.0)
+
+    def test_scale_time_compact_format_absolute(self):
+        """Con time_mode='absolute', il total_time rimane invariato."""
+        raw_data = [[[0, 0], [100, 1]], 0.4, 4]
+        stream_duration = 60.0
+        
+        env = create_scaled_envelope(raw_data, stream_duration, time_mode='absolute')
+        
+        # Deve rispettare 0.4s del compatto, NON 60s
         last_point_time = env.segments[0].breakpoints[-1][0]
         assert last_point_time == pytest.approx(0.4)
 
