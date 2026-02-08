@@ -82,38 +82,36 @@ class TestTimeScaling:
 
     def test_scale_time_mixed_format(self):
         """
-        Formato misto: Scala i punti standard, preserva i compatti.
+        Formato misto: Scala TUTTI i tempi (standard + end_time compatti).
+        
+        Con la NUOVA semantica end_time:
+        - I breakpoint standard vengono scalati
+        - Gli end_time dei formati compatti vengono scalati
+        - Il risultato deve essere temporalmente coerente
+        - Il formato compatto aggiunge DISCONTINUITY_OFFSET quando segue altri breakpoint
         """
-        # [Standard(0.5), Compact(dur=0.2), Standard(1.0)]
+        # Layout temporale normalizzato (0-1):
+        # - Breakpoint a 0.5
+        # - Compatto da 0.5 a 0.7 (durata 0.2)
+        # - Breakpoint finale a 1.0
+        
         raw_data = [
-            [0.5, 10],                      # Deve scalare -> 5.0
-            [[[0, 0], [100, 1]], 0.2, 1],   # Deve restare 0.2 (assoluto)
-            [1.0, 0]                        # Deve scalare -> 10.0
+            [0.5, 10],                      # Scala a 5.0
+            [[[0, 0], [100, 1]], 0.7, 1],   # end_time=0.7, scala a 7.0
+            [1.0, 0]                        # Scala a 10.0
         ]
         duration = 10.0
-        
+
         env = create_scaled_envelope(raw_data, duration, time_mode='normalized')
         
-        breakpoints = env.segments[0].breakpoints
+        # Verifica: 4 breakpoint totali (standard + compatto con discontinuità)
+        points = env.breakpoints
+        assert len(points) == 4
         
-        # Nota: L'ordine temporale finale dipende dai valori.
-        # Qui verifichiamo che la conversione sia avvenuta.
-        
-        # Cerchiamo il punto che era 0.5
-        found_scaled_mid = False
-        for bp in breakpoints:
-            if bp[0] == 5.0 and bp[1] == 10:
-                found_scaled_mid = True
-        assert found_scaled_mid, "Il punto standard 0.5 non è stato scalato a 5.0"
-
-        # Cerchiamo il punto finale del compatto (dovrebbe essere intorno a 0.2 se parte da 0, 
-        # ma envelope builder li ordina. Verifichiamo solo che non sia stato moltiplicato per 10 diventando 2.0)
-        # In questo caso specifico, EnvelopeBuilder espande e poi ordina.
-        # Il compatto inizia a 0? No, il formato misto in EnvelopeBuilder è tricky sull'ordine.
-        # Verifichiamo semplicemente che NON ci siano punti a t=2.0 (0.2 * 10) se non previsti.
-        
-        # Verifichiamo l'ultimo punto (era 1.0)
-        assert breakpoints[-1][0] == 10.0
+        assert points[0] == pytest.approx([5.0, 10])           # Primo standard
+        assert points[1] == pytest.approx([5.000001, 0])       # Inizio compatto (con DISCONTINUITY_OFFSET)
+        assert points[2] == pytest.approx([7.0, 1])            # Fine compatto
+        assert points[3] == pytest.approx([10.0, 0])           # Ultimo standard
 
 
 # =============================================================================
