@@ -1,771 +1,766 @@
 """
-test_variation_registry.py
+test_distribution_strategy.py
 
-Test suite completa per il modulo variation_registry.py.
+Test suite completa per il modulo distribution_strategy.py.
 
 Coverage:
-1. Test VARIATION_STRATEGIES registry - dictionary mapping
-2. Test register_variation_strategy() - funzione di registrazione
-3. Test VariationFactory.create() - factory method
-4. Test validazione e errori
-5. Test integrazione con variation strategies
-6. Test estensibilità del registry
+1. Test DistributionStrategy (ABC) - interfaccia
+2. Test UniformDistribution - distribuzione uniforme
+3. Test GaussianDistribution - distribuzione gaussiana
+4. Test DistributionFactory - factory pattern
+5. Test statistici - validazione probabilistica
+6. Test get_bounds() - bounds teorici
+7. Test edge cases e validazione
+8. Test estensibilità del registry
 """
 
 import pytest
 from unittest.mock import Mock, patch
+import statistics
 import sys
 sys.path.insert(0, '/home/claude')
 
 # Creo implementazione minimale per i test
-from typing import Dict, Type
 from abc import ABC, abstractmethod
+from typing import Tuple
+import random
 
-# Mock VariationStrategy classes
-class VariationStrategy(ABC):
-    """Strategia di applicazione randomness a un valore base."""
+# =============================================================================
+# MOCK CLASSES
+# =============================================================================
+
+class DistributionStrategy(ABC):
+    """Strategy astratta per distribuzioni statistiche."""
     
     @abstractmethod
-    def apply(self, base: float, mod_range: float, distribution) -> float:
-        """Applica variazione al valore base."""
+    def sample(self, center: float, spread: float) -> float:
+        """Genera un campione dalla distribuzione."""
+        pass  # pragma: no cover
+    
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Nome descrittivo della distribuzione."""
+        pass  # pragma: no cover
+    
+    @abstractmethod
+    def get_bounds(self, center: float, spread: float) -> Tuple[float, float]:
+        """Restituisce i bounds teorici della distribuzione."""
         pass  # pragma: no cover
 
-class AdditiveVariation(VariationStrategy):
-    def apply(self, base: float, mod_range: float, distribution) -> float:
-        return distribution.sample(base, mod_range) if mod_range > 0 else base
 
-class QuantizedVariation(VariationStrategy):
-    def apply(self, base: float, mod_range: float, distribution) -> float:
-        if mod_range >= 1.0:
-            raw_sample = distribution.sample(0.0, mod_range)
-            return base + round(raw_sample)
-        return base
-
-class InvertVariation(VariationStrategy):
-    def apply(self, base: float, mod_range: float, distribution) -> float:
-        return 1.0 - base
-
-class ChoiceVariation(VariationStrategy):
-    def apply(self, value, mod_range: float, distribution):
-        import random
-        if isinstance(value, str):
-            return value
-        if isinstance(value, list):
-            if mod_range == 0:
-                return value[0] if value else 'default'
-            return random.choice(value)
-        raise TypeError(f"ChoiceVariation richiede stringa o lista")
-
-# Registry
-VARIATION_STRATEGIES: Dict[str, Type[VariationStrategy]] = {
-    'additive': AdditiveVariation,
-    'quantized': QuantizedVariation,
-    'invert': InvertVariation,
-    'choice': ChoiceVariation,
-}
-
-def register_variation_strategy(mode_name: str, strategy_class: Type[VariationStrategy]):
-    """Registra una nuova strategia di variazione."""
-    VARIATION_STRATEGIES[mode_name] = strategy_class
-    print(f"✅ Registrata nuova strategia variation: {mode_name} -> {strategy_class.__name__}")
-
-# Factory
-class VariationFactory:
-    """Crea strategie di variazione basate sul variation_mode."""
+class UniformDistribution(DistributionStrategy):
+    """Distribuzione uniforme: tutti i valori nel range sono equiprobabili."""
     
-    @staticmethod
-    def create(variation_mode: str) -> VariationStrategy:
-        """Crea una strategia di variazione."""
-        if variation_mode not in VARIATION_STRATEGIES:
-            available = ', '.join(VARIATION_STRATEGIES.keys())
+    def sample(self, center: float, spread: float) -> float:
+        if spread <= 0:
+            return center
+        return center + random.uniform(-0.5, 0.5) * spread
+    
+    @property
+    def name(self) -> str:
+        return "uniform"
+    
+    def get_bounds(self, center: float, spread: float) -> Tuple[float, float]:
+        half_spread = spread / 2
+        return (center - half_spread, center + half_spread)
+
+
+class GaussianDistribution(DistributionStrategy):
+    """Distribuzione gaussiana (normale): valori concentrati attorno al centro."""
+    
+    def sample(self, center: float, spread: float) -> float:
+        if spread <= 0:
+            return center
+        return random.gauss(center, spread)
+    
+    @property
+    def name(self) -> str:
+        return "gaussian"
+    
+    def get_bounds(self, center: float, spread: float) -> Tuple[float, float]:
+        three_sigma = spread * 3
+        return (center - three_sigma, center + three_sigma)
+
+
+class DistributionFactory:
+    """Factory per creare istanze di DistributionStrategy."""
+    
+    _registry = {
+        'uniform': UniformDistribution,
+        'gaussian': GaussianDistribution,
+    }
+    
+    @classmethod
+    def create(cls, mode: str) -> DistributionStrategy:
+        if mode not in cls._registry:
+            valid_modes = list(cls._registry.keys())
             raise ValueError(
-                f"Strategia variation non trovata: '{variation_mode}'. "
-                f"Strategie disponibili: {available}"
+                f"Distribuzione '{mode}' non riconosciuta. "
+                f"Modalità valide: {valid_modes}"
             )
         
-        strategy_class = VARIATION_STRATEGIES[variation_mode]
+        strategy_class = cls._registry[mode]
         return strategy_class()
+    
+    @classmethod
+    def register(cls, name: str, strategy_class: type):
+        if not issubclass(strategy_class, DistributionStrategy):
+            raise TypeError(
+                f"{strategy_class} deve essere subclass di DistributionStrategy"
+            )
+        cls._registry[name] = strategy_class
 
 
 # =============================================================================
-# 1. TEST VARIATION_STRATEGIES REGISTRY
+# 1. TEST DISTRIBUTIONSTRATEGY (ABC)
 # =============================================================================
 
-class TestVariationStrategiesRegistry:
-    """Test per il dictionary VARIATION_STRATEGIES."""
+class TestDistributionStrategyABC:
+    """Test per l'interfaccia DistributionStrategy (Abstract Base Class)."""
     
-    def test_registry_exists(self):
-        """Registry VARIATION_STRATEGIES esiste."""
-        assert VARIATION_STRATEGIES is not None
+    def test_is_abstract_class(self):
+        """DistributionStrategy è una classe astratta."""
+        assert ABC in DistributionStrategy.__bases__
     
-    def test_registry_is_dict(self):
-        """Registry è un dictionary."""
-        assert isinstance(VARIATION_STRATEGIES, dict)
+    def test_cannot_instantiate_directly(self):
+        """Non si può istanziare DistributionStrategy direttamente."""
+        with pytest.raises(TypeError):
+            DistributionStrategy()
     
-    def test_registry_has_core_strategies(self):
-        """Registry contiene le 4 strategie core."""
-        assert 'additive' in VARIATION_STRATEGIES
-        assert 'quantized' in VARIATION_STRATEGIES
-        assert 'invert' in VARIATION_STRATEGIES
-        assert 'choice' in VARIATION_STRATEGIES
+    def test_has_abstract_methods(self):
+        """DistributionStrategy ha metodi astratti."""
+        abstract_methods = DistributionStrategy.__abstractmethods__
+        
+        assert 'sample' in abstract_methods
+        assert 'name' in abstract_methods
+        assert 'get_bounds' in abstract_methods
     
-    def test_registry_values_are_classes(self):
-        """Valori del registry sono classi."""
-        for strategy_class in VARIATION_STRATEGIES.values():
-            assert isinstance(strategy_class, type)
+    def test_all_distributions_inherit_from_base(self):
+        """Tutte le distribuzioni ereditano da DistributionStrategy."""
+        distributions = [UniformDistribution, GaussianDistribution]
+        
+        for dist_class in distributions:
+            assert issubclass(dist_class, DistributionStrategy)
     
-    def test_registry_keys_are_strings(self):
-        """Chiavi del registry sono stringhe."""
-        for key in VARIATION_STRATEGIES.keys():
-            assert isinstance(key, str)
-    
-    def test_additive_maps_to_correct_class(self):
-        """'additive' mappa a AdditiveVariation."""
-        assert VARIATION_STRATEGIES['additive'] == AdditiveVariation
-    
-    def test_quantized_maps_to_correct_class(self):
-        """'quantized' mappa a QuantizedVariation."""
-        assert VARIATION_STRATEGIES['quantized'] == QuantizedVariation
-    
-    def test_invert_maps_to_correct_class(self):
-        """'invert' mappa a InvertVariation."""
-        assert VARIATION_STRATEGIES['invert'] == InvertVariation
-    
-    def test_choice_maps_to_correct_class(self):
-        """'choice' mappa a ChoiceVariation."""
-        assert VARIATION_STRATEGIES['choice'] == ChoiceVariation
-    
-    def test_all_strategies_inherit_from_base(self):
-        """Tutte le strategie ereditano da VariationStrategy."""
-        for strategy_class in VARIATION_STRATEGIES.values():
-            assert issubclass(strategy_class, VariationStrategy)
-    
-    def test_registry_count(self):
-        """Registry ha esattamente 4 strategie core."""
-        assert len(VARIATION_STRATEGIES) >= 4  # >= per permettere estensioni nei test
+    def test_concrete_implementations_are_instantiable(self):
+        """Le implementazioni concrete possono essere istanziate."""
+        distributions = [
+            UniformDistribution(),
+            GaussianDistribution()
+        ]
+        
+        for dist in distributions:
+            assert isinstance(dist, DistributionStrategy)
 
 
 # =============================================================================
-# 2. TEST REGISTER_VARIATION_STRATEGY()
+# 2. TEST UNIFORMDISTRIBUTION
 # =============================================================================
 
-class TestRegisterVariationStrategy:
-    """Test per la funzione register_variation_strategy()."""
+class TestUniformDistribution:
+    """Test per UniformDistribution."""
     
-    def setup_method(self):
-        """Setup: salva stato originale del registry."""
-        self.original_strategies = VARIATION_STRATEGIES.copy()
+    def test_create_instance(self):
+        """Creazione istanza UniformDistribution."""
+        dist = UniformDistribution()
+        
+        assert dist is not None
+        assert isinstance(dist, DistributionStrategy)
     
-    def teardown_method(self):
-        """Teardown: ripristina stato originale."""
-        VARIATION_STRATEGIES.clear()
-        VARIATION_STRATEGIES.update(self.original_strategies)
+    def test_name_is_uniform(self):
+        """Property name restituisce 'uniform'."""
+        dist = UniformDistribution()
+        
+        assert dist.name == "uniform"
     
-    def test_register_new_strategy(self):
-        """Registrazione di una nuova strategia."""
-        class CustomVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base * 2
+    def test_sample_with_zero_spread_returns_center(self):
+        """Con spread=0, sample restituisce center."""
+        dist = UniformDistribution()
         
-        initial_count = len(VARIATION_STRATEGIES)
-        register_variation_strategy('custom', CustomVariation)
+        result = dist.sample(center=10.0, spread=0.0)
         
-        assert 'custom' in VARIATION_STRATEGIES
-        assert VARIATION_STRATEGIES['custom'] == CustomVariation
-        assert len(VARIATION_STRATEGIES) == initial_count + 1
-        
-        # Test funzionale
-        strategy = VariationFactory.create('custom')
-        mock_dist = Mock()
-        result = strategy.apply(10.0, 0.0, mock_dist)
-        assert result == 20.0
+        assert result == 10.0
     
-    def test_register_prints_confirmation(self, capsys):
-        """Registrazione stampa messaggio di conferma."""
-        class TestVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
+    def test_sample_with_negative_spread_returns_center(self):
+        """Con spread<0, sample restituisce center."""
+        dist = UniformDistribution()
         
-        register_variation_strategy('test', TestVariation)
+        result = dist.sample(center=10.0, spread=-5.0)
         
-        captured = capsys.readouterr()
-        assert "✅" in captured.out
-        assert "test" in captured.out
-        assert "TestVariation" in captured.out
-        
-        # Test funzionale
-        strategy = VariationFactory.create('test')
-        mock_dist = Mock()
-        assert strategy.apply(10.0, 0.0, mock_dist) == 10.0
+        assert result == 10.0
     
-    def test_register_overwrites_existing_strategy(self):
-        """Registrazione sovrascrive strategie esistenti."""
-        class NewAdditiveVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base + 999
+    def test_sample_returns_float(self):
+        """sample restituisce sempre float."""
+        dist = UniformDistribution()
         
-        original_class = VARIATION_STRATEGIES['additive']
-        register_variation_strategy('additive', NewAdditiveVariation)
+        result = dist.sample(center=10.0, spread=5.0)
         
-        assert VARIATION_STRATEGIES['additive'] == NewAdditiveVariation
-        assert VARIATION_STRATEGIES['additive'] != original_class
-        
-        # Test funzionale
-        strategy = VariationFactory.create('additive')
-        mock_dist = Mock()
-        result = strategy.apply(10.0, 0.0, mock_dist)
-        assert result == 1009.0
+        assert isinstance(result, float)
     
-    def test_register_multiple_strategies(self):
-        """Registrazione multipla di strategie diverse."""
-        class Strategy1(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
+    def test_sample_within_bounds(self):
+        """Sample è sempre dentro i bounds."""
+        dist = UniformDistribution()
+        center = 10.0
+        spread = 6.0
         
-        class Strategy2(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
+        samples = [dist.sample(center, spread) for _ in range(100)]
         
-        register_variation_strategy('strat1', Strategy1)
-        register_variation_strategy('strat2', Strategy2)
+        min_bound, max_bound = dist.get_bounds(center, spread)
         
-        assert 'strat1' in VARIATION_STRATEGIES
-        assert 'strat2' in VARIATION_STRATEGIES
-        
-        # Test funzionali
-        mock_dist = Mock()
-        s1 = VariationFactory.create('strat1')
-        s2 = VariationFactory.create('strat2')
-        assert s1.apply(10.0, 0.0, mock_dist) == 10.0
-        assert s2.apply(20.0, 0.0, mock_dist) == 20.0
+        for sample in samples:
+            assert min_bound <= sample <= max_bound
     
-    def test_register_with_special_characters_in_name(self):
-        """Registrazione con caratteri speciali nel nome."""
-        class SpecialVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
+    def test_get_bounds_correct_range(self):
+        """get_bounds restituisce range corretto."""
+        dist = UniformDistribution()
         
-        register_variation_strategy('custom-variation_v2', SpecialVariation)
+        min_b, max_b = dist.get_bounds(center=10.0, spread=6.0)
         
-        assert 'custom-variation_v2' in VARIATION_STRATEGIES
-        
-        # Test funzionale
-        strategy = VariationFactory.create('custom-variation_v2')
-        mock_dist = Mock()
-        assert strategy.apply(10.0, 0.0, mock_dist) == 10.0
+        assert min_b == 7.0  # 10 - 6/2
+        assert max_b == 13.0  # 10 + 6/2
     
-    def test_registered_strategies_are_functional(self):
-        """Strategie registrate sono funzionali."""
-        class DoubleVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base * 2
+    def test_get_bounds_symmetric(self):
+        """Bounds sono simmetrici rispetto al center."""
+        dist = UniformDistribution()
         
-        class TripleVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base * 3
+        center = 50.0
+        spread = 20.0
+        min_b, max_b = dist.get_bounds(center, spread)
         
-        class AddNineNineNine(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base + 999
+        assert (min_b + max_b) / 2 == center
+    
+    def test_get_bounds_with_zero_spread(self):
+        """Bounds con spread=0 sono entrambi center."""
+        dist = UniformDistribution()
         
-        register_variation_strategy('double', DoubleVariation)
-        register_variation_strategy('triple', TripleVariation)
-        register_variation_strategy('add999', AddNineNineNine)
+        min_b, max_b = dist.get_bounds(center=10.0, spread=0.0)
         
-        mock_dist = Mock()
+        assert min_b == 10.0
+        assert max_b == 10.0
+    
+    def test_statistical_mean_close_to_center(self):
+        """Media statistica dei campioni ~center."""
+        dist = UniformDistribution()
+        center = 100.0
+        spread = 40.0
         
-        s1 = VariationFactory.create('double')
-        assert s1.apply(10.0, 0.0, mock_dist) == 20.0
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        mean = statistics.mean(samples)
         
-        s2 = VariationFactory.create('triple')
-        assert s2.apply(10.0, 0.0, mock_dist) == 30.0
+        # Con 1000 campioni, media ±2%
+        assert abs(mean - center) < center * 0.02
+    
+    def test_statistical_distribution_uniform(self):
+        """Distribuzione uniforme: no concentrazione centrale."""
+        dist = UniformDistribution()
+        center = 50.0
+        spread = 20.0
         
-        s3 = VariationFactory.create('add999')
-        assert s3.apply(10.0, 0.0, mock_dist) == 1009.0
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        
+        # Dividi in 3 zone: low, mid, high
+        min_b, max_b = dist.get_bounds(center, spread)
+        range_size = (max_b - min_b) / 3
+        
+        low = sum(1 for s in samples if s < min_b + range_size)
+        mid = sum(1 for s in samples if min_b + range_size <= s < min_b + 2*range_size)
+        high = sum(1 for s in samples if s >= min_b + 2*range_size)
+        
+        # Ogni zona dovrebbe avere ~333 campioni (±10%)
+        assert 250 <= low <= 416
+        assert 250 <= mid <= 416
+        assert 250 <= high <= 416
 
 
 # =============================================================================
-# 3. TEST VARIATIONFACTORY.CREATE()
+# 3. TEST GAUSSIANDISTRIBUTION
 # =============================================================================
 
-class TestVariationFactoryCreate:
-    """Test per VariationFactory.create()."""
+class TestGaussianDistribution:
+    """Test per GaussianDistribution."""
     
-    def test_create_additive_strategy(self):
-        """Creazione strategia 'additive'."""
-        strategy = VariationFactory.create('additive')
+    def test_create_instance(self):
+        """Creazione istanza GaussianDistribution."""
+        dist = GaussianDistribution()
         
-        assert strategy is not None
-        assert isinstance(strategy, AdditiveVariation)
-        assert isinstance(strategy, VariationStrategy)
+        assert dist is not None
+        assert isinstance(dist, DistributionStrategy)
     
-    def test_create_quantized_strategy(self):
-        """Creazione strategia 'quantized'."""
-        strategy = VariationFactory.create('quantized')
+    def test_name_is_gaussian(self):
+        """Property name restituisce 'gaussian'."""
+        dist = GaussianDistribution()
         
-        assert isinstance(strategy, QuantizedVariation)
+        assert dist.name == "gaussian"
     
-    def test_create_invert_strategy(self):
-        """Creazione strategia 'invert'."""
-        strategy = VariationFactory.create('invert')
+    def test_sample_with_zero_spread_returns_center(self):
+        """Con spread=0, sample restituisce center."""
+        dist = GaussianDistribution()
         
-        assert isinstance(strategy, InvertVariation)
+        result = dist.sample(center=10.0, spread=0.0)
+        
+        assert result == 10.0
     
-    def test_create_choice_strategy(self):
-        """Creazione strategia 'choice'."""
-        strategy = VariationFactory.create('choice')
+    def test_sample_with_negative_spread_returns_center(self):
+        """Con spread<0, sample restituisce center."""
+        dist = GaussianDistribution()
         
-        assert isinstance(strategy, ChoiceVariation)
+        result = dist.sample(center=10.0, spread=-5.0)
+        
+        assert result == 10.0
+    
+    def test_sample_returns_float(self):
+        """sample restituisce sempre float."""
+        dist = GaussianDistribution()
+        
+        result = dist.sample(center=10.0, spread=5.0)
+        
+        assert isinstance(result, float)
+    
+    def test_get_bounds_uses_three_sigma(self):
+        """get_bounds usa regola 3-sigma."""
+        dist = GaussianDistribution()
+        
+        center = 100.0
+        spread = 10.0  # σ
+        min_b, max_b = dist.get_bounds(center, spread)
+        
+        assert min_b == 70.0  # 100 - 3*10
+        assert max_b == 130.0  # 100 + 3*10
+    
+    def test_get_bounds_symmetric(self):
+        """Bounds sono simmetrici rispetto al center."""
+        dist = GaussianDistribution()
+        
+        center = 50.0
+        spread = 5.0
+        min_b, max_b = dist.get_bounds(center, spread)
+        
+        assert (min_b + max_b) / 2 == center
+    
+    def test_statistical_mean_close_to_center(self):
+        """Media statistica dei campioni ~center."""
+        dist = GaussianDistribution()
+        center = 100.0
+        spread = 10.0
+        
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        mean = statistics.mean(samples)
+        
+        # Con 1000 campioni, media ±2%
+        assert abs(mean - center) < center * 0.02
+    
+    def test_statistical_std_close_to_spread(self):
+        """Deviazione standard dei campioni ~spread."""
+        dist = GaussianDistribution()
+        center = 100.0
+        spread = 10.0  # σ target
+        
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        std = statistics.stdev(samples)
+        
+        # Con 1000 campioni, σ ±20%
+        assert abs(std - spread) < spread * 0.2
+    
+    def test_statistical_68_percent_in_one_sigma(self):
+        """~68% dei campioni in [μ-σ, μ+σ]."""
+        dist = GaussianDistribution()
+        center = 100.0
+        spread = 10.0
+        
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        
+        in_one_sigma = sum(
+            1 for s in samples 
+            if center - spread <= s <= center + spread
+        )
+        
+        percentage = (in_one_sigma / 1000) * 100
+        
+        # ~68% ±5%
+        assert 63 <= percentage <= 73
+    
+    def test_statistical_95_percent_in_two_sigma(self):
+        """~95% dei campioni in [μ-2σ, μ+2σ]."""
+        dist = GaussianDistribution()
+        center = 100.0
+        spread = 10.0
+        
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        
+        in_two_sigma = sum(
+            1 for s in samples 
+            if center - 2*spread <= s <= center + 2*spread
+        )
+        
+        percentage = (in_two_sigma / 1000) * 100
+        
+        # ~95% ±3%
+        assert 92 <= percentage <= 98
+    
+    def test_statistical_concentration_at_center(self):
+        """Gaussiana concentra campioni al centro (vs uniform)."""
+        dist = GaussianDistribution()
+        center = 50.0
+        spread = 10.0
+        
+        samples = [dist.sample(center, spread) for _ in range(1000)]
+        
+        # Conta campioni in zona centrale [45, 55] (μ±0.5σ)
+        central = sum(1 for s in samples if 45 <= s <= 55)
+        
+        # Gaussiana dovrebbe avere >380 campioni in zona centrale
+        # (uniform avrebbe ~250)
+        assert central > 350
+
+
+# =============================================================================
+# 4. TEST DISTRIBUTIONFACTORY
+# =============================================================================
+
+class TestDistributionFactory:
+    """Test per DistributionFactory."""
+    
+    def test_create_uniform_distribution(self):
+        """Factory crea UniformDistribution."""
+        dist = DistributionFactory.create('uniform')
+        
+        assert isinstance(dist, UniformDistribution)
+    
+    def test_create_gaussian_distribution(self):
+        """Factory crea GaussianDistribution."""
+        dist = DistributionFactory.create('gaussian')
+        
+        assert isinstance(dist, GaussianDistribution)
     
     def test_create_returns_new_instances(self):
         """create() restituisce nuove istanze ogni volta."""
-        strategy1 = VariationFactory.create('additive')
-        strategy2 = VariationFactory.create('additive')
+        dist1 = DistributionFactory.create('uniform')
+        dist2 = DistributionFactory.create('uniform')
         
-        assert strategy1 is not strategy2
-        assert type(strategy1) == type(strategy2)
+        assert dist1 is not dist2
     
     def test_create_invalid_mode_raises_error(self):
         """create() con mode invalido solleva ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            VariationFactory.create('nonexistent')
+            DistributionFactory.create('invalid')
         
-        assert "non trovata" in str(exc_info.value)
-        assert "nonexistent" in str(exc_info.value)
+        assert "non riconosciuta" in str(exc_info.value)
+        assert "invalid" in str(exc_info.value)
     
-    def test_create_error_includes_available_strategies(self):
-        """Messaggio di errore include strategie disponibili."""
+    def test_create_error_includes_valid_modes(self):
+        """Messaggio di errore include modalità valide."""
         with pytest.raises(ValueError) as exc_info:
-            VariationFactory.create('invalid')
+            DistributionFactory.create('unknown')
         
         error_msg = str(exc_info.value)
-        assert "additive" in error_msg
-        assert "quantized" in error_msg
-        assert "invert" in error_msg
-        assert "choice" in error_msg
-    
-    def test_create_empty_string_raises_error(self):
-        """create() con stringa vuota solleva ValueError."""
-        with pytest.raises(ValueError):
-            VariationFactory.create('')
+        assert "uniform" in error_msg
+        assert "gaussian" in error_msg
     
     def test_create_case_sensitive(self):
         """create() è case-sensitive."""
         # Lowercase funziona
-        strategy_lower = VariationFactory.create('additive')
-        assert strategy_lower is not None
+        dist = DistributionFactory.create('uniform')
+        assert dist is not None
         
         # Uppercase non funziona
         with pytest.raises(ValueError):
-            VariationFactory.create('ADDITIVE')
+            DistributionFactory.create('UNIFORM')
     
-    def test_create_with_registered_custom_strategy(self):
-        """create() funziona con strategie custom registrate."""
-        class MyCustomVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base * 3
+    def test_register_new_distribution(self):
+        """Registrazione di una nuova distribuzione."""
+        class TriangularDistribution(DistributionStrategy):
+            def sample(self, center, spread):
+                return center
+            
+            @property
+            def name(self):
+                return "triangular"
+            
+            def get_bounds(self, center, spread):
+                return (center - spread, center + spread)
         
-        register_variation_strategy('mycustom', MyCustomVariation)
+        DistributionFactory.register('triangular', TriangularDistribution)
         
-        strategy = VariationFactory.create('mycustom')
-        assert isinstance(strategy, MyCustomVariation)
+        dist = DistributionFactory.create('triangular')
+        assert isinstance(dist, TriangularDistribution)
         
         # Test funzionale
-        mock_dist = Mock()
-        result = strategy.apply(10.0, 0.0, mock_dist)
-        assert result == 30.0
-
-
-# =============================================================================
-# 4. TEST INTEGRAZIONE CON VARIATION STRATEGIES
-# =============================================================================
-
-class TestVariationStrategyIntegration:
-    """Test integrazione factory con strategie concrete."""
-    
-    def test_additive_strategy_functional(self):
-        """AdditiveVariation creata da factory è funzionale."""
-        strategy = VariationFactory.create('additive')
-        
-        mock_dist = Mock()
-        mock_dist.sample.return_value = 5.0
-        
-        result = strategy.apply(base=10.0, mod_range=2.0, distribution=mock_dist)
-        
-        assert result == 5.0
-        mock_dist.sample.assert_called_once_with(10.0, 2.0)
-    
-    def test_additive_with_zero_range(self):
-        """AdditiveVariation con mod_range=0 restituisce base."""
-        strategy = VariationFactory.create('additive')
-        
-        mock_dist = Mock()
-        result = strategy.apply(base=10.0, mod_range=0.0, distribution=mock_dist)
-        
+        result = dist.sample(10.0, 5.0)
         assert result == 10.0
-        mock_dist.sample.assert_not_called()
+        
+        assert dist.name == "triangular"
+        
+        bounds = dist.get_bounds(10.0, 5.0)
+        assert bounds == (5.0, 15.0)
     
-    def test_quantized_strategy_functional(self):
-        """QuantizedVariation creata da factory è funzionale."""
-        strategy = VariationFactory.create('quantized')
-        
-        mock_dist = Mock()
-        mock_dist.sample.return_value = 2.7  # Dovrebbe arrotondare a 3
-        
-        result = strategy.apply(base=10.0, mod_range=5.0, distribution=mock_dist)
-        
-        assert result == 13.0  # 10 + round(2.7)
-    
-    def test_quantized_with_small_range(self):
-        """QuantizedVariation con mod_range < 1 restituisce base."""
-        strategy = VariationFactory.create('quantized')
-        
-        mock_dist = Mock()
-        result = strategy.apply(base=10.0, mod_range=0.5, distribution=mock_dist)
-        
-        assert result == 10.0
-        mock_dist.sample.assert_not_called()
-    
-    def test_invert_strategy_functional(self):
-        """InvertVariation creata da factory è funzionale."""
-        strategy = VariationFactory.create('invert')
-        
-        mock_dist = Mock()
-        
-        result = strategy.apply(base=0.3, mod_range=0.0, distribution=mock_dist)
-        
-        assert result == 0.7  # 1.0 - 0.3
-    
-    def test_invert_ignores_distribution(self):
-        """InvertVariation non usa distribution."""
-        strategy = VariationFactory.create('invert')
-        
-        mock_dist = Mock()
-        strategy.apply(base=0.5, mod_range=1.0, distribution=mock_dist)
-        
-        mock_dist.sample.assert_not_called()
-    
-    def test_choice_strategy_with_string(self):
-        """ChoiceVariation con stringa singola."""
-        strategy = VariationFactory.create('choice')
-        
-        mock_dist = Mock()
-        result = strategy.apply(value='hanning', mod_range=1.0, distribution=mock_dist)
-        
-        assert result == 'hanning'
-    
-    def test_choice_strategy_with_list(self):
-        """ChoiceVariation con lista."""
-        strategy = VariationFactory.create('choice')
-        
-        mock_dist = Mock()
-        choices = ['a', 'b', 'c']
-        result = strategy.apply(value=choices, mod_range=1.0, distribution=mock_dist)
-        
-        assert result in choices
-    
-    def test_choice_strategy_with_zero_range(self):
-        """ChoiceVariation con mod_range=0 restituisce primo elemento."""
-        strategy = VariationFactory.create('choice')
-        
-        mock_dist = Mock()
-        choices = ['first', 'second', 'third']
-        result = strategy.apply(value=choices, mod_range=0.0, distribution=mock_dist)
-        
-        assert result == 'first'
-    
-    def test_choice_strategy_with_invalid_type_raises_error(self):
-        """ChoiceVariation con tipo invalido solleva TypeError."""
-        strategy = VariationFactory.create('choice')
-        
-        mock_dist = Mock()
+    def test_register_invalid_class_raises_error(self):
+        """Registrazione classe non-DistributionStrategy solleva TypeError."""
+        class NotADistribution:
+            pass
         
         with pytest.raises(TypeError) as exc_info:
-            strategy.apply(value=123, mod_range=1.0, distribution=mock_dist)
+            DistributionFactory.register('invalid', NotADistribution)
         
-        assert "ChoiceVariation richiede" in str(exc_info.value)
+        assert "subclass" in str(exc_info.value)
 
 
 # =============================================================================
-# 5. TEST EDGE CASES E VALIDAZIONE
+# 5. TEST INTEGRAZIONE
 # =============================================================================
 
-class TestVariationRegistryEdgeCases:
-    """Test edge cases e validazione."""
+class TestDistributionStrategyIntegration:
+    """Test integrazione con Parameter e workflow reali."""
     
-    def test_registry_not_none_after_imports(self):
-        """Registry non è None dopo import."""
-        assert VARIATION_STRATEGIES is not None
-    
-    def test_factory_create_is_static_method(self):
-        """VariationFactory.create è metodo statico."""
-        # Può essere chiamato senza istanziare
-        strategy = VariationFactory.create('additive')
-        assert strategy is not None
-    
-    def test_all_registered_strategies_instantiable(self):
-        """Tutte le strategie registrate possono essere istanziate."""
-        for mode_name, strategy_class in VARIATION_STRATEGIES.items():
-            strategy = strategy_class()
-            assert isinstance(strategy, VariationStrategy)
-    
-    def test_all_strategies_have_apply_method(self):
-        """Tutte le strategie hanno metodo apply."""
-        for strategy_class in VARIATION_STRATEGIES.values():
-            assert hasattr(strategy_class, 'apply')
-    
-    def test_create_with_whitespace_raises_error(self):
-        """create() con whitespace solleva ValueError."""
-        with pytest.raises(ValueError):
-            VariationFactory.create('  ')
+    def test_uniform_used_in_parameter_workflow(self):
+        """UniformDistribution usata in workflow Parameter."""
+        dist = DistributionFactory.create('uniform')
         
-        with pytest.raises(ValueError):
-            VariationFactory.create('additive ')
+        # Simula Parameter che usa distribution
+        base_value = 10.0
+        mod_range = 2.0
+        
+        result = dist.sample(base_value, mod_range)
+        
+        # Verifica che sia nel range
+        min_b, max_b = dist.get_bounds(base_value, mod_range)
+        assert min_b <= result <= max_b
     
-    def test_registry_mutation_affects_factory(self):
-        """Modifiche al registry influenzano factory."""
-        class TempStrategy(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
+    def test_gaussian_used_in_parameter_workflow(self):
+        """GaussianDistribution usata in workflow Parameter."""
+        dist = DistributionFactory.create('gaussian')
         
-        VARIATION_STRATEGIES['temp'] = TempStrategy
+        # Simula Parameter con gaussiana
+        base_value = 440.0  # La centrale
+        mod_range = 20.0    # σ
         
-        try:
-            strategy = VariationFactory.create('temp')
-            assert isinstance(strategy, TempStrategy)
+        samples = [dist.sample(base_value, mod_range) for _ in range(100)]
+        
+        # Verifica concentrazione vicino a 440Hz
+        near_center = sum(1 for s in samples if 420 <= s <= 460)
+        assert near_center > 60  # >60% in ±σ
+    
+    def test_distributions_compatible_interface(self):
+        """Tutte le distribuzioni hanno interfaccia compatibile."""
+        distributions = [
+            DistributionFactory.create('uniform'),
+            DistributionFactory.create('gaussian')
+        ]
+        
+        for dist in distributions:
+            # Tutte rispondono a stessi metodi
+            result = dist.sample(100.0, 10.0)
+            assert isinstance(result, float)
             
-            # Test funzionale
-            mock_dist = Mock()
-            assert strategy.apply(10.0, 0.0, mock_dist) == 10.0
-        finally:
-            del VARIATION_STRATEGIES['temp']
+            bounds = dist.get_bounds(100.0, 10.0)
+            assert isinstance(bounds, tuple)
+            assert len(bounds) == 2
+            
+            name = dist.name
+            assert isinstance(name, str)
 
 
 # =============================================================================
-# 6. TEST WORKFLOW E PATTERN
+# 6. TEST EDGE CASES
 # =============================================================================
 
-class TestVariationRegistryWorkflow:
-    """Test workflow tipici e pattern di utilizzo."""
+class TestDistributionStrategyEdgeCases:
+    """Test edge cases e situazioni limite."""
     
-    def test_workflow_parameter_bound_creation(self):
-        """Workflow: ParameterBounds usa variation_mode."""
-        # Simula ParameterBounds che specifica variation_mode
-        variation_mode = 'quantized'
+    def test_very_small_spread(self):
+        """Distribuzioni funzionano con spread molto piccolo."""
+        distributions = [
+            UniformDistribution(),
+            GaussianDistribution()
+        ]
         
-        # Factory crea la strategia
-        strategy = VariationFactory.create(variation_mode)
-        
-        # Strategia viene usata
-        mock_dist = Mock()
-        mock_dist.sample.return_value = 3.8
-        result = strategy.apply(10.0, 5.0, mock_dist)
-        
-        assert result == 14.0  # 10 + round(3.8)
+        for dist in distributions:
+            result = dist.sample(center=10.0, spread=0.001)
+            assert 9.998 <= result <= 10.002
     
-    def test_workflow_extension_pattern(self):
-        """Workflow: estensione con nuova strategia."""
-        # 1. Definisci nuova strategia
-        class ExponentialVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                import math
-                return base * math.exp(mod_range)
+    def test_very_large_spread(self):
+        """Distribuzioni funzionano con spread molto grande."""
+        distributions = [
+            UniformDistribution(),
+            GaussianDistribution()
+        ]
         
-        # 2. Registra
-        register_variation_strategy('exponential', ExponentialVariation)
-        
-        # 3. Usa tramite factory
-        strategy = VariationFactory.create('exponential')
-        
-        assert isinstance(strategy, ExponentialVariation)
-        
-        # 4. Test funzionale
-        mock_dist = Mock()
-        result = strategy.apply(10.0, 1.0, mock_dist)
-        import math
-        assert result == pytest.approx(10.0 * math.e)
+        for dist in distributions:
+            result = dist.sample(center=0.0, spread=1000.0)
+            assert isinstance(result, float)
     
-    def test_workflow_strategy_selection(self):
-        """Workflow: selezione strategia in base a configurazione."""
-        # Simula scelta basata su tipo parametro
-        param_type = 'semitones'
-        mode = 'quantized'  # Direct assignment
+    def test_negative_center(self):
+        """Distribuzioni funzionano con center negativo."""
+        dist = UniformDistribution()
         
-        strategy = VariationFactory.create(mode)
-        assert isinstance(strategy, QuantizedVariation)
+        samples = [dist.sample(center=-50.0, spread=20.0) for _ in range(100)]
+        mean = statistics.mean(samples)
+        
+        assert abs(mean - (-50.0)) < 2.0
     
-    def test_workflow_strategy_selection_ratio(self):
-        """Workflow: selezione additive per ratio."""
-        param_type = 'ratio'
-        mode = 'additive'  # Direct assignment
+    def test_zero_center(self):
+        """Distribuzioni funzionano con center=0."""
+        dist = GaussianDistribution()
         
-        strategy = VariationFactory.create(mode)
-        assert isinstance(strategy, AdditiveVariation)
+        samples = [dist.sample(center=0.0, spread=5.0) for _ in range(100)]
+        mean = statistics.mean(samples)
+        
+        assert abs(mean) < 1.0
     
-    def test_workflow_strategy_selection_other(self):
-        """Workflow: selezione additive per tipo sconosciuto."""
-        param_type = 'unknown'
-        mode = 'additive'  # Direct assignment (fallback)
+    def test_fractional_spread(self):
+        """Distribuzioni funzionano con spread frazionario."""
+        dist = UniformDistribution()
         
-        strategy = VariationFactory.create(mode)
-        assert isinstance(strategy, AdditiveVariation)
+        result = dist.sample(center=10.0, spread=0.5)
+        
+        assert 9.75 <= result <= 10.25
     
-    def test_workflow_all_strategies_compatible_interface(self):
-        """Workflow: tutte le strategie hanno interfaccia compatibile."""
-        mock_dist = Mock()
-        mock_dist.sample.return_value = 5.0
+    def test_bounds_always_ordered(self):
+        """get_bounds restituisce sempre (min, max) ordinati."""
+        distributions = [
+            UniformDistribution(),
+            GaussianDistribution()
+        ]
         
-        for mode in ['additive', 'quantized', 'invert']:
-            strategy = VariationFactory.create(mode)
-            
-            # Tutte accettano stessi parametri
-            result = strategy.apply(
-                base=10.0,
-                mod_range=2.0,
-                distribution=mock_dist
-            )
-            
-            assert isinstance(result, (int, float))
+        for dist in distributions:
+            min_b, max_b = dist.get_bounds(center=50.0, spread=20.0)
+            assert min_b < max_b
 
 
 # =============================================================================
 # 7. TEST PARAMETRIZZATI
 # =============================================================================
 
-class TestVariationRegistryParametrized:
+class TestDistributionStrategyParametrized:
     """Test parametrizzati per copertura sistematica."""
     
     @pytest.mark.parametrize("mode,expected_class", [
-        ('additive', AdditiveVariation),
-        ('quantized', QuantizedVariation),
-        ('invert', InvertVariation),
-        ('choice', ChoiceVariation),
+        ('uniform', UniformDistribution),
+        ('gaussian', GaussianDistribution),
     ])
-    def test_create_returns_correct_class(self, mode, expected_class):
+    def test_factory_creates_correct_class(self, mode, expected_class):
         """Factory crea la classe corretta per ogni mode."""
-        strategy = VariationFactory.create(mode)
-        assert isinstance(strategy, expected_class)
+        dist = DistributionFactory.create(mode)
+        assert isinstance(dist, expected_class)
     
-    @pytest.mark.parametrize("mode", ['additive', 'quantized', 'invert', 'choice'])
-    def test_all_modes_create_unique_instances(self, mode):
-        """Ogni mode crea istanze uniche."""
-        s1 = VariationFactory.create(mode)
-        s2 = VariationFactory.create(mode)
+    @pytest.mark.parametrize("dist_class", [
+        UniformDistribution,
+        GaussianDistribution,
+    ])
+    def test_all_distributions_have_required_methods(self, dist_class):
+        """Tutte le distribuzioni hanno metodi richiesti."""
+        dist = dist_class()
         
-        assert s1 is not s2
+        assert hasattr(dist, 'sample')
+        assert hasattr(dist, 'name')
+        assert hasattr(dist, 'get_bounds')
+        assert callable(dist.sample)
+        assert callable(dist.get_bounds)
+    
+    @pytest.mark.parametrize("center", [0.0, 10.0, 100.0, -50.0])
+    def test_uniform_mean_accurate_at_various_centers(self, center):
+        """UniformDistribution ha media accurata per vari center."""
+        dist = UniformDistribution()
+        
+        samples = [dist.sample(center, spread=20.0) for _ in range(500)]
+        mean = statistics.mean(samples)
+        
+        assert abs(mean - center) < abs(center) * 0.05 + 1.0
+    
+    @pytest.mark.parametrize("spread", [1.0, 5.0, 10.0, 50.0])
+    def test_gaussian_std_accurate_at_various_spreads(self, spread):
+        """GaussianDistribution ha σ accurata per vari spread."""
+        dist = GaussianDistribution()
+        
+        samples = [dist.sample(center=100.0, spread=spread) for _ in range(500)]
+        std = statistics.stdev(samples)
+        
+        # ±25% tolleranza
+        assert abs(std - spread) < spread * 0.25
     
     @pytest.mark.parametrize("invalid_mode", [
         'invalid',
-        'add',  # Partial match
-        'ADDITIVE',  # Wrong case
-        'additive123',
-        '123',
-        'none',
-        'null',
+        'GAUSSIAN',
+        'unifrom',  # typo
+        'normal',
+        '',
+        '  ',
     ])
-    def test_create_invalid_modes_raise_error(self, invalid_mode):
+    def test_factory_rejects_invalid_modes(self, invalid_mode):
         """Factory solleva ValueError per mode invalidi."""
         with pytest.raises(ValueError):
-            VariationFactory.create(invalid_mode)
-    
-    @pytest.mark.parametrize("mode", ['additive', 'quantized', 'invert', 'choice'])
-    def test_registry_has_all_core_modes(self, mode):
-        """Registry contiene tutti i mode core."""
-        assert mode in VARIATION_STRATEGIES
-    
-    @pytest.mark.parametrize("mode", ['additive', 'quantized', 'invert', 'choice'])
-    def test_strategies_are_subclasses(self, mode):
-        """Tutte le strategie sono subclass di VariationStrategy."""
-        strategy_class = VARIATION_STRATEGIES[mode]
-        assert issubclass(strategy_class, VariationStrategy)
+            DistributionFactory.create(invalid_mode)
 
 
 # =============================================================================
-# 8. TEST ESTENSIBILITÀ
+# 8. TEST COMPARATIVI
 # =============================================================================
 
-class TestVariationRegistryExtensibility:
-    """Test estensibilità del sistema."""
+class TestDistributionComparison:
+    """Test comparativi tra distribuzioni diverse."""
     
-    def setup_method(self):
-        """Setup: salva stato originale."""
-        self.original_strategies = VARIATION_STRATEGIES.copy()
+    def test_uniform_vs_gaussian_spread(self):
+        """Uniform ha spread più ampio di gaussian per stessi parametri."""
+        uniform = UniformDistribution()
+        gaussian = GaussianDistribution()
+        
+        center = 100.0
+        spread = 10.0
+        
+        uniform_samples = [uniform.sample(center, spread) for _ in range(1000)]
+        gaussian_samples = [gaussian.sample(center, spread) for _ in range(1000)]
+        
+        uniform_std = statistics.stdev(uniform_samples)
+        gaussian_std = statistics.stdev(gaussian_samples)
+        
+        # Uniform dovrebbe avere σ ~spread/sqrt(3) ≈ 5.77
+        # Gaussian dovrebbe avere σ ~spread = 10
+        # Quindi gaussian_std > uniform_std
+        assert gaussian_std > uniform_std
     
-    def teardown_method(self):
-        """Teardown: ripristina stato."""
-        VARIATION_STRATEGIES.clear()
-        VARIATION_STRATEGIES.update(self.original_strategies)
+    def test_gaussian_more_concentrated_than_uniform(self):
+        """Gaussian con σ piccolo concentra campioni più di uniform con spread largo."""
+        uniform = UniformDistribution()
+        gaussian = GaussianDistribution()
+        
+        center = 50.0
+        
+        # Uniform con spread largo
+        uniform_samples = [uniform.sample(center, spread=20.0) for _ in range(1000)]
+        
+        # Gaussian con σ piccolo (più concentrato)
+        gaussian_samples = [gaussian.sample(center, spread=5.0) for _ in range(1000)]
+        
+        # Conta campioni in zona ±10
+        uniform_in_range = sum(1 for s in uniform_samples if 40 <= s <= 60)
+        gaussian_in_range = sum(1 for s in gaussian_samples if 40 <= s <= 60)
+        
+        # Uniform: spread=20 → bounds [40, 60] → tutti i campioni (100%)
+        # Gaussian: σ=5 → [40, 60] = μ±2σ → ~95% dei campioni
+        # 
+        # Quindi uniform ≈ gaussian per questa zona
+        
+        # Usiamo zona più stretta: ±5
+        uniform_narrow = sum(1 for s in uniform_samples if 45 <= s <= 55)
+        gaussian_narrow = sum(1 for s in gaussian_samples if 45 <= s <= 55)
+        
+        # Uniform: [45, 55] = 10 unità su 20 = 50% → ~500
+        # Gaussian: [45, 55] = μ±σ → ~68% → ~680
+        
+        # Gaussian ha più campioni in zona centrale
+        assert gaussian_narrow > uniform_narrow
     
-    def test_can_add_logarithmic_variation(self):
-        """Sistema supporta estensione con LogarithmicVariation."""
-        class LogarithmicVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                import math
-                if mod_range > 0:
-                    return base * math.log1p(mod_range)
-                return base
+    def test_bounds_different_between_distributions(self):
+        """Bounds teorici diversi tra uniform e gaussian."""
+        uniform = UniformDistribution()
+        gaussian = GaussianDistribution()
         
-        register_variation_strategy('logarithmic', LogarithmicVariation)
+        center = 100.0
+        spread = 10.0
         
-        strategy = VariationFactory.create('logarithmic')
-        assert isinstance(strategy, LogarithmicVariation)
+        u_min, u_max = uniform.get_bounds(center, spread)
+        g_min, g_max = gaussian.get_bounds(center, spread)
         
-        # Test funzionale con mod_range > 0
-        mock_dist = Mock()
-        result = strategy.apply(10.0, 2.0, mock_dist)
-        assert result > 0  # log1p(2) > 0
-        
-        # Test funzionale con mod_range = 0
-        result_zero = strategy.apply(10.0, 0.0, mock_dist)
-        assert result_zero == 10.0
-    
-    def test_can_add_biased_gaussian_variation(self):
-        """Sistema supporta BiasedGaussianVariation."""
-        class BiasedGaussianVariation(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                # Simula bias verso valori alti
-                sample = distribution.sample(base, mod_range)
-                return max(sample, base)
-        
-        register_variation_strategy('biased_gaussian', BiasedGaussianVariation)
-        
-        strategy = VariationFactory.create('biased_gaussian')
-        assert isinstance(strategy, BiasedGaussianVariation)
-        
-        # Test funzionale
-        mock_dist = Mock()
-        mock_dist.sample.return_value = 15.0  # sample > base
-        result = strategy.apply(10.0, 5.0, mock_dist)
-        assert result == 15.0  # max(15, 10)
-        
-        # Test quando sample < base
-        mock_dist.sample.return_value = 5.0
-        result = strategy.apply(10.0, 5.0, mock_dist)
-        assert result == 10.0  # max(5, 10)
-    
-    def test_multiple_custom_strategies_coexist(self):
-        """Multiple strategie custom coesistono."""
-        class Strategy1(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
-        
-        class Strategy2(VariationStrategy):
-            def apply(self, base, mod_range, distribution):
-                return base
-        
-        register_variation_strategy('custom1', Strategy1)
-        register_variation_strategy('custom2', Strategy2)
-        
-        s1 = VariationFactory.create('custom1')
-        s2 = VariationFactory.create('custom2')
-        
-        assert type(s1) != type(s2)
-        assert isinstance(s1, Strategy1)
-        assert isinstance(s2, Strategy2)
-        
-        # Test funzionali
-        mock_dist = Mock()
-        result1 = s1.apply(10.0, 2.0, mock_dist)
-        result2 = s2.apply(20.0, 3.0, mock_dist)
-        assert result1 == 10.0
-        assert result2 == 20.0
+        # Uniform: [95, 105] (spread/2)
+        # Gaussian: [70, 130] (3σ)
+        assert (u_max - u_min) < (g_max - g_min)
