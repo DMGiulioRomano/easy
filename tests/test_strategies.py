@@ -135,7 +135,6 @@ def _mock_get_parameter_definition(name):
         raise KeyError(f"Parametro '{name}' non definito")
     return registry[name]
 
-
 # =============================================================================
 # IMPORT CON MOCK - strategies.py
 # =============================================================================
@@ -151,21 +150,21 @@ mock_paramdef_mod = types.ModuleType('parameter_definitions')
 mock_paramdef_mod.ParameterBounds = ParameterBounds
 mock_paramdef_mod.get_parameter_definition = _mock_get_parameter_definition
 
-
-sys.modules['parameter'] = mock_parameter_mod
-sys.modules['envelope'] = mock_envelope_mod
-sys.modules['parameter_definitions'] = mock_paramdef_mod
-
-from strategies import (
-    PitchStrategy, SemitonesStrategy, RatioStrategy,
-    DensityStrategy, FillFactorStrategy, DirectDensityStrategy,
-)
-from strategy_registry import (
-    PITCH_STRATEGIES, DENSITY_STRATEGIES,
-    register_pitch_strategy, register_density_strategy,
-    StrategyFactory,
-)
-
+# Inject temporaneo con ripristino automatico garantito
+with patch.dict(sys.modules, {
+    'parameter': mock_parameter_mod,
+    'envelope': mock_envelope_mod,
+    'parameter_definitions': mock_paramdef_mod,
+}):
+    from strategies import (
+        PitchStrategy, SemitonesStrategy, RatioStrategy,
+        DensityStrategy, FillFactorStrategy, DirectDensityStrategy,
+    )
+    from strategy_registry import (
+        PITCH_STRATEGIES, DENSITY_STRATEGIES,
+        register_pitch_strategy, register_density_strategy,
+        StrategyFactory,
+    )
 
 # =============================================================================
 # HELPERS

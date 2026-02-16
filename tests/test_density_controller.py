@@ -24,8 +24,7 @@ from unittest.mock import Mock, patch, MagicMock
 from density_controller import DensityController
 from stream_config import StreamConfig, StreamContext
 from parameter import Parameter
-from parameter_definitions import ParameterBounds
-
+from parameter_definitions import ParameterBounds, get_parameter_definition
 
 # =============================================================================
 # FIXTURES
@@ -51,9 +50,7 @@ def mock_config():
 
 def _bounds(name):
     """Shortcut per ottenere bounds reali dal registry."""
-    from parameter_definitions import get_parameter_definition
     return get_parameter_definition(name)
-
 
 def _make_density_controller(mock_config, loaded_params, raw_params=None):
     """

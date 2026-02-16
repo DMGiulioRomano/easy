@@ -50,7 +50,6 @@ def pointer_factory(mock_config):
         pointer = pointer_factory({'start': 0, 'speed_ratio': 1.0})
     """
     from parameter import Parameter
-    from parameter_definitions import ParameterBounds
     
     def _create(params: dict, sample_dur: float = None):
         if sample_dur:

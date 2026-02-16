@@ -24,8 +24,7 @@ from unittest.mock import Mock, patch
 from pitch_controller import PitchController
 from stream_config import StreamConfig, StreamContext
 from parameter import Parameter
-from parameter_definitions import ParameterBounds
-
+from parameter_definitions import ParameterBounds, get_parameter_definition
 
 # =============================================================================
 # FIXTURES
@@ -50,8 +49,7 @@ def mock_config():
 
 
 def _bounds(name):
-    """Shortcut per bounds dal registry."""
-    from parameter_definitions import get_parameter_definition
+    """Shortcut per ottenere bounds reali dal registry."""
     return get_parameter_definition(name)
 
 
