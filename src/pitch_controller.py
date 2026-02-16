@@ -103,17 +103,18 @@ class PitchController:
         return self._strategy.name    
 
     @property
-    def base_semitones(self):
-        """Valore base semitoni (o Envelope) senza jitter."""
-        if 'pitch_semitones' in self._loaded_params:
-            return self._loaded_params['pitch_semitones'].value
-        return None
-    
-    @property
     def base_ratio(self):
-        """Valore base ratio (o Envelope) senza jitter."""
-        if 'pitch_ratio' in self._loaded_params:
-            return self._loaded_params['pitch_ratio'].value
+        param = self._loaded_params.get('pitch_ratio')
+        if param is not None:
+            return param.value
+        return None
+
+    # Fix base_semitones (riga ~108)
+    @property
+    def base_semitones(self):
+        param = self._loaded_params.get('pitch_semitones')
+        if param is not None:
+            return param.value
         return None
 
     @property
@@ -128,6 +129,6 @@ class PitchController:
     # =========================================================================
     # REPR
     # =========================================================================
-    
+        
     def __repr__(self) -> str:
-        return f"PitchController(mode={self._mode}, param='{self._active_param.name}')"    
+        return f"PitchController(mode={self.mode}, strategy={self._strategy.name})"
