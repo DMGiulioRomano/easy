@@ -150,13 +150,13 @@ class Stream:
             # reverse assente → auto mode
             
             grain:
-            reverse:  # ← Unico modo per forzare reverse
+                reverse:  # ← Unico modo per forzare reverse
         
         Examples YAML INVALIDI:
             grain:
-            reverse: true    # ❌ ERRORE
-            reverse: false   # ❌ ERRORE
-            reverse: 'auto'  # ❌ ERRORE
+                reverse: true    # x ERRORE
+                reverse: false   # x ERRORE
+                reverse: 'auto'  # x ERRORE
         """
         grain_params = params.get('grain', {})
         

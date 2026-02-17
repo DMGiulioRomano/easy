@@ -108,9 +108,7 @@ class PointerController:
 
     def _scale_value(self, value, scale: float):
         """
-        Scala un valore che può essere scalare, envelope, o dict.
-        
-        FIXED: Ora gestisce correttamente marker 'cycle' delegando a Envelope.
+        Scala un valore che può essere scalare, envelope, o dict.        
         """
         if isinstance(value, (int, float)):
             return value * scale
