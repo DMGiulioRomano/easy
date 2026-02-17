@@ -222,3 +222,100 @@ class TestScalingEdgeCases:
         
         assert env.evaluate(0) == 0.0
         assert env.evaluate(1) == 0.0
+
+# =============================================================================
+# 4. TEST _SCALE_RAW_VALUES_Y (RESTITUZIONE DATI RAW)
+# =============================================================================
+
+class TestScaleRawValuesY:
+    """
+    Testa Envelope._scale_raw_values_y.
+    Verifica che restituisca dati raw (list/dict), non oggetti Envelope.
+    """
+
+    def test_returns_list_not_envelope(self):
+        """Il risultato e' una lista, non un Envelope."""
+        raw_data = [[0.0, 0.5], [1.0, 1.0]]
+        result = Envelope._scale_raw_values_y(raw_data, 10.0)
+        
+        assert isinstance(result, list)
+        assert not isinstance(result, Envelope)
+
+    def test_returns_dict_not_envelope(self):
+        """Dict in input restituisce dict, non Envelope."""
+        raw_data = {'type': 'linear', 'points': [[0, 0.1], [1, 0.2]]}
+        result = Envelope._scale_raw_values_y(raw_data, 10.0)
+        
+        assert isinstance(result, dict)
+        assert not isinstance(result, Envelope)
+
+    def test_scales_y_standard_list(self):
+        """Lista standard: scala Y, preserva X."""
+        raw_data = [[0.0, 0.0], [1.0, 0.5], [2.0, 1.0]]
+        result = Envelope._scale_raw_values_y(raw_data, 100.0)
+        
+        assert result[1][1] == 50.0   # 0.5 * 100
+        assert result[2][1] == 100.0  # 1.0 * 100
+        assert result[1][0] == 1.0    # X invariato
+
+    def test_scales_y_compact_direct(self):
+        """Formato compatto diretto: scala Y nel pattern."""
+        raw_data = [[[0, 0], [100, 1]], 5.0, 1]
+        result = Envelope._scale_raw_values_y(raw_data, 10.0)
+        
+        assert isinstance(result, list)
+        assert result[0][0][1] == 0     # 0 * 10
+        assert result[0][1][1] == 10    # 1 * 10
+        assert result[1] == 5.0         # tempo invariato
+        assert result[2] == 1           # ripetizioni invariate
+
+    def test_scales_y_dict_format(self):
+        """Dict: scala Y dentro 'points'."""
+        raw_data = {'type': 'step', 'points': [[0, 0.1], [1, 0.2]]}
+        result = Envelope._scale_raw_values_y(raw_data, 10.0)
+        
+        assert result['type'] == 'step'
+        assert result['points'][0][1] == 1.0   # 0.1 * 10
+        assert result['points'][1][1] == 2.0   # 0.2 * 10
+
+    def test_scales_y_compact_nested(self):
+        """Formato compatto annidato in lista."""
+        raw_data = [[[[0, 0.5], [100, 1.0]], 1.0, 1]]
+        result = Envelope._scale_raw_values_y(raw_data, 4.0)
+        
+        assert isinstance(result, list)
+        assert result[0][0][0][1] == 2.0   # 0.5 * 4
+        assert result[0][0][1][1] == 4.0   # 1.0 * 4
+
+    def test_invalid_format_raises(self):
+        """Formato non supportato solleva ValueError."""
+        with pytest.raises(ValueError, match="_scale_raw_values_y"):
+            Envelope._scale_raw_values_y("invalid_string", 10.0)
+
+    def test_scale_zero_factor(self):
+        """Scaling per 0 azzera tutti i valori Y."""
+        raw_data = [[0, 10], [1, 20]]
+        result = Envelope._scale_raw_values_y(raw_data, 0.0)
+        
+        assert result[0][1] == 0.0
+        assert result[1][1] == 0.0
+
+    def test_does_not_modify_original(self):
+        """Non modifica i dati originali (immutabilita')."""
+        raw_data = [[0, 0.5], [1, 1.0]]
+        original_copy = [[0, 0.5], [1, 1.0]]
+        
+        Envelope._scale_raw_values_y(raw_data, 10.0)
+        
+        assert raw_data == original_copy
+
+    def test_consistency_with_scale_envelope_values(self):
+        """I valori Y devono essere identici a scale_envelope_values."""
+        raw_data = [[0.0, 0.2], [1.0, 0.8]]
+        scale = 5.0
+        
+        raw_result = Envelope._scale_raw_values_y(raw_data, scale)
+        env_result = Envelope.scale_envelope_values(raw_data, scale)
+        
+        assert raw_result[0][1] == env_result.breakpoints[0][1]
+        assert raw_result[1][1] == env_result.breakpoints[1][1]

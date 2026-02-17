@@ -106,6 +106,7 @@ class PointerController:
                 scaled[key] = self._scale_value(scaled[key], scale)
         return scaled
 
+
     def _scale_value(self, value, scale: float):
             """
             Scala un valore che puo' essere scalare, envelope, o dict.
@@ -115,7 +116,7 @@ class PointerController:
             if isinstance(value, (int, float)):
                 return value * scale
             if Envelope.is_envelope_like(value):
-                return Envelope.scale_envelope_values(value, scale)
+                return Envelope._scale_raw_values_y(value, scale)
             return value
 
 

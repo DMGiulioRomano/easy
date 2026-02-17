@@ -424,7 +424,7 @@ class TestPitchBounds:
         assert b.max_val == 8.0     # 3 ottave sopra
         assert b.min_range == 0.0
         assert b.max_range == 2.0
-        assert b.default_jitter == 0.01
+        assert b.default_jitter == 0.005
 
     def test_pitch_ratio_variation_mode_additive(self):
         """pitch_ratio usa additive (variazione continua)."""
@@ -467,7 +467,7 @@ class TestPointerBounds:
         assert b.max_val == 1.0
         assert b.min_range == 0.0
         assert b.max_range == 1.0
-        assert b.default_jitter == 0.2
+        assert b.default_jitter == 0.1
         assert b.variation_mode == 'additive'
 
     def test_pointer_deviation_normalized(self):
@@ -514,7 +514,7 @@ class TestOutputBounds:
         assert b.max_val == 12.0
         assert b.min_range == 0.0
         assert b.max_range == 24.0
-        assert b.default_jitter == 6
+        assert b.default_jitter == 3
 
     def test_volume_allows_negative_db(self):
         """volume min_val e' negativo (dB)."""
@@ -530,7 +530,7 @@ class TestOutputBounds:
         assert b.max_val == 3600.0
         assert b.min_range == 0.0
         assert b.max_range == 360.0
-        assert b.default_jitter == 90.0
+        assert b.default_jitter == 30.0
 
     def test_pan_supports_rotary(self):
         """pan supporta valori oltre 360 (pan rotativo multi-giro)."""

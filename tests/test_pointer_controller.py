@@ -1929,18 +1929,18 @@ class TestScaleValue:
         assert result == pytest.approx(6.0)
 
     def test_scale_envelope_like(self, mock_config):
-        """Struttura envelope-like viene delegata a Envelope.scale_envelope_values."""
-        real = _build_real_params()
-        pointer = _make_pointer(mock_config, real, {})
+            """Struttura envelope-like viene delegata a Envelope._scale_raw_values_y."""
+            real = _build_real_params()
+            pointer = _make_pointer(mock_config, real, {})
 
-        envelope_data = [[0, 0.1], [1.0, 0.5]]
+            envelope_data = [[0, 0.1], [1.0, 0.5]]
 
-        with patch('pointer_controller.Envelope.is_envelope_like', return_value=True):
-            with patch('pointer_controller.Envelope.scale_envelope_values',
-                              return_value=[[0, 1.0], [1.0, 5.0]]) as mock_scale:
-                result = pointer._scale_value(envelope_data, 10.0)
-                mock_scale.assert_called_once_with(envelope_data, 10.0)
-                assert result == [[0, 1.0], [1.0, 5.0]]
+            with patch('pointer_controller.Envelope.is_envelope_like', return_value=True):
+                with patch('pointer_controller.Envelope._scale_raw_values_y',
+                                return_value=[[0, 1.0], [1.0, 5.0]]) as mock_scale:
+                    result = pointer._scale_value(envelope_data, 10.0)
+                    mock_scale.assert_called_once_with(envelope_data, 10.0)
+                    assert result == [[0, 1.0], [1.0, 5.0]]
 
     def test_scale_unknown_type_passthrough(self, mock_config):
         """Tipo non riconosciuto passa invariato."""
