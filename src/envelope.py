@@ -277,54 +277,58 @@ class Envelope:
         
         return False
     
+
     @staticmethod
-    def scale_envelope_values(raw_data: Union[List, Dict], scale_factor: float) -> 'Envelope':
+    def _scale_raw_values_y(raw_data: Union[List, Dict], scale_factor: float) -> Union[List, Dict]:
         """
-        Crea un Envelope scalando i VALORI Y (non il tempo).
-        Usato da PointerController per loop normalizzati (0-1 -> 0-SampleDur).
+        Scala i valori Y dei dati raw, restituendo dati raw (stesso formato dell'input).
+        Usato da PointerController._scale_value per mantenere compatibilita'
+        col pipeline parser a valle.
         """
         from envelope_builder import EnvelopeBuilder
+        import copy
         
-        # Helper interno per scalare lista mista
         def _scale_list_y(points_list):
             scaled = []
             for item in points_list:
                 if EnvelopeBuilder._is_compact_format(item):
-                    # Formato compatto: [[[x%, y], ...], time, reps]
-                    # Scaliamo i valori Y dentro il pattern
                     pattern = item[0]
                     scaled_pattern = [[p[0], p[1] * scale_factor] for p in pattern]
                     new_item = list(item)
                     new_item[0] = scaled_pattern
                     scaled.append(new_item)
                 elif isinstance(item, list) and len(item) == 2:
-                    # [t, v] -> [t, v * scale]
                     scaled.append([item[0], item[1] * scale_factor])
                 else:
                     scaled.append(item)
             return scaled
 
-        # Gestione Dict
         if isinstance(raw_data, dict):
             new_data = copy.deepcopy(raw_data)
             if 'points' in new_data:
                 new_data['points'] = _scale_list_y(new_data['points'])
-            return Envelope(new_data)
-        
-        # Gestione Lista (Compatta diretta o Breakpoints)
+            return new_data
+
         if isinstance(raw_data, list):
             if EnvelopeBuilder._is_compact_format(raw_data):
-                # Compatto diretto
                 pattern = raw_data[0]
                 scaled_pattern = [[p[0], p[1] * scale_factor] for p in pattern]
                 new_data = list(raw_data)
                 new_data[0] = scaled_pattern
-                return Envelope(new_data)
+                return new_data
             else:
-                # Lista breakpoints/mista
-                return Envelope(_scale_list_y(raw_data))
-        
-        raise ValueError(f"Formato non supportato per scale_envelope_values: {raw_data}")
+                return _scale_list_y(raw_data)
+
+        raise ValueError(f"Formato non supportato per _scale_raw_values_y: {raw_data}")
+
+    @staticmethod
+    def scale_envelope_values(raw_data: Union[List, Dict], scale_factor: float) -> 'Envelope':
+        """
+        Crea un Envelope scalando i VALORI Y (non il tempo).
+        Usato da PointerController per loop normalizzati (0-1 -> 0-SampleDur).
+        """
+        scaled_raw = Envelope._scale_raw_values_y(raw_data, scale_factor)
+        return Envelope(scaled_raw)
 
 def create_scaled_envelope(
     raw_data: Union[List, Dict],

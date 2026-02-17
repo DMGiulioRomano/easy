@@ -107,18 +107,17 @@ class PointerController:
         return scaled
 
     def _scale_value(self, value, scale: float):
-        """
-        Scala un valore che può essere scalare, envelope, o dict.        
-        """
-        if isinstance(value, (int, float)):
-            return value * scale
-        
-        # Envelope-like: usa metodo centralizzato
-        if Envelope.is_envelope_like(value):
-            return Envelope.scale_envelope_values(value, scale)
-        
-        # Tipo non riconosciuto, passa invariato
-        return value
+            """
+            Scala un valore che puo' essere scalare, envelope, o dict.
+            Restituisce dati raw (stesso formato dell'input) per compatibilita'
+            col pipeline parser a valle.
+            """
+            if isinstance(value, (int, float)):
+                return value * scale
+            if Envelope.is_envelope_like(value):
+                return Envelope.scale_envelope_values(value, scale)
+            return value
+
 
     def _init_loop_state(self) -> None:
         self._in_loop = False
