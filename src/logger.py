@@ -230,3 +230,44 @@ def log_config_warning(stream_id: str, param_name: str,
         f"{bound_type}={bound_value:>10.4f} | "
         f"Δ={deviation:>+10.6f}"
     )
+
+def log_loop_drift_warning(stream_id: str, elapsed_time: float,
+                           pointer_pos: float,
+                           loop_start: float, loop_end: float,
+                           speed_ratio: float, loop_start_drift_rate: float,
+                           stream_duration: float):
+    """
+    Logga un warning quando il pointer non riesce a entrare nel loop
+    perche' loop_start si sposta piu' velocemente della speed del pointer.
+
+    Args:
+        stream_id: ID dello stream
+        elapsed_time: tempo corrente elapsed nello stream
+        pointer_pos: posizione attuale del pointer nel sample (secondi)
+        loop_start: valore corrente di loop_start (secondi)
+        loop_end: valore corrente di loop_end (secondi)
+        speed_ratio: speed_ratio corrente del pointer
+        loop_start_drift_rate: velocita' stimata di spostamento di loop_start (s/s)
+        stream_duration: durata totale dello stream in secondi
+    """
+    logger = get_clip_logger()
+    if logger is None:
+        return
+
+    loop_length = loop_end - loop_start
+    gap = loop_start - pointer_pos  # distanza tra pointer e ingresso loop
+
+    # Velocita' minima necessaria per stare dentro il loop
+    min_speed_needed = loop_start_drift_rate if loop_start_drift_rate > 0 else 0.0
+
+    logger.warning(
+        f"[LOOP_DRIFT] [{stream_id}] "
+        f"t={elapsed_time:>7.2f}s | "
+        f"pointer={pointer_pos:>8.4f}s | "
+        f"loop=[{loop_start:.4f}, {loop_end:.4f}]s (len={loop_length:.4f}s) | "
+        f"gap={gap:>+8.4f}s | "
+        f"speed={speed_ratio:.6f} | "
+        f"loop_drift={loop_start_drift_rate:.6f} s/s | "
+        f"min_speed_needed>={min_speed_needed:.6f} | "
+        f"ratio_actual/needed={speed_ratio / max(min_speed_needed, 1e-9):.3f}x"
+    )

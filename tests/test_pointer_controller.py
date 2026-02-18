@@ -65,7 +65,7 @@ def pointer_factory(mock_config):
             )
             
             bounds_deviation = ParameterBounds(
-                min_val=0.0,
+                min_val=-1.0,
                 max_val=1.0,
                 min_range=0.0,
                 max_range=1.0,

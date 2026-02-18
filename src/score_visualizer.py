@@ -59,7 +59,11 @@ class ScoreVisualizer:
             'waveform_color': 'steelblue',
             'waveform_width_ratio': 0.06,    # 3% della larghezza pagina
             'waveform_downsample': 200,      # 1 punto ogni N campioni
-            
+            # Loop mask
+            'loop_mask_color': '#f4a261',    # arancio caldo
+            'loop_mask_alpha': 0.18,
+            'loop_mask_samples': 200,        # punti di campionamento del poligono
+
             # Stile
             'stream_gap_ratio': 0.05,        # gap tra stream (5% dell'altezza)
             'label_fontsize': 8,
@@ -84,7 +88,6 @@ class ScoreVisualizer:
                 'pointer_deviation': (0.0, 1.0),  # normalizzato
                 'pointer_deviation_prob': (0, 100),  # probabilità %
                 'loop_dur': (0.001, 10.0),    # secondi
-                
                 # === PITCH ===
                 'pitch_ratio': (0.125, 8.0),
                 'pitch_ratio_prob': (0, 100),  # probabilità %
@@ -460,10 +463,10 @@ class ScoreVisualizer:
             
             # Disegna grani di TUTTI gli stream che usano questo sample
             for stream in streams:
+                self._draw_loop_mask(ax_grain, stream, page_start, page_end)
                 self._draw_grains_full(ax_grain, stream, sample_duration, 
                                     page_start, page_end)
                 self._draw_stream_label_full(ax_grain, stream, page_start, sample_duration)
-            
             # Configura assi waveform
             ax_wave.set_ylim(-0.02, sample_duration+0.02)
             ax_wave.set_xlim(-1.1, 1.1)
@@ -662,7 +665,8 @@ class ScoreVisualizer:
             facecolors=colors,
             edgecolors='black',
             linewidths=0.02,
-            clip_on=True
+            clip_on=True,
+            zorder=2
         )
         ax.add_collection(collection)
 
@@ -681,6 +685,107 @@ class ScoreVisualizer:
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
                     alpha=0.7, edgecolor='none')
         )
+
+    def _draw_loop_mask(self, ax, stream, page_start, page_end):
+        """
+        Disegna la maschera di tendenza del loop direttamente nel piano dei grani.
+
+        La banda colorata mostra la regione [loop_start, loop_start+loop_dur]
+        (o [loop_start, loop_end]) nel sample, per ogni istante di tempo.
+        Se i parametri sono Envelope, la banda si deforma nel tempo.
+        Viene disegnata sotto i grani (chiamare prima di _draw_grains_full).
+        """
+        from parameter import Parameter
+
+        # Recupera i parametri loop dallo stream (via property proxy)
+        loop_start = stream.loop_start
+        loop_end   = stream.loop_end
+        loop_dur   = stream.loop_dur
+
+        # Se non c'e' loop, esci subito
+        if loop_start is None:
+            return
+
+        # Limiti temporali visibili per questo stream nella pagina
+        stream_onset = stream.onset
+        stream_end   = stream.onset + stream.duration
+        t_start = max(page_start, stream_onset)
+        t_end   = min(page_end,   stream_end)
+
+        if t_start >= t_end:
+            return
+
+        # Helper: valuta un parametro loop a un dato elapsed time
+        def eval_param(param, elapsed):
+            if param is None:
+                return None
+            if isinstance(param, Parameter):
+                return param.get_value(elapsed)
+            if isinstance(param, (int, float)):
+                return float(param)
+            return None
+
+        # Campiona il tempo a intervalli regolari
+        n_samples = self.config['loop_mask_samples']
+        times = np.linspace(t_start, t_end, n_samples)
+
+        y_bottoms = []
+        y_tops    = []
+
+        for t in times:
+            elapsed = t - stream_onset
+
+            y_bot = eval_param(loop_start, elapsed)
+            if y_bot is None:
+                y_bottoms.append(np.nan)
+                y_tops.append(np.nan)
+                continue
+
+            if loop_dur is not None:
+                dur = eval_param(loop_dur, elapsed)
+                y_top = y_bot + dur if dur is not None else np.nan
+            elif loop_end is not None:
+                y_top = eval_param(loop_end, elapsed)
+                if y_top is None:
+                    y_top = np.nan
+            else:
+                y_top = np.nan
+
+            y_bottoms.append(y_bot)
+            y_tops.append(y_top)
+
+        y_bottoms = np.array(y_bottoms, dtype=float)
+        y_tops    = np.array(y_tops,    dtype=float)
+
+        # Disegna la banda
+        ax.fill_between(
+            times,
+            y_bottoms,
+            y_tops,
+            color=self.config['loop_mask_color'],
+            alpha=self.config['loop_mask_alpha'],
+            linewidth=0,
+            zorder=1   # sotto i grani (PatchCollection usa zorder default ~2)
+        )
+
+        # Bordi sottili per definire meglio i limiti della regione
+        valid = ~np.isnan(y_bottoms) & ~np.isnan(y_tops)
+        if valid.any():
+            ax.plot(
+                times[valid], y_bottoms[valid],
+                color=self.config['loop_mask_color'],
+                alpha=min(self.config['loop_mask_alpha'] * 3, 0.7),
+                linewidth=0.8,
+                zorder=1
+            )
+            ax.plot(
+                times[valid], y_tops[valid],
+                color=self.config['loop_mask_color'],
+                alpha=min(self.config['loop_mask_alpha'] * 3, 0.7),
+                linewidth=0.8,
+                zorder=1
+            )
+
 
     # =========================================================================
     # ENVELOPE

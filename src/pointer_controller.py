@@ -15,7 +15,7 @@ from envelope import Envelope
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
 from stream_config import StreamConfig
-from logger import log_config_warning
+from logger import log_config_warning, log_loop_drift_warning
 class PointerController:
     """
     Gestisce il posizionamento della testina di lettura nel sample.
@@ -126,7 +126,11 @@ class PointerController:
         self._last_linear_pos = None
         self._prev_loop_start = None        
         self._prev_loop_end = None          
-    
+        self._drift_prev_loop_start = None
+        self._drift_prev_elapsed = None
+        self._drift_log_interval = 5.0      
+        self._drift_last_logged = -999.0    
+
     # =========================================================================
     # CALCULATION
     # =========================================================================
@@ -227,6 +231,9 @@ class PointerController:
                 return base_pos, context_length, wrap_fn
             else:
                 # NON siamo ancora entrati nel loop → comportamento pre-loop
+                self._emit_loop_drift_warning(
+                    check_pos, current_loop_start, current_loop_end, elapsed_time
+                )
                 base_pos = linear_pos % self._sample_dur_sec
                 context_length = self._sample_dur_sec
                 wrap_fn = lambda p: p % self._sample_dur_sec
@@ -308,6 +315,50 @@ class PointerController:
             return current_loop_start + (rel % loop_length)
         
         return base_pos, context_length, wrap_fn
+
+    def _emit_loop_drift_warning(
+        self,
+        pointer_pos: float,
+        current_loop_start: float,
+        current_loop_end: float,
+        elapsed_time: float
+    ) -> None:
+        """
+        Emette un warning diagnostico quando il pointer non riesce a entrare
+        nel loop, con calcolo del drift rate e della speed minima necessaria.
+        Emette al massimo una volta ogni _drift_log_interval secondi.
+        """
+        # Rate limiting: non spammare il log ad ogni grano (density=2000!)
+        if elapsed_time - self._drift_last_logged < self._drift_log_interval:
+            return
+
+        # Calcola drift rate di loop_start (quanto si sposta per secondo)
+        drift_rate = 0.0
+        if (self._drift_prev_loop_start is not None and
+                self._drift_prev_elapsed is not None and
+                elapsed_time > self._drift_prev_elapsed):
+            dt = elapsed_time - self._drift_prev_elapsed
+            d_loop_start = current_loop_start - self._drift_prev_loop_start
+            drift_rate = d_loop_start / dt
+
+        # Aggiorna stato per prossimo calcolo
+        self._drift_prev_loop_start = current_loop_start
+        self._drift_prev_elapsed = elapsed_time
+        self._drift_last_logged = elapsed_time
+
+        # Speed corrente del pointer
+        current_speed = self.speed_ratio.get_value(elapsed_time)
+
+        log_loop_drift_warning(
+            stream_id=self._config.context.stream_id,
+            elapsed_time=elapsed_time,
+            pointer_pos=pointer_pos,
+            loop_start=current_loop_start,
+            loop_end=current_loop_end,
+            speed_ratio=current_speed,
+            loop_start_drift_rate=drift_rate,
+            stream_duration=self._config.context.sample_dur_sec
+        )
 
     def _calculate_linear_position(self, elapsed_time: float) -> float:
         """

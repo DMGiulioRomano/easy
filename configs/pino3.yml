@@ -5,11 +5,11 @@ streams:
   - stream_id: "texture1"
     time_mode: normalized
     onset: 0.0
-    duration: 10
+    duration: (60)
     range_always_active:
     sample: "001-0_0-3_0.wav"
     pointer:
-      start: .2
+      #loop_unite: absolute
       loop_start: [[[0,.2],[100,1.0]],1.0,5]
       loop_dur: [[[0,.2],[100,1.0]],1.0,5]
       speed_ratio: .003
@@ -21,4 +21,4 @@ streams:
       duration_range: .02
       reverse:
     volume: -20
-    dephase:
+    dephase: [[0,1],[.5,100],[1,0]]

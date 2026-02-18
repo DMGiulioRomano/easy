@@ -334,7 +334,7 @@ class Stream:
     # =========================================================================
     # PROPRIETÀ PER BACKWARD COMPATIBILITY
     # =========================================================================
-    
+
     @property
     def sampleDurSec(self) -> float:
         """Alias per backward compatibility."""
@@ -362,7 +362,22 @@ class Stream:
     @property
     def pointer_speed(self):
         return self._pointer.speed.value
-        
+
+    @property
+    def loop_start(self):
+        """Espone loop_start del PointerController per ScoreVisualizer."""
+        return self._pointer.loop_start
+
+    @property
+    def loop_end(self):
+        """Espone loop_end del PointerController per ScoreVisualizer."""
+        return self._pointer.loop_end
+
+    @property
+    def loop_dur(self):
+        """Espone loop_dur del PointerController per ScoreVisualizer."""
+        return self._pointer.loop_dur
+
     @property
     def pitch_ratio(self) -> Optional[Union[float, Envelope]]:
         """Espone pitch_ratio per ScoreVisualizer (solo se in modalità ratio)."""

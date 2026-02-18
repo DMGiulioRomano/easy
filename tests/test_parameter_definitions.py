@@ -463,7 +463,7 @@ class TestPointerBounds:
 
     def test_pointer_deviation_bounds(self):
         b = GRANULAR_PARAMETERS['pointer_deviation']
-        assert b.min_val == 0.0
+        assert b.min_val == -1.0
         assert b.max_val == 1.0
         assert b.min_range == 0.0
         assert b.max_range == 1.0
@@ -473,7 +473,7 @@ class TestPointerBounds:
     def test_pointer_deviation_normalized(self):
         """pointer_deviation e' normalizzato [0, 1]."""
         b = GRANULAR_PARAMETERS['pointer_deviation']
-        assert b.min_val == 0.0
+        assert b.min_val == -1.0
         assert b.max_val == 1.0
 
     def test_loop_dur_bounds(self):
