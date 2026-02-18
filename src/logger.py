@@ -235,7 +235,8 @@ def log_loop_drift_warning(stream_id: str, elapsed_time: float,
                            pointer_pos: float,
                            loop_start: float, loop_end: float,
                            speed_ratio: float, loop_start_drift_rate: float,
-                           stream_duration: float):
+                           stream_duration: float,
+                           is_first: bool = False):
     """
     Logga un warning quando il pointer non riesce a entrare nel loop
     perche' loop_start si sposta piu' velocemente della speed del pointer.
@@ -259,9 +260,11 @@ def log_loop_drift_warning(stream_id: str, elapsed_time: float,
 
     # Velocita' minima necessaria per stare dentro il loop
     min_speed_needed = loop_start_drift_rate if loop_start_drift_rate > 0 else 0.0
+    tag = "[LOOP_DRIFT_FIRST]" if is_first else "[LOOP_DRIFT]"
+    note = " << PRIMO AVVISO — log successivi soppressi (rate limit 5s)" if is_first else ""
 
     logger.warning(
-        f"[LOOP_DRIFT] [{stream_id}] "
+        f"{tag} [{stream_id}] "
         f"t={elapsed_time:>7.2f}s | "
         f"pointer={pointer_pos:>8.4f}s | "
         f"loop=[{loop_start:.4f}, {loop_end:.4f}]s (len={loop_length:.4f}s) | "
@@ -270,4 +273,42 @@ def log_loop_drift_warning(stream_id: str, elapsed_time: float,
         f"loop_drift={loop_start_drift_rate:.6f} s/s | "
         f"min_speed_needed>={min_speed_needed:.6f} | "
         f"ratio_actual/needed={speed_ratio / max(min_speed_needed, 1e-9):.3f}x"
+        f"{note}"
+    )
+
+
+def log_loop_dynamic_mode(stream_id: str, loop_start_initial: float,
+                          loop_end_initial: float, start_overridden: bool,
+                          original_start: float):
+    """
+    Logga l'attivazione della modalita' loop dinamico.
+
+    Emessa UNA SOLA VOLTA al momento dell'init del PointerController,
+    quando loop_start e' un Envelope. In questa modalita' il pointer
+    entra immediatamente nel loop senza attendere che la posizione
+    lineare intersechi la regione.
+
+    Args:
+        stream_id: ID dello stream
+        loop_start_initial: valore di loop_start a elapsed=0
+        loop_end_initial: valore di loop_end a elapsed=0
+        start_overridden: True se il parametro 'start' YAML e' stato
+                          ignorato perche' diverso da loop_start_initial
+        original_start: valore 'start' specificato nel YAML (per info)
+    """
+    logger = get_clip_logger()
+    if logger is None:
+        return
+
+    override_note = (
+        f" | 'start'={original_start:.4f} ignorato (sovrascrtto da loop_start)"
+        if start_overridden else ""
+    )
+
+    logger.warning(
+        f"[LOOP_DYNAMIC] [{stream_id}] "
+        f"loop_start e' un Envelope → entrata immediata nel loop | "
+        f"loop_start(0)={loop_start_initial:.4f}s | "
+        f"loop_end(0)={loop_end_initial:.4f}s"
+        f"{override_note}"
     )

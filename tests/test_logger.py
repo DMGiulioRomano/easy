@@ -1157,3 +1157,314 @@ class TestLogLoopDriftSingleRecord:
                 stream_duration=30.0
             )
         assert len(memory_logger) == 3
+
+# =============================================================================
+# TEST log_loop_dynamic_mode
+# =============================================================================
+
+from logger import log_loop_dynamic_mode
+
+
+# =============================================================================
+# GRUPPO 1: Chiamata quando logger e' None (disabilitato)
+# =============================================================================
+
+class TestLogLoopDynamicModeDisabled:
+    """Quando il logger e' None, la funzione ritorna silenziosamente."""
+
+    def test_returns_silently_when_logger_none(self):
+        """Nessuna eccezione se il logger e' disabilitato."""
+        logger_module._clip_logger = None
+        logger_module._clip_logger_initialized = True
+
+        log_loop_dynamic_mode(
+            stream_id='texture1',
+            loop_start_initial=0.6,
+            loop_end_initial=1.2,
+            start_overridden=False,
+            original_start=0.6
+        )
+
+    def test_no_record_emitted_when_disabled(self):
+        """Nessun record emesso quando il logger e' None."""
+        logger_module._clip_logger = None
+        logger_module._clip_logger_initialized = True
+
+        with patch.object(logging.Logger, 'warning') as mock_warn:
+            log_loop_dynamic_mode(
+                stream_id='s1',
+                loop_start_initial=1.0,
+                loop_end_initial=2.0,
+                start_overridden=False,
+                original_start=1.0
+            )
+            mock_warn.assert_not_called()
+
+
+# =============================================================================
+# GRUPPO 2: Contenuto del messaggio — campi obbligatori
+# =============================================================================
+
+class TestLogLoopDynamicModeContent:
+    """Verifica la presenza dei campi diagnostici nel messaggio."""
+
+    def test_message_contains_loop_dynamic_tag(self, memory_logger):
+        """Il tag [LOOP_DYNAMIC] identifica la modalita' nel log."""
+        log_loop_dynamic_mode(
+            stream_id='texture1',
+            loop_start_initial=0.6,
+            loop_end_initial=1.2,
+            start_overridden=False,
+            original_start=0.6
+        )
+        assert len(memory_logger) == 1
+        assert 'LOOP_DYNAMIC' in memory_logger[0].getMessage()
+
+    def test_message_contains_stream_id(self, memory_logger):
+        """Lo stream_id appare nel messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='my_granular_stream',
+            loop_start_initial=0.5,
+            loop_end_initial=1.5,
+            start_overridden=False,
+            original_start=0.5
+        )
+        assert 'my_granular_stream' in memory_logger[0].getMessage()
+
+    def test_message_contains_loop_start_initial(self, memory_logger):
+        """Il valore iniziale di loop_start appare nel messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=0.6000,
+            loop_end_initial=1.2,
+            start_overridden=False,
+            original_start=0.6
+        )
+        msg = memory_logger[0].getMessage()
+        assert '0.6' in msg
+
+    def test_message_contains_loop_end_initial(self, memory_logger):
+        """Il valore iniziale di loop_end appare nel messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=0.6,
+            loop_end_initial=2.4000,
+            start_overridden=False,
+            original_start=0.6
+        )
+        msg = memory_logger[0].getMessage()
+        assert '2.4' in msg
+
+    def test_message_mentions_envelope(self, memory_logger):
+        """Il messaggio spiega che loop_start e' un Envelope."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        msg = memory_logger[0].getMessage()
+        # Il compositore deve capire perche' si attiva questa logica
+        assert 'Envelope' in msg or 'envelope' in msg or 'dinamico' in msg.lower() or 'dynamic' in msg.lower()
+
+    def test_message_level_is_warning(self, memory_logger):
+        """Il log e' emesso a livello WARNING."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        assert memory_logger[0].levelno == logging.WARNING
+
+
+# =============================================================================
+# GRUPPO 3: Flag start_overridden
+# =============================================================================
+
+class TestLogLoopDynamicModeStartOverridden:
+    """
+    Verifica il comportamento del flag start_overridden:
+    quando True, il messaggio deve segnalare il valore 'start' ignorato.
+    """
+
+    def test_no_override_note_when_start_equals_loop_start(self, memory_logger):
+        """start == loop_start: nessuna nota di override nel messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        msg = memory_logger[0].getMessage()
+        # Non deve contenere testo che indica un override
+        assert 'ignorato' not in msg and 'ignored' not in msg.lower() and 'sovrascr' not in msg
+
+    def test_override_note_present_when_start_differs(self, memory_logger):
+        """start != loop_start: il messaggio segnala che start e' stato ignorato."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=0.6,
+            loop_end_initial=1.2,
+            start_overridden=True,
+            original_start=0.2   # diverso da loop_start_initial
+        )
+        msg = memory_logger[0].getMessage()
+        assert 'ignorato' in msg or 'ignored' in msg.lower() or 'sovrascr' in msg
+
+    def test_original_start_value_shown_when_overridden(self, memory_logger):
+        """Quando start e' ignorato, il suo valore originale appare nel messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=0.6,
+            loop_end_initial=1.2,
+            start_overridden=True,
+            original_start=0.2
+        )
+        msg = memory_logger[0].getMessage()
+        assert '0.2' in msg
+
+    def test_original_start_not_shown_when_not_overridden(self, memory_logger):
+        """Quando start non e' ignorato, il valore non inquina il messaggio."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        msg = memory_logger[0].getMessage()
+        # start=1.0 coincide con loop_start_initial=1.0, entrambi nel msg e' ok.
+        # Pero' NON deve esserci il testo di override.
+        assert 'ignorato' not in msg
+
+    @pytest.mark.parametrize("original_start,loop_start,overridden", [
+        (0.0,  0.6, True),    # start prima del loop
+        (0.2,  0.6, True),    # start diverso
+        (0.6,  0.6, False),   # start uguale a loop_start
+        (2.0,  0.6, True),    # start dopo loop_start
+    ])
+    def test_override_flag_parametrized(self, memory_logger, original_start,
+                                         loop_start, overridden):
+        """Combinazioni di start e loop_start con flag corrispondente."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=loop_start,
+            loop_end_initial=loop_start + 0.6,
+            start_overridden=overridden,
+            original_start=original_start
+        )
+        msg = memory_logger[0].getMessage()
+        if overridden:
+            assert 'ignorato' in msg or 'ignored' in msg.lower() or 'sovrascr' in msg
+        else:
+            assert 'ignorato' not in msg and 'ignored' not in msg.lower() and 'sovrascr' not in msg
+
+
+# =============================================================================
+# GRUPPO 4: Una sola emissione per chiamata
+# =============================================================================
+
+class TestLogLoopDynamicModeSingleRecord:
+    """Una chiamata deve produrre esattamente un record."""
+
+    def test_single_call_single_record(self, memory_logger):
+        """Una chiamata → un solo record."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        assert len(memory_logger) == 1
+
+    def test_two_streams_two_records(self, memory_logger):
+        """Due stream diversi producono due record distinti."""
+        log_loop_dynamic_mode(
+            stream_id='stream_A',
+            loop_start_initial=0.5,
+            loop_end_initial=1.0,
+            start_overridden=False,
+            original_start=0.5
+        )
+        log_loop_dynamic_mode(
+            stream_id='stream_B',
+            loop_start_initial=1.0,
+            loop_end_initial=2.0,
+            start_overridden=True,
+            original_start=0.0
+        )
+        assert len(memory_logger) == 2
+        assert 'stream_A' in memory_logger[0].getMessage()
+        assert 'stream_B' in memory_logger[1].getMessage()
+
+
+# =============================================================================
+# GRUPPO 5: Edge cases numerici
+# =============================================================================
+
+class TestLogLoopDynamicModeEdgeCases:
+    """Valori limite e casi numerici particolari."""
+
+    def test_loop_start_zero(self, memory_logger):
+        """loop_start_initial=0.0 e' valido (inizio del sample)."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=0.0,
+            loop_end_initial=0.5,
+            start_overridden=False,
+            original_start=0.0
+        )
+        assert len(memory_logger) == 1
+
+    def test_loop_start_equals_loop_end(self, memory_logger):
+        """Loop degenere (length=0) non causa crash."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=1.0,
+            start_overridden=False,
+            original_start=1.0
+        )
+        assert len(memory_logger) == 1
+
+    def test_large_values_no_crash(self, memory_logger):
+        """Valori grandi (sample lungo ore) non causano problemi."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=3600.0,
+            loop_end_initial=7200.0,
+            start_overridden=True,
+            original_start=0.0
+        )
+        assert len(memory_logger) == 1
+
+    def test_very_small_loop_region(self, memory_logger):
+        """Regione di loop microscopica (granulazione fitta) non causa crash."""
+        log_loop_dynamic_mode(
+            stream_id='s1',
+            loop_start_initial=1.0,
+            loop_end_initial=1.005,   # 5ms
+            start_overridden=False,
+            original_start=1.0
+        )
+        assert len(memory_logger) == 1
+
+    @pytest.mark.parametrize("stream_id", [
+        'texture1', 'voice_02', 'stream-x', 's', 'stream_with_long_name_123'
+    ])
+    def test_various_stream_ids(self, stream_id, memory_logger):
+        """Vari formati di stream_id vengono loggati correttamente."""
+        log_loop_dynamic_mode(
+            stream_id=stream_id,
+            loop_start_initial=0.5,
+            loop_end_initial=1.0,
+            start_overridden=False,
+            original_start=0.5
+        )
+        assert len(memory_logger) == 1
+        assert stream_id in memory_logger[0].getMessage()

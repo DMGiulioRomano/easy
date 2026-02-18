@@ -15,7 +15,7 @@ from envelope import Envelope
 from parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameter_orchestrator import ParameterOrchestrator
 from stream_config import StreamConfig
-from logger import log_config_warning, log_loop_drift_warning
+from logger import log_config_warning, log_loop_drift_warning, log_loop_dynamic_mode
 class PointerController:
     """
     Gestisce il posizionamento della testina di lettura nel sample.
@@ -77,6 +77,30 @@ class PointerController:
         if self.has_loop and self.loop_end is None and self.loop_dur is None:
             self.loop_end = self._sample_dur_sec
 
+        # 5. Rileva se il loop e' dinamico (loop_start e' un Envelope).
+        #    In modalita' dinamica il pointer entra immediatamente nel loop
+        #    a elapsed=0, senza attendere che la posizione lineare
+        #    intersechi la regione.
+        self._loop_is_dynamic = False
+        if self.has_loop:
+            self._loop_is_dynamic = isinstance(self.loop_start._value, Envelope)
+            if self._loop_is_dynamic:
+                loop_start_t0 = self.loop_start.get_value(0.0)
+                if self.loop_dur is not None:
+                    loop_end_t0 = loop_start_t0 + self.loop_dur.get_value(0.0)
+                elif hasattr(self.loop_end, 'get_value'):
+                    loop_end_t0 = self.loop_end.get_value(0.0)
+                else:
+                    loop_end_t0 = float(self.loop_end)
+                start_overridden = abs(self.start - loop_start_t0) > 1e-6
+                log_loop_dynamic_mode(
+                    stream_id=self._config.context.stream_id,
+                    loop_start_initial=loop_start_t0,
+                    loop_end_initial=loop_end_t0,
+                    start_overridden=start_overridden,
+                    original_start=self.start
+                )
+
     def _pre_normalize_loop_params(self, params: dict) -> dict:
         """
         Conversione di unita' per i parametri loop.
@@ -130,7 +154,7 @@ class PointerController:
         self._drift_prev_elapsed = None
         self._drift_log_interval = 5.0      
         self._drift_last_logged = -999.0    
-
+        self._drift_first_warning_emitted = False   
     # =========================================================================
     # CALCULATION
     # =========================================================================
@@ -157,21 +181,27 @@ class PointerController:
         # 1. Calcola movimento lineare (da speed)
         linear_pos = self._calculate_linear_position(elapsed_time)
         
-        # 2. Applica loop se configurato
+        # 2. Ottieni posizione base e finestra di contesto
+        #    - Con loop:    base_pos e' dentro il loop, loop_length e' la sua lunghezza
+        #    - Senza loop:  base_pos e' wrap sul sample, loop_length = sample_dur_sec
         if self.has_loop:
-            base_pos, context_length, wrap_fn = self._apply_loop(linear_pos, elapsed_time)
+            base_pos, loop_length = self._apply_loop(linear_pos, elapsed_time)
         else:
             # Nessun loop: wrap semplice sul buffer
             base_pos = linear_pos % self._sample_dur_sec
             context_length = self._sample_dur_sec
-            wrap_fn = lambda p: p % self._sample_dur_sec
-        
+
+        # 3. Applica deviazione per-grano (scala rispetto alla finestra attiva)
+        #    La deviazione e' un offset temporaneo: non modifica lo stato del loop.
+        #    Puo' portare il pointer fuori dal loop — il wrap avviene sul sample intero,
+        #    non sul loop (bypass semantics: il grano atterrerra' dove capita nel sample).
         dev_normalized = self.deviation.get_value(elapsed_time)
-        deviation_seconds = dev_normalized * context_length
-        final_pos = base_pos + deviation_seconds
+        final_pos = base_pos + dev_normalized * loop_length
+        # 4. Offset per grano invertito (aggiunto prima del wrap)
         if grain_reverse:
-            final_pos+=grain_duration
-        return wrap_fn(final_pos)        
+            final_pos += grain_duration
+        # 5. Wrap finale sempre sul buffer intero
+        return final_pos % self._sample_dur_sec
 
     def _apply_loop(
         self,
@@ -188,7 +218,12 @@ class PointerController:
         - Se loop bounds stabili e pointer supera loop_end → WRAP modulare
         
         Returns:
-            tuple: (base_pos, context_length, wrap_function)
+            tuple[float, float]: (base_pos, loop_length)
+                base_pos:    posizione corrente nel sample (secondi)
+                loop_length: lunghezza della finestra di loop attiva (secondi).
+                             Usata da calculate() per scalare la deviazione.
+                             Equivale a sample_dur_sec nel pre-loop.
+        
         """
         # =========================================================================
         # STEP 1: Valuta loop bounds CORRENTI (possono essere envelope!)
@@ -208,36 +243,35 @@ class PointerController:
         loop_length = max(current_loop_end - current_loop_start, 0.001)
         
         # =========================================================================
-        # STEP 2: Check ENTRATA nel loop (se non siamo ancora dentro)
+        # STEP 2: ENTRATA nel loop
         # =========================================================================
         if not self._in_loop:
-            check_pos = linear_pos % self._sample_dur_sec
-            if current_loop_start <= check_pos < current_loop_end:
-                # ENTRATA nel loop
-                self._in_loop = True
-                self._loop_absolute_pos = check_pos
-                self._last_linear_pos = linear_pos
-                self._prev_loop_start = current_loop_start
-                self._prev_loop_end = current_loop_end
-                
-                # Restituisci posizione di entrata
-                base_pos = check_pos
-                context_length = loop_length
-                
-                def wrap_fn(pos: float) -> float:
-                    rel = pos - current_loop_start
-                    return current_loop_start + (rel % loop_length)
-                
-                return base_pos, context_length, wrap_fn
+            if self._loop_is_dynamic:
+                # Modalita' dinamica: entrata immediata a loop_start(0).
+                # Il pointer nasce dentro la finestra mobile senza fase pre-loop.
+                entry_pos = current_loop_start
             else:
-                # NON siamo ancora entrati nel loop → comportamento pre-loop
-                self._emit_loop_drift_warning(
-                    check_pos, current_loop_start, current_loop_end, elapsed_time
-                )
-                base_pos = linear_pos % self._sample_dur_sec
-                context_length = self._sample_dur_sec
-                wrap_fn = lambda p: p % self._sample_dur_sec
-                return base_pos, context_length, wrap_fn
+                # Modalita' statica: entrata solo quando la posizione lineare
+                # interseca la regione [loop_start, loop_end).
+                check_pos = linear_pos % self._sample_dur_sec
+                if current_loop_start <= check_pos < current_loop_end:
+                    entry_pos = check_pos
+                else:
+                    # Non ancora dentro → comportamento pre-loop
+                    self._emit_loop_drift_warning(
+                        check_pos, current_loop_start, current_loop_end, elapsed_time
+                    )
+                    base_pos = linear_pos % self._sample_dur_sec
+                    return base_pos, self._sample_dur_sec
+
+            # Entrata confermata (statica o dinamica)
+            self._in_loop = True
+            self._loop_absolute_pos = entry_pos
+            self._last_linear_pos = linear_pos
+            self._prev_loop_start = current_loop_start
+            self._prev_loop_end = current_loop_end
+            return entry_pos, loop_length
+
         
         # =========================================================================
         # STEP 3: Siamo DENTRO il loop
@@ -266,30 +300,36 @@ class PointerController:
         # STEP 3c: Gestisci fuori-bounds
         # ---------------------------------------------------------------------
         if bounds_changed:
-            # I bounds sono cambiati
             if not (current_loop_start <= self._loop_absolute_pos < current_loop_end):
-                pointer_would_be = self._loop_absolute_pos
-                
-                # RESET DIRECTION-AWARE basato su delta_pos
-                # Se andava avanti (delta_pos >= 0) → reset a loop_start
-                # Se andava indietro (delta_pos < 0) → reset a loop_end
                 if delta_pos >= 0:
                     self._loop_absolute_pos = current_loop_start
                     reset_target = "loop_start"
                 else:
-                    self._loop_absolute_pos = current_loop_end
+                    self._loop_absolute_pos = current_loop_end - 1e-9
                     reset_target = "loop_end"
 
-                # LOG del reset direction-aware
-                log_config_warning(
-                    stream_id=self._config.context.stream_id,
-                    param_name="pointer_position",
-                    raw_value=pointer_would_be,
-                    clipped_value=self._loop_absolute_pos,
-                    min_val=current_loop_start,
-                    max_val=current_loop_end,
-                    value_type=f"loop_reset_to_{reset_target}"
-                )
+                # Log solo se il drift sta superando la speed del pointer,
+                # cioe' il pointer non riesce a stare dietro alla finestra mobile.
+                # In quel caso _emit_loop_drift_warning mostra anche la speed minima.
+                # Reset normali (loop dinamico che avanza regolarmente) → nessun log.
+                if self._loop_is_dynamic:
+                    self._emit_loop_drift_warning(
+                        self._loop_absolute_pos,
+                        current_loop_start,
+                        current_loop_end,
+                        elapsed_time
+                    )
+                else:
+                    # Loop statico: il reset e' inatteso, logga sempre
+                    log_config_warning(
+                        stream_id=self._config.context.stream_id,
+                        param_name="pointer_position",
+                        raw_value=self._loop_absolute_pos,
+                        clipped_value=self._loop_absolute_pos,
+                        min_val=current_loop_start,
+                        max_val=current_loop_end,
+                        value_type=f"loop_reset_to_{reset_target}"
+                    )
         else:
             # Bounds stabili: WRAP MODULARE UNIFICATO
             # Funziona sia per movimento in avanti che indietro!
@@ -306,15 +346,8 @@ class PointerController:
         # ---------------------------------------------------------------------
         # STEP 3e: Restituisci risultato
         # ---------------------------------------------------------------------
-        base_pos = self._loop_absolute_pos
-        context_length = loop_length
-        
-        def wrap_fn(pos: float) -> float:
-            """Wrap function per applicare deviazione dentro i bounds del loop."""
-            rel = pos - current_loop_start
-            return current_loop_start + (rel % loop_length)
-        
-        return base_pos, context_length, wrap_fn
+        base_pos = self._loop_absolute_pos                
+        return base_pos, loop_length
 
     def _emit_loop_drift_warning(
         self,
@@ -346,7 +379,9 @@ class PointerController:
         self._drift_prev_elapsed = elapsed_time
         self._drift_last_logged = elapsed_time
 
-        # Speed corrente del pointer
+        is_first = not self._drift_first_warning_emitted
+        self._drift_first_warning_emitted = True
+
         current_speed = self.speed_ratio.get_value(elapsed_time)
 
         log_loop_drift_warning(
@@ -357,7 +392,8 @@ class PointerController:
             loop_end=current_loop_end,
             speed_ratio=current_speed,
             loop_start_drift_rate=drift_rate,
-            stream_duration=self._config.context.sample_dur_sec
+            stream_duration=self._config.context.sample_dur_sec,
+            is_first=is_first
         )
 
     def _calculate_linear_position(self, elapsed_time: float) -> float:

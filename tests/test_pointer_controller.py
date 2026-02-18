@@ -1884,11 +1884,11 @@ class TestGrainReverseOffset:
         assert pointer.in_loop is True
 
         # Con reverse e duration=0.2: 4.9 + 0.2 = 5.1
-        # Fuori [2.0, 5.0) -> wrap: (5.1 - 2.0) % 3.0 = 3.1 % 3.0 = 0.1
-        # final = 2.0 + 0.1 = 2.1
+        # Wrap sul sample intero: 5.1 % 10.0 = 5.1
+        # Il pointer e' fuori dal loop ma dentro il sample — comportamento bypass
         pos = pointer.calculate(0.0, grain_duration=0.2, grain_reverse=True)
-        assert 2.0 <= pos < 5.0
-        assert pos == pytest.approx(2.1)
+        assert pos == pytest.approx(5.1)
+        assert 0.0 <= pos < 10.0 
 
     def test_grain_reverse_default_is_false(self, mock_config):
         """Senza parametro grain_reverse, default e' False."""
