@@ -19,7 +19,8 @@ from generator import Generator
 configure_clip_logger(
     console_enabled=False,   # NO terminale
     file_enabled=True,       # SI file
-    log_dir='./logs'
+    log_dir='./logs',
+    log_transformations=False
 )
 
 

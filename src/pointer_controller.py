@@ -187,9 +187,8 @@ class PointerController:
         if self.has_loop:
             base_pos, loop_length = self._apply_loop(linear_pos, elapsed_time)
         else:
-            # Nessun loop: wrap semplice sul buffer
             base_pos = linear_pos % self._sample_dur_sec
-            context_length = self._sample_dur_sec
+            loop_length = self._sample_dur_sec
 
         # 3. Applica deviazione per-grano (scala rispetto alla finestra attiva)
         #    La deviazione e' un offset temporaneo: non modifica lo stato del loop.
@@ -232,15 +231,15 @@ class PointerController:
         
         if self.loop_dur is not None:
             # Modalità loop_dur (dinamica)
-            current_dur = self.loop_dur.get_value(elapsed_time)
-            current_loop_dur = min(current_dur, self._sample_dur_sec)
+            current_loop_dur = self.loop_dur.get_value(elapsed_time)
+
         else:
             # Modalità loop_end (può essere dinamica ora!)
             current_loop_end_val = self.loop_end.get_value(elapsed_time)
             current_loop_dur = current_loop_end_val - current_loop_start
         
-        current_loop_end = min(current_loop_start + current_loop_dur, self._sample_dur_sec)
-        loop_length = max(current_loop_end - current_loop_start, 0.001)
+        current_loop_end = current_loop_start + current_loop_dur
+        loop_length = max(current_loop_dur, 0.001)  
         
         # =========================================================================
         # STEP 2: ENTRATA nel loop
@@ -346,7 +345,7 @@ class PointerController:
         # ---------------------------------------------------------------------
         # STEP 3e: Restituisci risultato
         # ---------------------------------------------------------------------
-        base_pos = self._loop_absolute_pos                
+        base_pos = self._loop_absolute_pos % self._sample_dur_sec
         return base_pos, loop_length
 
     def _emit_loop_drift_warning(

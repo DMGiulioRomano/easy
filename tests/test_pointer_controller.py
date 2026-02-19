@@ -558,8 +558,10 @@ class TestDirectionAwareReset:
             # wrappato a loop_start (3.0) da wrap_fn
             pos = pointer.calculate(1.5)
             
-            # Dopo reset e wrap, il pointer è a loop_start
-            assert pos == pytest.approx(3.0)
+            # Dopo reset direction-aware: pointer posizionato appena prima di loop_end
+            # Non viene piu' wrappato a loop_start — rimane dentro il loop vicino al bordo
+            assert pos == pytest.approx(5.0 - 1e-9, abs=1e-6)
+            assert 3.0 <= pos < 5.0
     
     def test_bounds_change_but_pointer_inside(self, pointer_factory):
         """Bounds cambiano ma pointer resta dentro → NO reset."""
@@ -1519,12 +1521,12 @@ class TestDeviationScaling:
         pointer.calculate(0.0)  # entrata
 
         # offset = 0.8 * 3.0 = 2.4
-        # pos = 4.5 + 2.4 = 6.9, fuori [2.0, 5.0)
-        # wrap: (6.9 - 2.0) % 3.0 = 4.9 % 3.0 = 1.9
-        # final = 2.0 + 1.9 = 3.9
+        # pos = 4.5 + 2.4 = 6.9, fuori dal loop [2.0, 5.0)
+        # Bypass semantics: wrap sul sample intero, non sul loop
+        # 6.9 % 10.0 = 6.9 — fuori dal loop, dentro il sample
         pos = pointer.calculate(1.0)
-        assert 2.0 <= pos < 5.0
-        assert pos == pytest.approx(3.9)
+        assert pos == pytest.approx(6.9)
+        assert 0.0 <= pos < 10.0   # dentro il sample
 
 
 # =============================================================================

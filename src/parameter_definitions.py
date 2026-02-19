@@ -137,7 +137,7 @@ GRANULAR_PARAMETERS: Dict[str, ParameterBounds] = {
     
     'pointer_deviation': ParameterBounds(
         min_val=-1.0,
-        max_val=1.0,        # Normalizzato (100% del loop)
+        max_val=1.0,        
         min_range=0.0,
         max_range=1.0,
         default_jitter=0.1,

@@ -463,7 +463,7 @@ class ScoreVisualizer:
             
             # Disegna grani di TUTTI gli stream che usano questo sample
             for stream in streams:
-                self._draw_loop_mask(ax_grain, stream, page_start, page_end)
+                self._draw_loop_mask(ax_grain, stream, page_start, page_end, sample_duration)
                 self._draw_grains_full(ax_grain, stream, sample_duration, 
                                     page_start, page_end)
                 self._draw_stream_label_full(ax_grain, stream, page_start, sample_duration)
@@ -685,14 +685,15 @@ class ScoreVisualizer:
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
                     alpha=0.7, edgecolor='none')
         )
-
-    def _draw_loop_mask(self, ax, stream, page_start, page_end):
+    def _draw_loop_mask(self, ax, stream, page_start, page_end, sample_duration):
         """
         Disegna la maschera di tendenza del loop direttamente nel piano dei grani.
 
         La banda colorata mostra la regione [loop_start, loop_start+loop_dur]
         (o [loop_start, loop_end]) nel sample, per ogni istante di tempo.
         Se i parametri sono Envelope, la banda si deforma nel tempo.
+        Se loop_start + loop_dur supera sample_duration, la regione wrappa
+        attorno al file e viene disegnata come due bande separate.
         Viene disegnata sotto i grani (chiamare prima di _draw_grains_full).
         """
         from parameter import Parameter
@@ -731,6 +732,8 @@ class ScoreVisualizer:
 
         y_bottoms = []
         y_tops    = []
+        y_bottoms2 = []   # banda wraparound: parte iniziale del file
+        y_tops2    = []   # banda wraparound: parte iniziale del file
 
         for t in times:
             elapsed = t - stream_onset
@@ -739,23 +742,40 @@ class ScoreVisualizer:
             if y_bot is None:
                 y_bottoms.append(np.nan)
                 y_tops.append(np.nan)
+                y_bottoms2.append(np.nan)
+                y_tops2.append(np.nan)
                 continue
 
             if loop_dur is not None:
                 dur = eval_param(loop_dur, elapsed)
-                y_top = y_bot + dur if dur is not None else np.nan
+                y_top_raw = y_bot + dur if dur is not None else np.nan
             elif loop_end is not None:
-                y_top = eval_param(loop_end, elapsed)
-                if y_top is None:
-                    y_top = np.nan
+                y_top_raw = eval_param(loop_end, elapsed)
+                if y_top_raw is None:
+                    y_top_raw = np.nan
             else:
-                y_top = np.nan
+                y_top_raw = np.nan
 
-            y_bottoms.append(y_bot)
-            y_tops.append(y_top)
+            # Rileva wraparound: loop_end supera la fine del file
+            if not np.isnan(y_top_raw) and y_top_raw > sample_duration:
+                # Banda 1: da loop_start fino a fine file
+                y_bottoms.append(y_bot)
+                y_tops.append(sample_duration)
+                # Banda 2: da inizio file fino alla parte wrappata
+                y_bottoms2.append(0.0)
+                y_tops2.append(y_top_raw - sample_duration)
+            else:
+                # Caso normale: nessun wrap
+                y_bottoms.append(y_bot)
+                y_tops.append(y_top_raw)
+                y_bottoms2.append(np.nan)
+                y_tops2.append(np.nan)
+
 
         y_bottoms = np.array(y_bottoms, dtype=float)
         y_tops    = np.array(y_tops,    dtype=float)
+        y_bottoms2 = np.array(y_bottoms2, dtype=float)
+        y_tops2    = np.array(y_tops2,    dtype=float)
 
         # Disegna la banda
         ax.fill_between(
@@ -764,26 +784,18 @@ class ScoreVisualizer:
             y_tops,
             color=self.config['loop_mask_color'],
             alpha=self.config['loop_mask_alpha'],
-            linewidth=0,
             zorder=1   # sotto i grani (PatchCollection usa zorder default ~2)
         )
 
-        # Bordi sottili per definire meglio i limiti della regione
-        valid = ~np.isnan(y_bottoms) & ~np.isnan(y_tops)
-        if valid.any():
-            ax.plot(
-                times[valid], y_bottoms[valid],
+        # Disegna banda wraparound solo se esiste almeno un campione valido
+        if not np.all(np.isnan(y_tops2)):
+            ax.fill_between(
+                times,
+                y_bottoms2,
+                y_tops2,
                 color=self.config['loop_mask_color'],
-                alpha=min(self.config['loop_mask_alpha'] * 3, 0.7),
-                linewidth=0.8,
-                zorder=1
-            )
-            ax.plot(
-                times[valid], y_tops[valid],
-                color=self.config['loop_mask_color'],
-                alpha=min(self.config['loop_mask_alpha'] * 3, 0.7),
-                linewidth=0.8,
-                zorder=1
+                alpha=self.config['loop_mask_alpha'],
+                zorder=0
             )
 
 
