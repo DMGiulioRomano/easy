@@ -1059,3 +1059,23 @@ class TestEvaluationOrder:
         
         assert isinstance(gate_yes, AlwaysGate)
         assert isinstance(gate_no, NeverGate)
+
+class TestCreateGateFallthrough:
+    """Copre riga 90: return NeverGate() di fallthrough in create_gate."""
+
+    def test_unhandled_mode_returns_never_gate(self):
+        """Mock _classify_dephase per restituire un modo non gestito."""
+        from unittest.mock import patch
+
+        # Crea un valore enum non gestito dall'if/elif
+        unhandled = object()  # valore che non corrisponde a nessun DephaseMode
+
+        with patch.object(GateFactory, '_classify_dephase', return_value=unhandled):
+            gate = GateFactory.create_gate(
+                dephase=False,
+                param_key='volume',
+                default_prob=75.0,
+                has_explicit_range=False,
+            )
+
+        assert isinstance(gate, NeverGate)

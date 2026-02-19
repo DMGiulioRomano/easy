@@ -391,3 +391,18 @@ def test_grain_memory_optimization():
     expected_slots = ['onset', 'duration', 'pointer_pos', 'pitch_ratio', 
                       'volume', 'pan', 'sample_table', 'envelope_table']
     assert all(slot in grain.__slots__ for slot in expected_slots)
+
+class TestGrainValidationBoolAsInt:
+    """Copre la riga 35: TypeError quando si passa bool come campo int."""
+
+    def test_bool_true_as_sample_table_raises(self, sample_grain_data):
+        """bool e' subclass di int, ma deve essere rifiutato."""
+        sample_grain_data['sample_table'] = True
+        with pytest.raises(TypeError, match="sample_table"):
+            Grain(**sample_grain_data)
+
+    def test_bool_false_as_envelope_table_raises(self, sample_grain_data):
+        """False come envelope_table deve sollevare TypeError."""
+        sample_grain_data['envelope_table'] = False
+        with pytest.raises(TypeError, match="envelope_table"):
+            Grain(**sample_grain_data)

@@ -1268,3 +1268,17 @@ class TestParametrized:
 
         call_kwargs = gen.score_writer.write_score.call_args
         assert call_kwargs.kwargs['filepath'] == output_path
+
+    def test_eval_invalid_expression_returns_original(self, gen):
+        """Copre righe 279-284: except in evaluate_match con espressione invalida."""
+        # Un'espressione che causa un errore durante eval (es. divisione per zero
+        # o nome non definito nel safe_dict)
+        result = gen._eval_math_expressions("(undefined_var + 1)")
+        # Deve restituire la stringa originale intatta quando eval fallisce
+        assert result == "(undefined_var + 1)"
+
+    def test_eval_zero_division_returns_original(self, gen):
+        """Espressione con ZeroDivisionError copre il blocco except."""
+        result = gen._eval_math_expressions("(1/0)")
+        # Quando eval lancia ZeroDivisionError, ritorna l'originale
+        assert result == "(1/0)"
