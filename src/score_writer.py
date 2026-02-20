@@ -5,7 +5,7 @@ Separato dalla logica di orchestrazione.
 """
 from typing import List
 from stream import Stream
-from src.cartridge import Cartridge
+from cartridge import Cartridge
 from ftable_manager import FtableManager
 from envelope import Envelope
 from parameter import Parameter

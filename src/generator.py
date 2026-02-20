@@ -15,7 +15,7 @@ import math
 from typing import List, Tuple, Dict, Any
 
 from stream import Stream
-from src.cartridge import Cartridge
+from cartridge import Cartridge
 from ftable_manager import FtableManager
 from score_writer import ScoreWriter
 from window_controller import WindowController
