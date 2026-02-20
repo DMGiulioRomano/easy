@@ -56,17 +56,17 @@ def make_mock_stream_for_generator(stream_id='stream_01', sample='test.wav'):
     return stream
 
 
-def make_mock_testina_for_generator(testina_id='testina_01', sample_path='tape.wav'):
+def make_mock_cartridge_for_generator(cartridge_id='cartridge_01', sample_path='tape.wav'):
     """
-    Mock Testina con attributi necessari per Generator.
+    Mock Cartridge con attributi necessari per Generator.
 
-    Attributi: testina_id, sample_path, sample_table_num,
+    Attributi: cartridge_id, sample_path, sample_table_num,
                __repr__, __str__
     """
-    testina = Mock()
-    testina.testina_id = testina_id
-    testina.sample_path = sample_path
-    testina.sample_table_num = None
-    testina.__repr__ = Mock(return_value=f"Testina({testina_id})")
-    testina.__str__ = Mock(return_value=f"Testina({testina_id})")
-    return testina
+    cartridge = Mock()
+    cartridge.cartridge_id = cartridge_id
+    cartridge.sample_path = sample_path
+    cartridge.sample_table_num = None
+    cartridge.__repr__ = Mock(return_value=f"Cartridge({cartridge_id})")
+    cartridge.__str__ = Mock(return_value=f"Cartridge({cartridge_id})")
+    return cartridge

@@ -4,19 +4,19 @@ Test suite completa per score_writer.py
 Testa la classe ScoreWriter e tutti i suoi metodi:
 - write_score: orchestrazione scrittura completa
 - _write_header: intestazione file score
-- _write_events: dispatch eventi (streams + testine)
+- _write_events: dispatch eventi (streams + cartridges)
 - _write_footer: chiusura file score
 - _write_granular_streams: sezione stream granulari
 - _write_stream_section: sezione singolo stream
 - _write_stream_metadata: metadati stream come commenti
-- _write_tape_recorder_testine: sezione testine
-- _write_testina_section: sezione singola testina
+- _write_tape_recorder_cartridges: sezione cartridges
+- _write_cartridge_section: sezione singola cartridge
 - _format_param: formattazione parametri per commenti
 - _print_generation_summary: riepilogo generazione
 
 Strategia di mocking:
 - FtableManager: mock completo (dependency injection)
-- Stream/Testina: mock con attributi necessari
+- Stream/cartridge: mock con attributi necessari
 - Parameter/Envelope: mock per test _format_param
 - File I/O: StringIO per catturare output
 """
@@ -173,26 +173,26 @@ def make_mock_stream(
     return stream
 
 
-def make_mock_testina(
-    testina_id='testina_01',
+def make_mock_cartridge(
+    cartridge_id='cartridge_01',
     sample_path='sample.wav',
     speed=1.0,
     duration=5.0,
     score_line=None,
 ):
-    """Crea un mock Testina con tutti gli attributi necessari."""
-    testina = Mock()
-    testina.testina_id = testina_id
-    testina.sample_path = sample_path
-    testina.speed = speed
-    testina.duration = duration
+    """Crea un mock cartridge con tutti gli attributi necessari."""
+    cartridge = Mock()
+    cartridge.cartridge_id = cartridge_id
+    cartridge.sample_path = sample_path
+    cartridge.speed = speed
+    cartridge.duration = duration
     if score_line is None:
         score_line = (
             f'i "TapeRecorder" 0.000000 {duration:.6f} '
             f'0.000000 {speed:.6f} 0.00 0.500 0 0.000000 -1.000000 1\n'
         )
-    testina.to_score_line.return_value = score_line
-    return testina
+    cartridge.to_score_line.return_value = score_line
+    return cartridge
 
 
 def make_mock_ftable_manager(num_tables=3):
@@ -242,9 +242,9 @@ def sample_stream():
 
 
 @pytest.fixture
-def sample_testina():
-    """Testina mock base."""
-    return make_mock_testina()
+def sample_cartridge():
+    """cartridge mock base."""
+    return make_mock_cartridge()
 
 
 # =============================================================================
@@ -368,17 +368,17 @@ class TestWriteEvents:
         assert "GRANULAR STREAMS" in content
         assert "TAPE RECORDER" not in content
 
-    def test_events_with_testine_only(self, writer, string_file, sample_testina):
-        """Con solo testine, scrive solo la sezione tape recorder."""
-        writer._write_events(string_file, [], [sample_testina])
+    def test_events_with_cartridges_only(self, writer, string_file, sample_cartridge):
+        """Con solo cartridges, scrive solo la sezione tape recorder."""
+        writer._write_events(string_file, [], [sample_cartridge])
         content = string_file.getvalue()
 
         assert "TAPE RECORDER" in content
         assert "GRANULAR STREAMS" not in content
 
-    def test_events_with_both(self, writer, string_file, sample_stream, sample_testina):
+    def test_events_with_both(self, writer, string_file, sample_stream, sample_cartridge):
         """Con entrambi, scrive entrambe le sezioni."""
-        writer._write_events(string_file, [sample_stream], [sample_testina])
+        writer._write_events(string_file, [sample_stream], [sample_cartridge])
         content = string_file.getvalue()
 
         assert "GRANULAR STREAMS" in content
@@ -391,9 +391,9 @@ class TestWriteEvents:
 
         assert content == ""
 
-    def test_events_streams_before_testine(self, writer, string_file, sample_stream, sample_testina):
-        """Gli stream vengono scritti prima delle testine."""
-        writer._write_events(string_file, [sample_stream], [sample_testina])
+    def test_events_streams_before_cartridges(self, writer, string_file, sample_stream, sample_cartridge):
+        """Gli stream vengono scritti prima delle cartridges."""
+        writer._write_events(string_file, [sample_stream], [sample_cartridge])
         content = string_file.getvalue()
 
         gran_pos = content.index("GRANULAR STREAMS")
@@ -627,87 +627,87 @@ class TestWriteStreamMetadata:
 
 
 # =============================================================================
-# 8. TEST _write_tape_recorder_testine
+# 8. TEST _write_tape_recorder_cartridges
 # =============================================================================
 
-class TestWriteTapeRecorderTestine:
-    """Test per _write_tape_recorder_testine."""
+class TestWriteTapeRecordercartridges:
+    """Test per _write_tape_recorder_cartridges."""
 
-    def test_section_header(self, writer, string_file, sample_testina):
+    def test_section_header(self, writer, string_file, sample_cartridge):
         """La sezione inizia con header TAPE RECORDER TRACKS."""
-        writer._write_tape_recorder_testine(string_file, [sample_testina])
+        writer._write_tape_recorder_cartridges(string_file, [sample_cartridge])
         content = string_file.getvalue()
 
         assert "; TAPE RECORDER TRACKS" in content
 
-    def test_multiple_testine(self, writer, string_file):
-        """Scrive correttamente piu' testine."""
-        t1 = make_mock_testina(testina_id='rec_A')
-        t2 = make_mock_testina(testina_id='rec_B')
+    def test_multiple_cartridges(self, writer, string_file):
+        """Scrive correttamente piu' cartridges."""
+        t1 = make_mock_cartridge(cartridge_id='rec_A')
+        t2 = make_mock_cartridge(cartridge_id='rec_B')
 
-        writer._write_tape_recorder_testine(string_file, [t1, t2])
+        writer._write_tape_recorder_cartridges(string_file, [t1, t2])
         content = string_file.getvalue()
 
-        assert "; Testina: rec_A" in content
-        assert "; Testina: rec_B" in content
+        assert "; Cartridge: rec_A" in content
+        assert "; Cartridge: rec_B" in content
 
-    def test_single_testina(self, writer, string_file):
-        """Scrive correttamente una singola testina."""
-        t = make_mock_testina(testina_id='solo_rec')
-        writer._write_tape_recorder_testine(string_file, [t])
+    def test_single_cartridge(self, writer, string_file):
+        """Scrive correttamente una singola cartridge."""
+        t = make_mock_cartridge(cartridge_id='solo_rec')
+        writer._write_tape_recorder_cartridges(string_file, [t])
         content = string_file.getvalue()
 
-        assert "; Testina: solo_rec" in content
+        assert "; Cartridge: solo_rec" in content
 
 
 # =============================================================================
-# 9. TEST _write_testina_section
+# 9. TEST _write_cartridge_section
 # =============================================================================
 
-class TestWriteTestinaSection:
-    """Test per _write_testina_section."""
+class TestWritecartridgeSection:
+    """Test per _write_cartridge_section."""
 
-    def test_testina_id_in_header(self, writer, string_file):
-        """L'ID della testina appare nell'header."""
-        testina = make_mock_testina(testina_id='tape_head_01')
-        writer._write_testina_section(string_file, testina)
+    def test_cartridge_id_in_header(self, writer, string_file):
+        """L'ID della cartridge appare nell'header."""
+        cartridge = make_mock_cartridge(cartridge_id='tape_head_01')
+        writer._write_cartridge_section(string_file, cartridge)
         content = string_file.getvalue()
 
-        assert "; Testina: tape_head_01" in content
+        assert "; Cartridge: tape_head_01" in content
 
     def test_sample_path_in_metadata(self, writer, string_file):
         """Il path del sample appare nei metadati."""
-        testina = make_mock_testina(sample_path='refs/piano.wav')
-        writer._write_testina_section(string_file, testina)
+        cartridge = make_mock_cartridge(sample_path='refs/piano.wav')
+        writer._write_cartridge_section(string_file, cartridge)
         content = string_file.getvalue()
 
         assert "; Sample: refs/piano.wav" in content
 
     def test_speed_in_metadata(self, writer, string_file):
         """La velocita' appare nei metadati."""
-        testina = make_mock_testina(speed=0.5)
-        writer._write_testina_section(string_file, testina)
+        cartridge = make_mock_cartridge(speed=0.5)
+        writer._write_cartridge_section(string_file, cartridge)
         content = string_file.getvalue()
 
         assert "; Speed: 0.5x" in content
 
     def test_duration_in_metadata(self, writer, string_file):
         """La durata appare nei metadati."""
-        testina = make_mock_testina(duration=12.5)
-        writer._write_testina_section(string_file, testina)
+        cartridge = make_mock_cartridge(duration=12.5)
+        writer._write_cartridge_section(string_file, cartridge)
         content = string_file.getvalue()
 
         assert "; Duration: 12.5s" in content
 
     def test_score_line_written(self, writer, string_file):
-        """La score line della testina viene scritta."""
+        """La score line della cartridge viene scritta."""
         custom_line = 'i "TapeRecorder" 0.000000 5.000000 0.000000 1.000000 0.00 0.500 0 0.000000 -1.000000 1\n'
-        testina = make_mock_testina(score_line=custom_line)
-        writer._write_testina_section(string_file, testina)
+        cartridge = make_mock_cartridge(score_line=custom_line)
+        writer._write_cartridge_section(string_file, cartridge)
         content = string_file.getvalue()
 
         assert 'i "TapeRecorder"' in content
-        testina.to_score_line.assert_called_once()
+        cartridge.to_score_line.assert_called_once()
 
 
 # =============================================================================
@@ -826,12 +826,12 @@ class TestPrintGenerationSummary:
 
         assert "10 grani totali" in captured.out
 
-    def test_summary_prints_testine_count(self, writer, capsys, sample_testina):
-        """Il riepilogo stampa il numero di testine."""
-        writer._print_generation_summary('out.sco', [], [sample_testina])
+    def test_summary_prints_cartridges_count(self, writer, capsys, sample_cartridge):
+        """Il riepilogo stampa il numero di cartridges."""
+        writer._print_generation_summary('out.sco', [], [sample_cartridge])
         captured = capsys.readouterr()
 
-        assert "1 testine tape recorder" in captured.out
+        assert "1 cartridges tape recorder" in captured.out
 
     def test_summary_no_streams_section_if_empty(self, writer, capsys):
         """Senza streams, non stampa la sezione streams."""
@@ -841,12 +841,12 @@ class TestPrintGenerationSummary:
         assert "streams granulari" not in captured.out
         assert "grani totali" not in captured.out
 
-    def test_summary_no_testine_section_if_empty(self, writer, capsys):
-        """Senza testine, non stampa la sezione testine."""
+    def test_summary_no_cartridges_section_if_empty(self, writer, capsys):
+        """Senza cartridges, non stampa la sezione cartridges."""
         writer._print_generation_summary('out.sco', [], [])
         captured = capsys.readouterr()
 
-        assert "testine tape recorder" not in captured.out
+        assert "cartridges tape recorder" not in captured.out
 
     def test_summary_multiple_streams_grain_total(self, writer, capsys):
         """Il totale grani somma correttamente su piu' streams."""
@@ -867,11 +867,11 @@ class TestPrintGenerationSummary:
 class TestWriteScore:
     """Test per write_score (metodo pubblico principale)."""
 
-    def test_write_score_creates_file(self, writer, tmp_path, sample_stream, sample_testina):
+    def test_write_score_creates_file(self, writer, tmp_path, sample_stream, sample_cartridge):
         """write_score crea effettivamente un file."""
         filepath = str(tmp_path / 'test_output.sco')
 
-        writer.write_score(filepath, [sample_stream], [sample_testina])
+        writer.write_score(filepath, [sample_stream], [sample_cartridge])
 
         assert os.path.exists(filepath)
 
@@ -885,11 +885,11 @@ class TestWriteScore:
             content = f.read()
         assert len(content) > 0
 
-    def test_write_score_structure_order(self, writer, tmp_path, sample_stream, sample_testina):
+    def test_write_score_structure_order(self, writer, tmp_path, sample_stream, sample_cartridge):
         """Il file ha la struttura corretta: header -> ftables -> events -> footer."""
         filepath = str(tmp_path / 'test_output.sco')
 
-        writer.write_score(filepath, [sample_stream], [sample_testina], yaml_source='test.yml')
+        writer.write_score(filepath, [sample_stream], [sample_cartridge], yaml_source='test.yml')
 
         with open(filepath, 'r') as f:
             content = f.read()
@@ -941,7 +941,7 @@ class TestWriteScore:
             content = f.read()
         assert "Generated from" not in content
 
-    def test_write_score_empty_streams_and_testine(self, writer, tmp_path):
+    def test_write_score_empty_streams_and_cartridges(self, writer, tmp_path):
         """write_score con liste vuote genera solo header + footer."""
         filepath = str(tmp_path / 'test_output.sco')
 
@@ -974,8 +974,8 @@ class TestWriteScore:
 class TestScoreIntegration:
     """Test di integrazione end-to-end sulla struttura del file generato."""
 
-    def test_full_score_with_multiple_streams_and_testine(self, writer, tmp_path):
-        """Score completo con piu' stream e testine."""
+    def test_full_score_with_multiple_streams_and_cartridges(self, writer, tmp_path):
+        """Score completo con piu' stream e cartridges."""
         s1 = make_mock_stream(stream_id='cloud_01', voices=[
             [make_mock_grain(i * 0.05) for i in range(10)],
             [make_mock_grain(i * 0.05 + 0.01) for i in range(8)],
@@ -983,8 +983,8 @@ class TestScoreIntegration:
         s2 = make_mock_stream(stream_id='cloud_02', voices=[
             [make_mock_grain(i * 0.1) for i in range(5)],
         ])
-        t1 = make_mock_testina(testina_id='tape_A')
-        t2 = make_mock_testina(testina_id='tape_B')
+        t1 = make_mock_cartridge(cartridge_id='tape_A')
+        t2 = make_mock_cartridge(cartridge_id='tape_B')
 
         filepath = str(tmp_path / 'full_score.sco')
         writer.write_score(filepath, [s1, s2], [t1, t2], yaml_source='composition.yml')
@@ -1000,9 +1000,9 @@ class TestScoreIntegration:
         assert "; Stream: cloud_01" in content
         assert "; Stream: cloud_02" in content
 
-        # Testina sections
-        assert "; Testina: tape_A" in content
-        assert "; Testina: tape_B" in content
+        # cartridge sections
+        assert "; Cartridge: tape_A" in content
+        assert "; Cartridge: tape_B" in content
 
         # Footer
         assert "End of score" in content
@@ -1029,14 +1029,14 @@ class TestScoreIntegration:
                 parts = line.split()
                 assert len(parts) == 10  # i "Grain" + 8 p-fields
 
-    def test_score_testina_lines_are_valid_csound(self, writer, tmp_path):
-        """Verifica che le linee testina abbiano il formato Csound valido."""
-        testina = make_mock_testina(
+    def test_score_cartridge_lines_are_valid_csound(self, writer, tmp_path):
+        """Verifica che le linee cartridge abbiano il formato Csound valido."""
+        cartridge = make_mock_cartridge(
             score_line='i "TapeRecorder" 0.000000 5.000000 0.000000 1.000000 0.00 0.500 0 0.000000 -1.000000 1\n'
         )
         filepath = str(tmp_path / 'valid.sco')
 
-        writer.write_score(filepath, [], [testina])
+        writer.write_score(filepath, [], [cartridge])
 
         with open(filepath, 'r') as f:
             content = f.read()

@@ -1,11 +1,11 @@
-class Testina:
+class Cartridge:
     """
-    Testina di lettura semplice (tape recorder head)
+    cartridge di lettura semplice (tape recorder head)
     Legge un file audio in modo lineare senza granulazione
     """
     def __init__(self, params):
         # === IDENTITÀ ===
-        self.testina_id = params['testina_id']
+        self.cartridge_id = params['cartridge_id']
         
         # === TIMING ===
         self.onset = params['onset']
@@ -43,5 +43,5 @@ class Testina:
                 f'{self.sample_table_num}\n')
     
     def __repr__(self):
-        return (f"Testina(id={self.testina_id}, onset={self.onset}, "
+        return (f"Cartridge(id={self.cartridge_id}, onset={self.onset}, "
                 f"dur={self.duration}, speed={self.speed})")

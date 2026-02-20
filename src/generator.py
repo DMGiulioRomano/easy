@@ -15,7 +15,7 @@ import math
 from typing import List, Tuple, Dict, Any
 
 from stream import Stream
-from testina import Testina
+from src.cartridge import Cartridge
 from ftable_manager import FtableManager
 from score_writer import ScoreWriter
 from window_controller import WindowController
@@ -26,20 +26,20 @@ class Generator:
     
     Responsabilita:
     - Caricare e preprocessare configurazione YAML
-    - Creare Stream e Testine dai dati YAML
+    - Creare Stream e cartridges dai dati YAML
     - Coordinare FtableManager e ScoreWriter
     - Applicare logica solo/mute
     
     Public API (backward compatible):
     - load_yaml() -> dict
-    - create_elements() -> Tuple[List[Stream], List[Testina]]
+    - create_elements() -> Tuple[List[Stream], List[Cartridge]]
     - generate_score_file(output_path: str) -> None
     
     Attributes:
         yaml_path: path file configurazione YAML
         data: dati YAML preprocessati
         streams: lista Stream creati
-        testine: lista Testine create
+        cartridges: lista cartridges create
         ftable_manager: gestore function tables
         score_writer: scrittore file score
     """
@@ -54,7 +54,7 @@ class Generator:
         self.yaml_path = yaml_path
         self.data: Dict[str, Any] = None
         self.streams: List[Stream] = []
-        self.testine: List[Testina] = []
+        self.cartridges: List[Cartridge] = []
         
         # Delegati specializzati
         self.ftable_manager = FtableManager(start_num=1)
@@ -83,14 +83,14 @@ class Generator:
         self.data = self._eval_math_expressions(raw_data)
         return self.data
     
-    def create_elements(self) -> Tuple[List[Stream], List[Testina]]:
+    def create_elements(self) -> Tuple[List[Stream], List[Cartridge]]:
         """
-        Crea Stream e Testine dai dati YAML.
+        Crea Stream e cartridges dai dati YAML.
         
         Applica logica solo/mute, registra ftables, genera grani.
         
         Returns:
-            tuple: (streams, testine)
+            tuple: (streams, cartridges)
             
         Raises:
             ValueError: se load_yaml() non è stato chiamato
@@ -105,12 +105,12 @@ class Generator:
         # Crea stream (QUI viene chiamato _register_stream_windows)
         self._create_streams(filtered_streams)
         
-        # Crea testine
-        testina_data_list = self.data.get('testine', [])
-        if testina_data_list:
-            self._create_testine(testina_data_list)
+        # Crea cartridges
+        cartridge_data_list = self.data.get('cartridges', [])
+        if cartridge_data_list:
+            self._create_cartridges(cartridge_data_list)
         
-        return self.streams, self.testine
+        return self.streams, self.cartridges
 
 
     def generate_score_file(self, output_path: str = 'output.sco'):
@@ -125,7 +125,7 @@ class Generator:
         self.score_writer.write_score(
             filepath=output_path,
             streams=self.streams,
-            testine=self.testine,
+            cartridges=self.cartridges,
             yaml_source=self.yaml_path
         )
     
@@ -194,29 +194,29 @@ class Generator:
         return filtered
     
     # =========================================================================
-    # CREAZIONE TESTINE
+    # CREAZIONE cartridges
     # =========================================================================
     
-    def _create_testine(self, testina_data_list: list):
+    def _create_cartridges(self, cartridge_data_list: list):
         """
-        Crea le testine tape recorder.
+        Crea le cartridges tape recorder.
         
         Args:
-            testina_data_list: lista dizionari parametri testina da YAML
+            cartridge_data_list: lista dizionari parametri Cartridge da YAML
         """
-        print(f"Creazione di {len(testina_data_list)} testine tape recorder...")
+        print(f"Creazione di {len(cartridge_data_list)} cartridges tape recorder...")
         
-        for testina_data in testina_data_list:
-            # Crea testina
-            testina = Testina(testina_data)
+        for cartridge_data in cartridge_data_list:
+            # Crea Cartridge
+            cartridge = Cartridge(cartridge_data)
             
             # Registra ftable sample
-            testina.sample_table_num = self.ftable_manager.register_sample(
-                testina.sample_path
+            cartridge.sample_table_num = self.ftable_manager.register_sample(
+                cartridge.sample_path
             )
             
-            self.testine.append(testina)
-            print(f"  → Testina '{testina.testina_id}': {testina}")
+            self.cartridges.append(cartridge)
+            print(f"  → Cartridge '{cartridge.cartridge_id}': {Cartridge}")
     
     # =========================================================================
     # PREPROCESSING YAML

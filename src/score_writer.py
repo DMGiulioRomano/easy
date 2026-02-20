@@ -5,7 +5,7 @@ Separato dalla logica di orchestrazione.
 """
 from typing import List
 from stream import Stream
-from testina import Testina
+from src.cartridge import Cartridge
 from ftable_manager import FtableManager
 from envelope import Envelope
 from parameter import Parameter
@@ -19,7 +19,7 @@ class ScoreWriter:
     - Formattare header e metadati
     - Delegare scrittura ftables a FtableManager
     - Scrivere eventi grani (Stream)
-    - Scrivere eventi testine (TapeRecorder)
+    - Scrivere eventi cartridges (TapeRecorder)
     - Gestire commenti e statistiche
     """
     
@@ -34,7 +34,7 @@ class ScoreWriter:
         self, 
         filepath: str, 
         streams: List[Stream], 
-        testine: List[Testina],
+        cartridges: List[Cartridge],
         yaml_source: str = None
     ):
         """
@@ -43,16 +43,16 @@ class ScoreWriter:
         Args:
             filepath: percorso file output .sco
             streams: lista stream granulari
-            testine: lista testine tape recorder
+            cartridges: lista cartridges tape recorder
             yaml_source: path file YAML sorgente (per header)
         """
         with open(filepath, 'w') as f:
             self._write_header(f, yaml_source)
             self.ftable_manager.write_to_file(f)
-            self._write_events(f, streams, testine)
+            self._write_events(f, streams, cartridges)
             self._write_footer(f)
         
-        self._print_generation_summary(filepath, streams, testine)
+        self._print_generation_summary(filepath, streams, cartridges)
     
     # =========================================================================
     # SEZIONI PRINCIPALI
@@ -66,13 +66,13 @@ class ScoreWriter:
             f.write(f"; Generated from: {yaml_source}\n")
         f.write("; " + "="*77 + "\n\n")
     
-    def _write_events(self, f, streams: List[Stream], testine: List[Testina]):
-        """Scrive tutti gli eventi (grani + testine)."""
+    def _write_events(self, f, streams: List[Stream], cartridges: List[Cartridge]):
+        """Scrive tutti gli eventi (grani + cartridges)."""
         if streams:
             self._write_granular_streams(f, streams)
         
-        if testine:
-            self._write_tape_recorder_testine(f, testine)
+        if cartridges:
+            self._write_tape_recorder_cartridges(f, cartridges)
     
     def _write_footer(self, f):
         """Scrive chiusura file score."""
@@ -142,28 +142,28 @@ class ScoreWriter:
         f.write(f'; Total grains: {total_grains}\n\n')
     
     # =========================================================================
-    # TAPE RECORDER TESTINE
+    # TAPE RECORDER cartridges
     # =========================================================================
     
-    def _write_tape_recorder_testine(self, f, testine: List[Testina]):
-        """Scrive sezione testine tape recorder."""
+    def _write_tape_recorder_cartridges(self, f, cartridges: List[Cartridge]):
+        """Scrive sezione cartridges tape recorder."""
         f.write("; " + "="*77 + "\n")
         f.write("; TAPE RECORDER TRACKS\n")
         f.write("; " + "="*77 + "\n\n")
         
-        for testina in testine:
-            self._write_testina_section(f, testina)
+        for Cartridge in cartridges:
+            self._write_cartridge_section(f, Cartridge)
     
-    def _write_testina_section(self, f, testina: Testina):
-        """Scrive sezione completa di una testina."""
-        # Header testina
-        f.write(f'; Testina: {testina.testina_id}\n')
-        f.write(f'; Sample: {testina.sample_path}\n')
-        f.write(f'; Speed: {testina.speed}x (resampling)\n')
-        f.write(f'; Duration: {testina.duration}s\n\n')
+    def _write_cartridge_section(self, f, Cartridge: Cartridge):
+        """Scrive sezione completa di una Cartridge."""
+        # Header Cartridge
+        f.write(f'; Cartridge: {Cartridge.cartridge_id}\n')
+        f.write(f'; Sample: {Cartridge.sample_path}\n')
+        f.write(f'; Speed: {Cartridge.speed}x (resampling)\n')
+        f.write(f'; Duration: {Cartridge.duration}s\n\n')
         
-        # Evento testina
-        f.write(testina.to_score_line())
+        # Evento Cartridge
+        f.write(Cartridge.to_score_line())
         f.write('\n')
     
     # =========================================================================
@@ -220,7 +220,7 @@ class ScoreWriter:
         self, 
         filepath: str, 
         streams: List[Stream], 
-        testine: List[Testina]
+        cartridges: List[Cartridge]
     ):
         """Stampa riepilogo generazione score."""
         print(f"✓ Score generato: {filepath}")
@@ -238,6 +238,6 @@ class ScoreWriter:
             print(f"  - {len(streams)} streams granulari")
             print(f"  - {total_grains} grani totali")
         
-        # Testine
-        if testine:
-            print(f"  - {len(testine)} testine tape recorder")
+        # cartridges
+        if cartridges:
+            print(f"  - {len(cartridges)} cartridges tape recorder")

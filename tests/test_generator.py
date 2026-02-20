@@ -10,9 +10,9 @@ Sezioni:
 2.  Test load_yaml() - caricamento e preprocessing YAML
 3.  Test _eval_math_expressions() - valutazione espressioni matematiche
 4.  Test _filter_solo_mute() - logica solo/mute sugli stream
-5.  Test create_elements() - orchestrazione creazione stream e testine
+5.  Test create_elements() - orchestrazione creazione stream e cartridges
 6.  Test _create_streams() - creazione stream granulari
-7.  Test _create_testine() - creazione testine tape recorder
+7.  Test _create_cartridges() - creazione cartridges tape recorder
 8.  Test _register_stream_windows() - pre-registrazione finestre
 9.  Test generate_score_file() - delega a ScoreWriter
 10. Test integrazione - workflow end-to-end con mock
@@ -21,7 +21,7 @@ Sezioni:
 
 Strategia di mocking:
 - Stream: mock completo per isolare da logica granulare
-- Testina: mock per isolare da logica tape recorder
+- Cartridge: mock per isolare da logica tape recorder
 - FtableManager: mock per isolare gestione function tables
 - ScoreWriter: mock per isolare scrittura file
 - WindowController: mock per isolare parsing finestre
@@ -62,7 +62,7 @@ def _get_generator_class():
 # MOCK
 # =============================================================================
 
-from conftest import make_mock_stream_for_generator, make_mock_testina_for_generator
+from conftest import make_mock_stream_for_generator, make_mock_cartridge_for_generator
 # =============================================================================
 # FIXTURES
 # =============================================================================
@@ -112,13 +112,13 @@ class TestGeneratorInit:
             g = Generator('config.yml')
         assert g.streams == []
 
-    def test_init_testine_empty(self):
-        """testine e' lista vuota all'inizializzazione."""
+    def test_init_cartridges_empty(self):
+        """cartridges e' lista vuota all'inizializzazione."""
         Generator = _get_generator_class()
         with patch('generator.FtableManager'), \
              patch('generator.ScoreWriter'):
             g = Generator('config.yml')
-        assert g.testine == []
+        assert g.cartridges == []
 
     def test_init_creates_ftable_manager(self):
         """Il costruttore crea un FtableManager."""
@@ -172,7 +172,7 @@ class TestLoadYaml:
 
     def test_load_yaml_returns_dict(self, gen):
         """load_yaml ritorna un dizionario."""
-        yaml_data = {'streams': [], 'testine': []}
+        yaml_data = {'streams': [], 'cartridges': []}
         m = mock_open(read_data=yaml.dump(yaml_data))
 
         with patch('builtins.open', m):
@@ -563,12 +563,12 @@ class TestCreateElements:
             gen.create_elements()
 
     def test_create_elements_returns_tuple(self, gen):
-        """create_elements ritorna tupla (streams, testine)."""
-        gen.data = {'streams': [], 'testine': []}
+        """create_elements ritorna tupla (streams, cartridges)."""
+        gen.data = {'streams': [], 'cartridges': []}
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine'):
+             patch.object(gen, '_create_cartridges'):
             result = gen.create_elements()
 
         assert isinstance(result, tuple)
@@ -596,55 +596,55 @@ class TestCreateElements:
 
         mock_cs.assert_called_once_with(filtered)
 
-    def test_create_elements_with_testine(self, gen):
-        """create_elements crea testine se presenti."""
+    def test_create_elements_with_cartridges(self, gen):
+        """create_elements crea cartridges se presenti."""
         gen.data = {
             'streams': [],
-            'testine': [{'testina_id': 't1'}]
+            'cartridges': [{'cartridge_id': 't1'}]
         }
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine') as mock_ct:
+             patch.object(gen, '_create_cartridges') as mock_ct:
             gen.create_elements()
 
-        mock_ct.assert_called_once_with([{'testina_id': 't1'}])
+        mock_ct.assert_called_once_with([{'cartridge_id': 't1'}])
 
-    def test_create_elements_without_testine_key(self, gen):
-        """create_elements senza chiave 'testine' non crea testine."""
+    def test_create_elements_without_cartridges_key(self, gen):
+        """create_elements senza chiave 'cartridges' non crea cartridges."""
         gen.data = {'streams': []}
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine') as mock_ct:
+             patch.object(gen, '_create_cartridges') as mock_ct:
             gen.create_elements()
 
         mock_ct.assert_not_called()
 
-    def test_create_elements_with_empty_testine(self, gen):
-        """create_elements con testine=[] non chiama _create_testine."""
-        gen.data = {'streams': [], 'testine': []}
+    def test_create_elements_with_empty_cartridges(self, gen):
+        """create_elements con cartridges=[] non chiama _create_cartridges."""
+        gen.data = {'streams': [], 'cartridges': []}
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine') as mock_ct:
+             patch.object(gen, '_create_cartridges') as mock_ct:
             gen.create_elements()
 
         mock_ct.assert_not_called()
 
-    def test_create_elements_returns_streams_and_testine(self, gen):
+    def test_create_elements_returns_streams_and_cartridges(self, gen):
         """create_elements ritorna le liste corrette."""
-        gen.data = {'streams': [], 'testine': []}
+        gen.data = {'streams': [], 'cartridges': []}
         gen.streams = ['mock_stream']
-        gen.testine = ['mock_testina']
+        gen.cartridges = ['mock_cartridge']
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine'):
-            streams, testine = gen.create_elements()
+             patch.object(gen, '_create_cartridges'):
+            streams, cartridges = gen.create_elements()
 
         assert streams == ['mock_stream']
-        assert testine == ['mock_testina']
+        assert cartridges == ['mock_cartridge']
 
     def test_create_elements_missing_streams_key(self, gen):
         """create_elements con dict senza chiave 'streams' usa default vuoto."""
@@ -656,13 +656,13 @@ class TestCreateElements:
 
         mock_filter.assert_called_once_with([])
 
-    def test_create_elements_with_none_testine(self, gen):
-        """create_elements con testine=None non chiama _create_testine."""
-        gen.data = {'streams': [], 'testine': None}
+    def test_create_elements_with_none_cartridges(self, gen):
+        """create_elements con cartridges=None non chiama _create_cartridges."""
+        gen.data = {'streams': [], 'cartridges': None}
 
         with patch.object(gen, '_filter_solo_mute', return_value=[]), \
              patch.object(gen, '_create_streams'), \
-             patch.object(gen, '_create_testine') as mock_ct:
+             patch.object(gen, '_create_cartridges') as mock_ct:
             gen.create_elements()
 
         mock_ct.assert_not_called()
@@ -787,79 +787,79 @@ class TestCreateStreams:
 
 
 # =============================================================================
-# 7. TEST _create_testine()
+# 7. TEST _create_cartridges()
 # =============================================================================
 
-class TestCreateTestine:
-    """Test per _create_testine() - creazione testine tape recorder."""
+class TestCreatecartridges:
+    """Test per _create_cartridges() - creazione cartridges tape recorder."""
 
     def test_creates_objects(self, gen):
-        """_create_testine crea oggetti Testina."""
-        testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
-        mock_testina = make_mock_testina_for_generator()
+        """_create_cartridges crea oggetti Cartridge."""
+        cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
+        mock_cartridge = make_mock_cartridge_for_generator()
 
-        with patch('generator.Testina', return_value=mock_testina) as MockTestina:
-            gen._create_testine(testina_data)
+        with patch('generator.Cartridge', return_value=mock_cartridge) as MockCartridge:
+            gen._create_cartridges(cartridge_data)
 
-        MockTestina.assert_called_once_with(testina_data[0])
-        assert len(gen.testine) == 1
+        MockCartridge.assert_called_once_with(cartridge_data[0])
+        assert len(gen.cartridges) == 1
 
     def test_registers_sample(self, gen):
-        """_create_testine registra il sample_path nel FtableManager."""
-        mock_testina = make_mock_testina_for_generator(sample_path='my_tape.wav')
-        testina_data = [{'testina_id': 't1', 'sample': 'my_tape.wav'}]
+        """_create_cartridges registra il sample_path nel FtableManager."""
+        mock_cartridge = make_mock_cartridge_for_generator(sample_path='my_tape.wav')
+        cartridge_data = [{'cartridge_id': 't1', 'sample': 'my_tape.wav'}]
 
-        with patch('generator.Testina', return_value=mock_testina):
-            gen._create_testine(testina_data)
+        with patch('generator.Cartridge', return_value=mock_cartridge):
+            gen._create_cartridges(cartridge_data)
 
         gen.ftable_manager.register_sample.assert_called_once_with('my_tape.wav')
 
     def test_assigns_sample_table_num(self, gen):
-        """_create_testine assegna sample_table_num."""
-        mock_testina = make_mock_testina_for_generator()
+        """_create_cartridges assegna sample_table_num."""
+        mock_cartridge = make_mock_cartridge_for_generator()
         gen.ftable_manager.register_sample = Mock(return_value=99)
-        testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
+        cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
 
-        with patch('generator.Testina', return_value=mock_testina):
-            gen._create_testine(testina_data)
+        with patch('generator.Cartridge', return_value=mock_cartridge):
+            gen._create_cartridges(cartridge_data)
 
-        assert mock_testina.sample_table_num == 99
+        assert mock_cartridge.sample_table_num == 99
 
     def test_creates_multiple(self, gen):
-        """_create_testine crea piu' testine."""
-        testine_created = []
+        """_create_cartridges crea piu' cartridges."""
+        cartridges_created = []
 
         def make_t(data):
-            t = make_mock_testina_for_generator(testina_id=data['testina_id'])
-            testine_created.append(t)
+            t = make_mock_cartridge_for_generator(cartridge_id=data['cartridge_id'])
+            cartridges_created.append(t)
             return t
 
-        testina_data = [
-            {'testina_id': 't1', 'sample': 'a.wav'},
-            {'testina_id': 't2', 'sample': 'b.wav'},
+        cartridge_data = [
+            {'cartridge_id': 't1', 'sample': 'a.wav'},
+            {'cartridge_id': 't2', 'sample': 'b.wav'},
         ]
 
-        with patch('generator.Testina', side_effect=make_t):
-            gen._create_testine(testina_data)
+        with patch('generator.Cartridge', side_effect=make_t):
+            gen._create_cartridges(cartridge_data)
 
-        assert len(gen.testine) == 2
+        assert len(gen.cartridges) == 2
 
     def test_empty_list(self, gen):
-        """_create_testine con lista vuota non crea nulla."""
-        gen._create_testine([])
-        assert gen.testine == []
+        """_create_cartridges con lista vuota non crea nulla."""
+        gen._create_cartridges([])
+        assert gen.cartridges == []
 
     def test_appends_to_existing(self, gen):
-        """_create_testine appende, non sovrascrive."""
-        gen.testine = ['existing']
-        mock_testina = make_mock_testina_for_generator()
-        testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
+        """_create_cartridges appende, non sovrascrive."""
+        gen.cartridges = ['existing']
+        mock_cartridge = make_mock_cartridge_for_generator()
+        cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
 
-        with patch('generator.Testina', return_value=mock_testina):
-            gen._create_testine(testina_data)
+        with patch('generator.Cartridge', return_value=mock_cartridge):
+            gen._create_cartridges(cartridge_data)
 
-        assert len(gen.testine) == 2
-        assert gen.testine[0] == 'existing'
+        assert len(gen.cartridges) == 2
+        assert gen.cartridges[0] == 'existing'
 
 
 # =============================================================================
@@ -975,21 +975,21 @@ class TestGenerateScoreFile:
     def test_delegates_to_writer(self, gen):
         """generate_score_file delega a score_writer.write_score."""
         gen.streams = ['s1', 's2']
-        gen.testine = ['t1']
+        gen.cartridges = ['t1']
 
         gen.generate_score_file('output.sco')
 
         gen.score_writer.write_score.assert_called_once_with(
             filepath='output.sco',
             streams=['s1', 's2'],
-            testine=['t1'],
+            cartridges=['t1'],
             yaml_source='test_config.yml'
         )
 
     def test_default_path(self, gen):
         """generate_score_file usa 'output.sco' come default."""
         gen.streams = []
-        gen.testine = []
+        gen.cartridges = []
 
         gen.generate_score_file()
 
@@ -999,7 +999,7 @@ class TestGenerateScoreFile:
     def test_custom_path(self, gen):
         """generate_score_file accetta path custom."""
         gen.streams = []
-        gen.testine = []
+        gen.cartridges = []
 
         gen.generate_score_file('/tmp/my_score.sco')
 
@@ -1009,23 +1009,23 @@ class TestGenerateScoreFile:
     def test_passes_yaml_path(self, gen):
         """generate_score_file passa yaml_path come yaml_source."""
         gen.streams = []
-        gen.testine = []
+        gen.cartridges = []
 
         gen.generate_score_file()
 
         call_kwargs = gen.score_writer.write_score.call_args
         assert call_kwargs.kwargs['yaml_source'] == 'test_config.yml'
 
-    def test_passes_current_streams_and_testine(self, gen):
+    def test_passes_current_streams_and_cartridges(self, gen):
         """generate_score_file passa le liste correnti."""
         gen.streams = ['stream_a', 'stream_b']
-        gen.testine = ['testina_x']
+        gen.cartridges = ['cartridge_x']
 
         gen.generate_score_file()
 
         call_kwargs = gen.score_writer.write_score.call_args
         assert call_kwargs.kwargs['streams'] == ['stream_a', 'stream_b']
-        assert call_kwargs.kwargs['testine'] == ['testina_x']
+        assert call_kwargs.kwargs['cartridges'] == ['cartridge_x']
 
 
 # =============================================================================
@@ -1041,28 +1041,28 @@ class TestIntegration:
             'streams': [
                 {'stream_id': 's1', 'sample': 'a.wav', 'grain': {'envelope': 'hanning'}}
             ],
-            'testine': [
-                {'testina_id': 't1', 'sample': 'tape.wav'}
+            'cartridges': [
+                {'cartridge_id': 't1', 'sample': 'tape.wav'}
             ]
         })
 
         mock_stream = make_mock_stream_for_generator()
-        mock_testina = make_mock_testina_for_generator()
+        mock_cartridge = make_mock_cartridge_for_generator()
 
         with patch('builtins.open', mock_open(read_data=yaml_content)), \
              patch('generator.Stream', return_value=mock_stream), \
-             patch('generator.Testina', return_value=mock_testina), \
+             patch('generator.Cartridge', return_value=mock_cartridge), \
              patch('generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen.ftable_manager.register_sample = Mock(return_value=1)
             gen.ftable_manager.register_window = Mock(return_value=2)
 
             gen.load_yaml()
-            streams, testine = gen.create_elements()
+            streams, cartridges = gen.create_elements()
             gen.generate_score_file('out.sco')
 
         assert len(gen.streams) == 1
-        assert len(gen.testine) == 1
+        assert len(gen.cartridges) == 1
         gen.score_writer.write_score.assert_called_once()
 
     def test_workflow_solo_mode(self, gen):
@@ -1239,7 +1239,7 @@ class TestParametrized:
     def test_generate_score_various_paths(self, gen, output_path):
         """generate_score_file con vari percorsi output."""
         gen.streams = []
-        gen.testine = []
+        gen.cartridges = []
 
         gen.generate_score_file(output_path)
 
