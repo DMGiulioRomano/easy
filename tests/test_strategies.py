@@ -734,37 +734,25 @@ class TestDirectDensityStrategyName:
 class TestRegistryContent:
     """Test contenuto dei dizionari PITCH_STRATEGIES e DENSITY_STRATEGIES."""
 
-    def test_pitch_strategies_contains_semitones(self):
-        """PITCH_STRATEGIES contiene 'pitch_semitones'."""
-        assert 'pitch_semitones' in PITCH_STRATEGIES
+    @pytest.mark.parametrize("key,registry", [
+        ('pitch_semitones', PITCH_STRATEGIES),
+        ('pitch_ratio',     PITCH_STRATEGIES),
+        ('fill_factor',     DENSITY_STRATEGIES),
+        ('density',         DENSITY_STRATEGIES),
+    ])
+    def test_registry_contains_key(self, key, registry):
+        """Ogni chiave attesa e' presente nel registry corretto."""
+        assert key in registry
 
-    def test_pitch_strategies_contains_ratio(self):
-        """PITCH_STRATEGIES contiene 'pitch_ratio'."""
-        assert 'pitch_ratio' in PITCH_STRATEGIES
-
-    def test_pitch_semitones_maps_to_correct_class(self):
-        """pitch_semitones -> SemitonesStrategy."""
-        assert PITCH_STRATEGIES['pitch_semitones'] is SemitonesStrategy
-
-    def test_pitch_ratio_maps_to_correct_class(self):
-        """pitch_ratio -> RatioStrategy."""
-        assert PITCH_STRATEGIES['pitch_ratio'] is RatioStrategy
-
-    def test_density_strategies_contains_fill_factor(self):
-        """DENSITY_STRATEGIES contiene 'fill_factor'."""
-        assert 'fill_factor' in DENSITY_STRATEGIES
-
-    def test_density_strategies_contains_density(self):
-        """DENSITY_STRATEGIES contiene 'density'."""
-        assert 'density' in DENSITY_STRATEGIES
-
-    def test_fill_factor_maps_to_correct_class(self):
-        """fill_factor -> FillFactorStrategy."""
-        assert DENSITY_STRATEGIES['fill_factor'] is FillFactorStrategy
-
-    def test_density_maps_to_correct_class(self):
-        """density -> DirectDensityStrategy."""
-        assert DENSITY_STRATEGIES['density'] is DirectDensityStrategy
+    @pytest.mark.parametrize("key,registry,expected_class", [
+        ('pitch_semitones', PITCH_STRATEGIES,    SemitonesStrategy),
+        ('pitch_ratio',     PITCH_STRATEGIES,    RatioStrategy),
+        ('fill_factor',     DENSITY_STRATEGIES,  FillFactorStrategy),
+        ('density',         DENSITY_STRATEGIES,  DirectDensityStrategy),
+    ])
+    def test_registry_maps_to_correct_class(self, key, registry, expected_class):
+        """Ogni chiave mappa alla classe di strategia corretta."""
+        assert registry[key] is expected_class
 
     def test_pitch_strategies_count(self):
         """PITCH_STRATEGIES ha esattamente 2 strategie."""

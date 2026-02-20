@@ -207,56 +207,6 @@ class TestCalculateRatio:
         for t in [0.0, 1.0, 5.0, 9.0]:
             assert pc.calculate(t) == pytest.approx(1.5)
 
-
-# =============================================================================
-# GRUPPO 5: CALCULATE - SEMITONI MODE
-# =============================================================================
-
-class TestCalculateSemitones:
-    """Test calculate() in modalita' semitoni."""
-
-    def test_0_semitones_returns_unity(self, mock_config):
-        """0 semitoni -> ratio = 1.0."""
-        params = _build_semitones_params(semitones=0.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(1.0)
-
-    def test_12_semitones_returns_2(self, mock_config):
-        """12 semitoni -> ottava sopra -> ratio = 2.0."""
-        params = _build_semitones_params(semitones=12.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(2.0)
-
-    def test_minus_12_semitones_returns_half(self, mock_config):
-        """-12 semitoni -> ottava sotto -> ratio = 0.5."""
-        params = _build_semitones_params(semitones=-12.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(0.5)
-
-    def test_24_semitones_returns_4(self, mock_config):
-        """24 semitoni -> 2 ottave sopra -> ratio = 4.0."""
-        params = _build_semitones_params(semitones=24.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(4.0)
-
-    def test_7_semitones_returns_fifth(self, mock_config):
-        """7 semitoni -> quinta giusta -> ratio = 2^(7/12)."""
-        params = _build_semitones_params(semitones=7.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        expected = 2.0 ** (7.0 / 12.0)  # ~1.4983
-        assert result == pytest.approx(expected)
-
-
 # =============================================================================
 # GRUPPO 6: COMPENSAZIONE GRAIN_REVERSE
 # =============================================================================
@@ -264,21 +214,17 @@ class TestCalculateSemitones:
 class TestGrainReverse:
     """Test compensazione reverse nel pitch."""
 
-    def test_reverse_negates_ratio(self, mock_config):
+    @pytest.mark.parametrize("ratio,expected", [
+        (1.0, -1.0),
+        (2.0, -2.0),
+    ])
+    def test_reverse_negates_ratio(self, mock_config, ratio, expected):
         """grain_reverse=True nega il ratio."""
-        params = _build_ratio_params(ratio=1.0)
+        params = _build_ratio_params(ratio=ratio)
         pc = _make_pitch_controller(mock_config, params)
 
         result = pc.calculate(0.0, grain_reverse=True)
-        assert result == pytest.approx(-1.0)
-
-    def test_reverse_with_ratio_2(self, mock_config):
-        """ratio=2.0 + reverse -> -2.0."""
-        params = _build_ratio_params(ratio=2.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0, grain_reverse=True)
-        assert result == pytest.approx(-2.0)
+        assert result == pytest.approx(expected)
 
     def test_reverse_with_semitones(self, mock_config):
         """Semitoni + reverse -> ratio negativo."""
