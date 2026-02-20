@@ -319,3 +319,34 @@ class TestScaleRawValuesY:
         
         assert raw_result[0][1] == env_result.breakpoints[0][1]
         assert raw_result[1][1] == env_result.breakpoints[1][1]
+
+    def test_scale_list_y_passthrough_unknown_item(self):
+        """
+        Il ramo else di _scale_list_y passa invariato un item
+        che non e' ne' formato compatto ne' [t, v] a due elementi.
+        Es: un intero o una stringa dentro una lista mista.
+        """
+        raw_data = [
+            [0.0, 1.0],   # standard [t, v] -> scalato
+            "metadata",   # stringa -> passthrough, non scalata
+        ]
+        result = Envelope._scale_raw_values_y(raw_data, 10.0)
+
+        assert result[0][1] == 10.0       # scalato
+        assert result[1] == "metadata"    # invariato
+
+    def test_scale_time_recursive_passthrough_unknown_item(self):
+        """
+        Ramo else di _scale_time_recursive: elemento non riconoscibile
+        viene passato invariato (ne' compatto, ne' [t, v] a due elementi).
+        """
+        from envelope import _scale_time_recursive
+
+        raw_points = [
+            [0.5, 10],      # standard [t, v] -> scalato
+            "marker",       # stringa -> passthrough invariato
+        ]
+        result = _scale_time_recursive(raw_points, factor=10.0)
+
+        assert result[0] == [5.0, 10]    # tempo scalato
+        assert result[1] == "marker"     # invariato

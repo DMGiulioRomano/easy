@@ -3,9 +3,6 @@ test_envelope.py
 
 Test suite completa per il modulo envelope.py (classe Envelope come facade).
 
-NON copre: create_scaled_envelope, scale_envelope_values, _scale_time_recursive
-(gia' coperti da test_envelope_scaling.py)
-
 Coverage:
 1.  __init__ con breakpoints standard (lista)
 2.  __init__ con formato dict
@@ -31,6 +28,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, '/home/claude/src')
 
+from envelope_builder import EnvelopeBuilder
 from envelope import Envelope
 from envelope_segment import NormalSegment
 from envelope_interpolation import (
@@ -962,3 +960,13 @@ class TestEnvelopeMissingLines:
         assert len(bps) == 4
         assert bps[0] == [0, 0]
         assert bps[3] == [1.0, 10]
+
+    def test_empty_segments_after_parse_raises(self):
+        """
+        Riga 79: raise ValueError se self.segments e' vuoto dopo _parse_segments.
+        """
+        from unittest.mock import patch
+
+        with patch.object(Envelope, '_parse_segments', return_value=[]):
+            with pytest.raises(ValueError, match="almeno un breakpoint"):
+                Envelope([[0, 0], [1, 1]])

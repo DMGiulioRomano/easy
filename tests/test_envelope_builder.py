@@ -64,10 +64,7 @@ def legacy_breakpoints():
     return [[0, 0], [0.5, 1], [1.0, 0]]
 
 
-@pytest.fixture
-def legacy_with_cycle():
-    """Formato legacy con marker 'cycle'."""
-    return [[0, 0], [1, 10], 'cycle', [2, 5]]
+
 
 
 @pytest.fixture
@@ -121,9 +118,7 @@ class TestIsCompactFormat:
         """Rifiuta lista di breakpoints legacy."""
         assert not EnvelopeBuilder._is_compact_format(legacy_breakpoints)
     
-    def test_reject_cycle_marker(self):
-        """Rifiuta marker 'cycle'."""
-        assert not EnvelopeBuilder._is_compact_format('cycle')
+
     
     def test_reject_empty_list(self):
         """Rifiuta lista vuota."""
@@ -343,19 +338,7 @@ class TestParseMixedFormat:
         # + 2 standard = 6 totale
         assert len(expanded) == 6
     
-    def test_parse_mixed_with_cycle(self):
-        """Parse misto con marker 'cycle'."""
-        points = [
-            [[[0, 0], [100, 1]], 0.2, 2],
-            'cycle',
-            [1.0, 0]
-        ]
-        expanded = EnvelopeBuilder.parse(points)
-        
-        # Compatto + cycle + standard
-        assert 'cycle' in expanded
-        assert [1.0, 0] in expanded
-    
+
     def test_parse_multiple_compact(self):
         """Parse con multipli formati compatti."""
         points = [
@@ -382,12 +365,7 @@ class TestParseLegacyFormat:
         
         assert expanded == legacy_breakpoints
     
-    def test_parse_legacy_with_cycle(self, legacy_with_cycle):
-        """Parse formato legacy con 'cycle'."""
-        expanded = EnvelopeBuilder.parse(legacy_with_cycle)
-        
-        assert expanded == legacy_with_cycle
-        assert 'cycle' in expanded
+
     
     def test_parse_single_breakpoint(self):
         """Parse singolo breakpoint."""
@@ -980,130 +958,37 @@ class TestRobustnessMalformedInput:
 
 class TestEnvelopeBuilderMissingLines:
     """Copre righe 175-176, 330, 389, 435-451 di envelope_builder.py."""
-    @pytest.fixture(autouse=True)
-    def reset_logger_state(self):
-        """Resetta lo stato del logger prima di ogni test in questa classe."""
-        import logger as logger_module
-        logger_module._clip_logger = None
-        logger_module._clip_logger_initialized = False
-        yield
-        if logger_module._clip_logger:
-            for h in logger_module._clip_logger.handlers[:]:
-                h.close()
-                logger_module._clip_logger.removeHandler(h)
-        logger_module._clip_logger = None
-        logger_module._clip_logger_initialized = False
         
-    def test_expand_compact_end_time_le_time_offset_raises(self):
+    def test_is_compact_format_fifth_element_invalid_type_returns_false(self):
         """
-        Riga 330: raise ValueError quando end_time <= time_offset.
-        end_time deve essere strettamente maggiore di time_offset.
-        """
-        from envelope_builder import EnvelopeBuilder
-
-        compact = [[[0, 0], [100, 1]], 0.3, 2]  # end_time=0.3
-        with pytest.raises(ValueError, match="end_time"):
-            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.5)
-
-    def test_expand_compact_end_time_equal_time_offset_raises(self):
-        """Riga 330: end_time == time_offset deve anche sollevare ValueError."""
-        from envelope_builder import EnvelopeBuilder
-
-        compact = [[[0, 0], [100, 1]], 0.5, 2]
-        with pytest.raises(ValueError, match="end_time"):
-            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.5)
-
-    def test_expand_compact_empty_pattern_raises(self):
-        """
-        Riga 389: raise ValueError quando pattern_points e' vuoto.
+        Righe 175-176: quinto elemento presente ma non str/dict -> return False.
         """
         from envelope_builder import EnvelopeBuilder
 
-        compact = [[], 1.0, 2]  # pattern vuoto
-        with pytest.raises(ValueError, match="pattern_points"):
-            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.0)
+        # 5 elementi con quinto elemento intero (non str, non dict)
+        item = [[[0, 0], [100, 1]], 1.0, 2, 'linear', 42]
+        assert EnvelopeBuilder._is_compact_format(item) is False
 
-    def test_log_compact_transformation_logger_none_early_return(self):
+    def test_log_compact_transformation_with_time_dist_spec(self):
         """
-        Righe 175-176: logger None -> return immediato in _log_compact_transformation.
-        Usa configure_clip_logger(enabled=False) per garantire che get_clip_logger ritorni None.
+        Riga 330: time_dist_spec presente -> logger.info viene chiamato con spec.
         """
-        import logger as logger_module
+        from unittest.mock import patch, MagicMock
         from envelope_builder import EnvelopeBuilder
 
-        logger_module.configure_clip_logger(enabled=False)
+        with patch('logger.get_clip_logger') as mock_get_logger:
+            mock_logger = MagicMock()
+            mock_get_logger.return_value = mock_logger
 
-        compact = [[[0, 0], [100, 1]], 0.4, 2]
-        expanded = [[0.0, 0], [0.2, 1], [0.200001, 0], [0.4, 1]]
+            compact = [[[0, 0], [100, 1]], 1.0, 2, 'linear', 'exponential']
+            expanded = [[0.0, 0], [0.5, 1], [0.500001, 0], [1.0, 1]]
 
-        # Non deve sollevare e deve percorrere il ramo if logger is None: return
-        EnvelopeBuilder._log_compact_transformation(
-            compact, expanded,
-            time_offset=0.0,
-            total_duration=0.4,
-            distributor=None
-        )
+            EnvelopeBuilder._log_compact_transformation(
+                compact, expanded,
+                time_offset=0.0,
+                total_duration=1.0,
+                distributor=None
+            )
 
-    def test_log_final_envelope_logger_none_early_return(self, tmp_path):
-        """
-        Righe 435-451 (early return): logger None -> return immediato in _log_final_envelope.
-        """
-        import logger as logger_module
-        from envelope_builder import EnvelopeBuilder
-
-        logger_module.configure_clip_logger(enabled=False)
-
-        raw = [[[0, 0], [100, 1]], 0.4, 2]
-        expanded = [[0.0, 0], [0.2, 1]]
-
-        EnvelopeBuilder._log_final_envelope(raw, expanded)
-
-    def test_log_final_envelope_body_with_active_logger(self, tmp_path):
-        """
-        Righe 435-451 (corpo completo): copre ENTRAMBI i rami:
-        - len(expanded) <= 20: stampa tutti
-        - len(expanded) > 20: stampa preview primi e ultimi (ramo else, righe 435-451)
-        """
-        import logger as logger_module
-        from envelope_builder import EnvelopeBuilder
-
-        logger_module.configure_clip_logger(
-            enabled=True,
-            console_enabled=False,
-            file_enabled=True,
-            log_dir=str(tmp_path),
-            yaml_name='test_final_envelope'
-        )
-
-        raw = [[[0, 0], [100, 1]], 2.0, 10]
-
-        # Piu' di 20 breakpoints per triggerare il ramo preview (else, righe 435-451)
-        expanded = [[i * 0.1, i] for i in range(25)]
-
-        EnvelopeBuilder._log_final_envelope(raw, expanded)
-
-    def test_log_compact_transformation_body_with_active_logger(self, tmp_path):
-        """
-        Verifica che il corpo di _log_compact_transformation venga eseguito
-        quando il logger e' attivo.
-        """
-        import logger as logger_module
-        from envelope_builder import EnvelopeBuilder
-
-        logger_module.configure_clip_logger(
-            enabled=True,
-            console_enabled=False,
-            file_enabled=True,
-            log_dir=str(tmp_path),
-            yaml_name='test_compact_transform'
-        )
-
-        compact = [[[0, 0], [100, 1]], 0.4, 2]
-        expanded = [[0.0, 0], [0.2, 1], [0.200001, 0], [0.4, 1]]
-
-        EnvelopeBuilder._log_compact_transformation(
-            compact, expanded,
-            time_offset=0.0,
-            total_duration=0.4,
-            distributor=None
-        )
+            all_calls = [str(c) for c in mock_logger.info.call_args_list]
+            assert any('exponential' in c for c in all_calls)

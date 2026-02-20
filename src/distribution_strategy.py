@@ -19,7 +19,7 @@ class DistributionStrategy(ABC):
     """
     
     @abstractmethod
-    def sample(self, center: float, spread: float) -> float:
+    def sample(self, center: float, spread: float) -> float:        # pragma: no cover
         """
         Genera un campione dalla distribuzione.
         
@@ -34,12 +34,12 @@ class DistributionStrategy(ABC):
     
     @property
     @abstractmethod
-    def name(self) -> str:
+    def name(self) -> str:        # pragma: no cover
         """Nome descrittivo della distribuzione."""
         pass
     
     @abstractmethod
-    def get_bounds(self, center: float, spread: float) -> Tuple[float, float]:
+    def get_bounds(self, center: float, spread: float) -> Tuple[float, float]:         # pragma: no cover
         """
         Restituisce i bounds teorici della distribuzione.
         
@@ -48,7 +48,7 @@ class DistributionStrategy(ABC):
         Returns:
             (min_theoretical, max_theoretical)
         """
-        pass
+        pass 
 
 
 class UniformDistribution(DistributionStrategy):

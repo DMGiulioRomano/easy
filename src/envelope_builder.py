@@ -4,7 +4,6 @@ Builder per parsing formati Envelope (legacy + nuovo formato compatto).
 
 Design Pattern: Builder
 - Separa logica di parsing da Envelope
-- Gestisce formato legacy: [[t, v], ..., 'cycle']
 - Gestisce nuovo formato: [[[x%, y], ...], end_time, n_reps, interp_type?]
 
 MODIFICHE PRINCIPALI:
@@ -21,7 +20,6 @@ class EnvelopeBuilder:
     Builder per creare liste di breakpoints da formati multipli.
     
     Supporta:
-    - Legacy format: [[0, 0], [0.1, 1], 'cycle']
     - Compact format: [[[0, 0], [100, 1]], end_time, n_reps, interp?, time_dist?]
     - Mixed formats in single list
     
@@ -68,11 +66,10 @@ class EnvelopeBuilder:
                 - [[[x%, y], ...], end_time, n_reps, interp?] (formato compatto diretto)
                 - Lista con mix di:
                     * [time, value] (legacy)
-                    * 'cycle' marker
                     * [[[x%, y], ...], end_time, n_reps, interp?] (compact wrapped)
                 
         Returns:
-            Lista espansa con solo [time, value] e 'cycle'
+            Lista espansa con solo [time, value]
             
         Examples:
             # Formato compatto DIRETTO (caso più comune)
@@ -111,12 +108,13 @@ class EnvelopeBuilder:
                 if compact_expanded:
                     current_time = compact_expanded[-1][0]
             else:
-                # Legacy: passa invariato ([t, v] o 'cycle')
+                if not (isinstance(item, list) and len(item) == 2):
+                    raise ValueError(
+                        f"Elemento non valido nel formato envelope: {item!r}. "
+                        "Atteso [time, value]."
+                    )
                 expanded.append(item)
-                
-                # Aggiorna tempo corrente se è un breakpoint [t, v]
-                if isinstance(item, list) and len(item) == 2:
-                    current_time = max(current_time, item[0])
+                current_time = max(current_time, item[0])
         
         # Log risultato finale
         cls._log_final_envelope(raw_points, expanded)

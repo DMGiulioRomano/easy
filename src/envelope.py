@@ -395,7 +395,7 @@ def _scale_time_recursive(points: List, factor: float) -> List:
             # Standard breakpoint: [t, v] -> [t * factor, v]
             scaled.append([item[0] * factor, item[1]])
         else:
-            # Altro (es. 'cycle', marker speciali)
+
             scaled.append(item)
     
     return scaled

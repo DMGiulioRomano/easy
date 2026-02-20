@@ -300,7 +300,6 @@ class TestEvaluate:
     def test_evaluate_hold_before_start(self):
         """Evaluate prima dell'inizio: hold primo valore."""
         env = Envelope([[0, 5], [1, 10]])
-        
         assert env.evaluate(-1) == pytest.approx(5.0)
         assert env.evaluate(-10) == pytest.approx(5.0)
     
