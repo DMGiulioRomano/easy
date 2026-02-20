@@ -1,5 +1,3 @@
-from generator import Generator
-from score_visualizer import ScoreVisualizer
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -12,8 +10,9 @@ MAX_GRAINS_PER_SECOND = 4000  # Limite assoluto di density
 MIN_INTER_ONSET = 0.0001      # Minimo 0.1ms tra grani
 MIN_GRAIN_DURATION = 0.001    # Minimo 1ms di durata grano
 MAX_GRAIN_DURATION = 10.0     # Massimo 10s di durata grano
-from logger import configure_clip_logger, get_clip_log_path
-from generator import Generator
+from shared.logger import configure_clip_logger, get_clip_log_path
+from engine.generator import Generator
+from rendering.score_visualizer import ScoreVisualizer
 
 # Configura PRIMA di creare stream
 configure_clip_logger(

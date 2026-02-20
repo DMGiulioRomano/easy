@@ -9,7 +9,10 @@ Contenuto:
 
 import pytest
 from unittest.mock import Mock
-from stream_config import StreamConfig, StreamContext
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+from core.stream_config import StreamConfig, StreamContext
 
 
 @pytest.fixture
