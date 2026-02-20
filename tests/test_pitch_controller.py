@@ -140,19 +140,16 @@ class TestInitSemitones:
 class TestFindSelectedParam:
     """Test selezione dal gruppo esclusivo pitch_mode."""
 
-    def test_selects_ratio_when_semitones_none(self, mock_config):
-        """Seleziona pitch_ratio quando semitones e' None."""
-        params = _build_ratio_params()
+    @pytest.mark.parametrize("builder,expected_param", [
+        (_build_ratio_params,     'pitch_ratio'),
+        (_build_semitones_params, 'pitch_semitones'),
+    ])
+    def test_selects_correct_param(self, mock_config, builder, expected_param):
+        """Seleziona il parametro attivo del gruppo esclusivo pitch_mode."""
+        params = builder()
         pc = _make_pitch_controller(mock_config, params)
 
-        assert pc._find_selected_param() == 'pitch_ratio'
-
-    def test_selects_semitones_when_ratio_none(self, mock_config):
-        """Seleziona pitch_semitones quando ratio e' None."""
-        params = _build_semitones_params()
-        pc = _make_pitch_controller(mock_config, params)
-
-        assert pc._find_selected_param() == 'pitch_semitones'
+        assert pc._find_selected_param() == expected_param
 
     def test_raises_when_both_none(self, mock_config):
         """Errore se entrambi sono None."""

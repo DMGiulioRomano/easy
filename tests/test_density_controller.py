@@ -145,19 +145,16 @@ class TestInitDirectDensity:
 class TestFindSelectedParam:
     """Test _find_selected_param e selezione gruppo esclusivo."""
 
-    def test_selects_fill_factor_when_present(self, mock_config):
-        """Seleziona fill_factor quando density e' None."""
-        params = _build_fill_factor_params()
+    @pytest.mark.parametrize("builder,expected_param", [
+        (_build_fill_factor_params,    'fill_factor'),
+        (_build_direct_density_params, 'density'),
+    ])
+    def test_selects_correct_param(self, mock_config, builder, expected_param):
+        """Seleziona il parametro attivo del gruppo esclusivo density_mode."""
+        params = builder()
         dc = _make_density_controller(mock_config, params)
 
-        assert dc._find_selected_param() == 'fill_factor'
-
-    def test_selects_density_when_present(self, mock_config):
-        """Seleziona density quando fill_factor e' None."""
-        params = _build_direct_density_params()
-        dc = _make_density_controller(mock_config, params)
-
-        assert dc._find_selected_param() == 'density'
+        assert dc._find_selected_param() == expected_param
 
     def test_raises_when_both_none(self, mock_config):
         """Errore se entrambi sono None (nessun candidato)."""
