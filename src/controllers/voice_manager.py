@@ -8,7 +8,7 @@ Responsabilità:
 """
 
 from typing import Dict, Optional, Union
-from envelope.envelope import Envelope
+from envelopes.envelope import Envelope
 from parameters.parameter_schema import VOICE_PARAMETER_SCHEMA
 from parameters.parameter_orchestrator import ParameterOrchestrator
 from core.stream_config import StreamConfig

@@ -7,7 +7,7 @@ Ogni strategia incapsula completamente il calcolo di un valore.
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 from parameters.parameter import Parameter
-from envelope import Envelope
+from envelopes.envelope import Envelope
 from parameters.parameter_definitions import get_parameter_definition
 # =============================================================================
 # STRATEGIE PITCH

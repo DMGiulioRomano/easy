@@ -6,7 +6,7 @@ Isola completamente la logica di dephase da Parameter e ParameterFactory.
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 import random
-from envelope.envelope import Envelope
+from envelopes.envelope import Envelope
 
 class ProbabilityGate(ABC):
     """

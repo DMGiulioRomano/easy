@@ -7,7 +7,7 @@ from typing import List
 from core.stream import Stream
 from core.cartridge import Cartridge
 from rendering.ftable_manager import FtableManager
-from envelope.envelope import Envelope
+from envelopes.envelope import Envelope
 from parameters.parameter import Parameter
 
 

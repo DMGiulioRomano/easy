@@ -10,11 +10,7 @@ Copre:
 - integrazione con gli schema reali del progetto (pitch_mode, density_mode, loop_bounds)
 """
 
-import sys
-import os
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from exclusive_selector import ExclusiveGroupSelector
 from parameter_schema import (

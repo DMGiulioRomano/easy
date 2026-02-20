@@ -9,7 +9,7 @@ Design Pattern: Factory Method
 """
 
 from typing import Union
-from envelope_interpolation import (
+from envelopes.envelope_interpolation import (
     InterpolationStrategy,
     LinearInterpolation,
     StepInterpolation,

@@ -5,7 +5,7 @@ Permette di aggiungere nuove strategie SENZA modificare controller esistenti.
 """
 
 from typing import Dict, Type
-from strategies.strategies import *
+from src.strategies.strategie import *
 
 # =============================================================================
 # REGISTRI

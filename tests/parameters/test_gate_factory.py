@@ -22,19 +22,13 @@ Coverage:
 
 import pytest
 import logging
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 from enum import Enum
-
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-sys.path.insert(0, '/home/claude/src')
-
 from gate_factory import GateFactory, DephaseMode
 from probability_gate import (
     ProbabilityGate, NeverGate, AlwaysGate, RandomGate, EnvelopeGate
 )
-from envelope import Envelope, create_scaled_envelope
+from envelope import Envelope
 
 
 # =============================================================================

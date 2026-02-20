@@ -5,10 +5,10 @@
 
 clean:
 	@echo "[CLEAN] Removing generated files..."
-	rm -rf $(GENDIR)/* $(SFDIR)/* $(LOGDIR)/*
+	rm -rf $(GENDIR)/* $(SFDIR)/* $(LOGDIR)/* 
 	clear
 
-clean-all: clean venv-clean
+clean-all: clean venv-clean clean-test-cache
 	@echo "[CLEAN] Full cleanup done."
 
 clean-generated:
@@ -19,3 +19,6 @@ clean-output:
 
 clean-logs:
 	rm -rf $(LOGDIR)/*
+
+clean-test-cache:
+	find . -type d -name "__pycache__" -exec rm -rf {} +

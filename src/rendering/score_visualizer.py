@@ -813,7 +813,7 @@ class ScoreVisualizer:
         Returns:
             dict: {nome_parametro: Envelope}
         """
-        from envelope.envelope import Envelope
+        from envelopes.envelope import Envelope
         from parameters.parameter import Parameter
         from parameters.parameter_schema import (
             STREAM_PARAMETER_SCHEMA, 

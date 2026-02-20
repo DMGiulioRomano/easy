@@ -13,7 +13,7 @@ Responsabilità:
 
 from typing import Union, Optional, List, Any
 from parameters.parameter import Parameter, ParamInput
-from envelope.envelope import Envelope, create_scaled_envelope
+from envelopes.envelope import Envelope, create_scaled_envelope
 from parameters.parameter_definitions import get_parameter_definition
 
 class GranularParser:

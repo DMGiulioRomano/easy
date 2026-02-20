@@ -156,7 +156,7 @@ with patch.dict(sys.modules, {
     'envelope': mock_envelope_mod,
     'parameter_definitions': mock_paramdef_mod,
 }):
-    from strategies import (
+    from strategie import (
         PitchStrategy, SemitonesStrategy, RatioStrategy,
         DensityStrategy, FillFactorStrategy, DirectDensityStrategy,
     )
@@ -1214,7 +1214,7 @@ class TestAbstractMethodBodies:
 
     def test_pitch_strategy_abstract_calculate_body(self):
         """Copre riga 22: corpo pass di PitchStrategy.calculate."""
-        from strategies import PitchStrategy
+        from strategie import PitchStrategy
 
         class _Concrete(PitchStrategy):
             def calculate(self, elapsed_time: float) -> float:
@@ -1232,7 +1232,7 @@ class TestAbstractMethodBodies:
 
     def test_pitch_strategy_abstract_name_body(self):
         """Copre riga 28: corpo pass di PitchStrategy.name."""
-        from strategies import PitchStrategy
+        from strategie import PitchStrategy
 
         class _Concrete(PitchStrategy):
             def calculate(self, elapsed_time: float) -> float:
@@ -1250,7 +1250,7 @@ class TestAbstractMethodBodies:
 
     def test_pitch_strategy_abstract_base_value_body(self):
         """Copre riga 34: corpo pass di PitchStrategy.base_value."""
-        from strategies import PitchStrategy
+        from strategie import PitchStrategy
 
         class _Concrete(PitchStrategy):
             def calculate(self, elapsed_time: float) -> float:
@@ -1268,7 +1268,7 @@ class TestAbstractMethodBodies:
 
     def test_density_strategy_abstract_calculate_density_body(self):
         """Copre riga 90: corpo pass di DensityStrategy.calculate_density."""
-        from strategies import DensityStrategy
+        from strategie import DensityStrategy
 
         class _Concrete(DensityStrategy):
             def calculate_density(self, elapsed_time: float, **context) -> float:
@@ -1283,7 +1283,7 @@ class TestAbstractMethodBodies:
 
     def test_density_strategy_abstract_name_body(self):
         """Copre riga 95: corpo pass di DensityStrategy.name."""
-        from strategies import DensityStrategy
+        from strategie import DensityStrategy
 
         class _Concrete(DensityStrategy):
             def calculate_density(self, elapsed_time: float, **context) -> float:

@@ -9,9 +9,9 @@ Supports:
 """
 
 from typing import Union, List, Dict, Any
-from envelope_factory import InterpolationStrategyFactory
-from envelope_segment import NormalSegment, Segment
-from envelope_interpolation import InterpolationStrategy
+from envelopes.envelope_factory import InterpolationStrategyFactory
+from envelopes.envelope_segment import NormalSegment, Segment
+from envelopes.envelope_interpolation import InterpolationStrategy
 import copy
 
 class Envelope:

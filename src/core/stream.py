@@ -16,7 +16,7 @@ import random
 from typing import List, Optional, Union
 
 from grain import Grain
-from envelope.envelope import Envelope
+from envelopes.envelope import Envelope
 from controllers.window_controller import WindowController
 from controllers.pointer_controller import PointerController
 from controllers.pitch_controller import PitchController

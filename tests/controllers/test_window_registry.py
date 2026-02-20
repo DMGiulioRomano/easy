@@ -22,63 +22,24 @@ Note sul registry reale (16 WINDOWS + 1 ALIAS = 17 all_names):
     family='asymmetric'(GEN16, 6 voci): expodec, expodec_strong, exporise,
                                          exporise_strong, rexpodec, rexporise
     ALIASES: 'triangle' -> 'bartlett'
-
-NOTA TECNICA - ISOLAMENTO DAL MOCKING:
-    test_ftable_manager.py usa autouse=True che patcha sys.modules['window_registry']
-    con un MockWindowRegistry. Per garantire che questi test usino sempre il modulo
-    reale, si usa importlib.util.spec_from_file_location per caricare il sorgente
-    direttamente dal path fisico, bypassando sys.modules. La fixture autouse
-    'real_registry' aggiorna sys.modules['window_registry'] prima di ogni test.
 """
 
 import pytest
 import sys
-import os
-import importlib
-import importlib.util
-
-# ---------------------------------------------------------------------------
-# PATH SETUP
-# ---------------------------------------------------------------------------
-_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-_SRC_DIR = os.path.normpath(os.path.join(_TEST_DIR, '..', 'src'))
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
-
-
-# ---------------------------------------------------------------------------
-# FORCE-LOAD DEL MODULO REALE
-# Carica window_registry.py direttamente dal file sorgente, bypassando
-# qualsiasi entry in sys.modules (inclusi mock attivi da altri test file).
-# ---------------------------------------------------------------------------
-
-def _load_real_window_registry():
-    src_path = os.path.join(_SRC_DIR, 'window_registry.py')
-    spec = importlib.util.spec_from_file_location('_real_window_registry', src_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_REAL_MODULE = _load_real_window_registry()
-_RealWindowSpec = _REAL_MODULE.WindowSpec
-_RealWindowRegistry = _REAL_MODULE.WindowRegistry
-
-# Alias usati dai test - puntano sempre al modulo reale
-WindowSpec = _RealWindowSpec
-WindowRegistry = _RealWindowRegistry
+from window_registry import WindowSpec, WindowRegistry
 
 
 # ---------------------------------------------------------------------------
 # FIXTURE AUTOUSE
-# Garantisce che sys.modules['window_registry'] punti al modulo reale
-# per ogni test, sovrascrivendo eventuali patch attive.
+# Ripristina il modulo reale in sys.modules prima di ogni test,
+# nel caso test_ftable_manager.py abbia lasciato un mock attivo.
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def real_registry(monkeypatch):
-    monkeypatch.setitem(sys.modules, 'window_registry', _REAL_MODULE)
-    yield _RealWindowRegistry
+    import window_registry as _real_module
+    monkeypatch.setitem(sys.modules, 'window_registry', _real_module)
+    yield WindowRegistry
 
 
 # ===========================================================================

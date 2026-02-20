@@ -6,7 +6,7 @@ Nessuna dipendenza da ParameterFactory o parser.
 from typing import Optional, Any, Union
 from shared.probability_gate import *
 from enum import Enum
-from envelope import Envelope, create_scaled_envelope
+from envelopes.envelope import Envelope, create_scaled_envelope
 
 class DephaseMode(Enum):
     """Stati semantici di dephase."""

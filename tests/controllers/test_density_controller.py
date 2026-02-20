@@ -21,9 +21,9 @@ Coverage:
 import pytest
 import random as stdlib_random
 from unittest.mock import Mock, patch, MagicMock
-from src.controllers.density_controller import DensityController
-from src.parameters.parameter import Parameter
-from src.parameters.parameter_definitions import get_parameter_definition
+from density_controller import DensityController
+from parameter import Parameter
+from parameter_definitions import get_parameter_definition
 
 # =============================================================================
 # FIXTURES
@@ -507,7 +507,7 @@ class TestEnvelopeIntegration:
 
     def test_fill_factor_envelope(self, mock_config):
         """fill_factor come Envelope produce density variabile."""
-        from src.envelope.envelope import Envelope
+        from envelope import Envelope
 
         env = Envelope([[0, 1.0], [10, 4.0]])
 
@@ -546,7 +546,7 @@ class TestEnvelopeIntegration:
 
     def test_distribution_envelope(self, mock_config):
         """distribution come Envelope varia nel tempo."""
-        from src.envelope.envelope import Envelope
+        from envelope import Envelope
 
         dist_env = Envelope([[0, 0.0], [10, 1.0]])
 
@@ -584,7 +584,7 @@ class TestEnvelopeIntegration:
 
     def test_density_envelope(self, mock_config):
         """density diretta come Envelope."""
-        from src.envelope.envelope import Envelope
+        from envelope import Envelope
 
         dens_env = Envelope([[0, 10.0], [10, 100.0]])
 

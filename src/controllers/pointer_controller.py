@@ -11,7 +11,7 @@ Ispirato al DMX-1000 di Barry Truax (1988)
 """
 
 from typing import Callable
-from envelope.envelope import Envelope
+from envelopes.envelope import Envelope
 from parameters.parameter_schema import POINTER_PARAMETER_SCHEMA
 from parameters.parameter_orchestrator import ParameterOrchestrator
 from core.stream_config import StreamConfig

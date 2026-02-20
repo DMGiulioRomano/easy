@@ -14,7 +14,7 @@ Each Segment:
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-from envelope_interpolation import InterpolationStrategy
+from envelopes.envelope_interpolation import InterpolationStrategy
 
 
 class Segment(ABC):

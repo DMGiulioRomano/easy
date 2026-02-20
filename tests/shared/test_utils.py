@@ -14,10 +14,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Any
 
-# Import delle funzioni da testare
-import sys
-sys.path.insert(0, '/mnt/project')
-from src.utils import get_sample_duration, random_percent, get_nested
+from utils import get_sample_duration, random_percent, get_nested
 
 
 # =============================================================================
