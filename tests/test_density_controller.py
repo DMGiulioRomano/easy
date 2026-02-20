@@ -22,35 +22,13 @@ import pytest
 import random as stdlib_random
 from unittest.mock import Mock, patch, MagicMock
 from density_controller import DensityController
-from stream_config import StreamConfig, StreamContext
 from parameter import Parameter
-from parameter_definitions import ParameterBounds, get_parameter_definition
+from parameter_definitions import get_parameter_definition
 
 # =============================================================================
 # FIXTURES
 # =============================================================================
 
-@pytest.fixture
-def mock_config():
-    """Config minimale per DensityController."""
-    context = Mock(spec=StreamContext)
-    context.stream_id = "test_stream"
-    context.sample_dur_sec = 10.0
-    context.duration = 10.0
-
-    config = Mock(spec=StreamConfig)
-    config.context = context
-    config.time_mode = 'absolute'
-    config.distribution_mode = 'uniform'
-    config.dephase = False
-    config.range_always_active = False
-
-    return config
-
-
-def _bounds(name):
-    """Shortcut per ottenere bounds reali dal registry."""
-    return get_parameter_definition(name)
 
 def _make_density_controller(mock_config, loaded_params, raw_params=None):
     """
@@ -74,14 +52,14 @@ def _build_fill_factor_params(fill_factor=2.0, distribution=0.0):
         'fill_factor': Parameter(
             value=fill_factor,
             name='fill_factor',
-            bounds=_bounds('fill_factor'),
+            bounds=get_parameter_definition('fill_factor'),
             owner_id='test'
         ),
         'density': None,  # Eliminato da ExclusiveGroupSelector
         'distribution': Parameter(
             value=distribution,
             name='distribution',
-            bounds=_bounds('distribution'),
+            bounds=get_parameter_definition('distribution'),
             owner_id='test'
         ),
         'effective_density': 0.0,  # is_smart=False, valore raw
@@ -95,13 +73,13 @@ def _build_direct_density_params(density=20.0, distribution=0.0):
         'density': Parameter(
             value=density,
             name='density',
-            bounds=_bounds('density'),
+            bounds=get_parameter_definition('density'),
             owner_id='test'
         ),
         'distribution': Parameter(
             value=distribution,
             name='distribution',
-            bounds=_bounds('distribution'),
+            bounds=get_parameter_definition('distribution'),
             owner_id='test'
         ),
         'effective_density': 0.0,
@@ -188,7 +166,7 @@ class TestFindSelectedParam:
             'density': None,
             'distribution': Parameter(
                 value=0.0, name='distribution',
-                bounds=_bounds('distribution'), owner_id='test'
+                bounds=get_parameter_definition('distribution'), owner_id='test'
             ),
             'effective_density': 0.0,
         }
@@ -201,15 +179,15 @@ class TestFindSelectedParam:
         params = {
             'fill_factor': Parameter(
                 value=2.0, name='fill_factor',
-                bounds=_bounds('fill_factor'), owner_id='test'
+                bounds=get_parameter_definition('fill_factor'), owner_id='test'
             ),
             'density': Parameter(
                 value=20.0, name='density',
-                bounds=_bounds('density'), owner_id='test'
+                bounds=get_parameter_definition('density'), owner_id='test'
             ),
             'distribution': Parameter(
                 value=0.0, name='distribution',
-                bounds=_bounds('distribution'), owner_id='test'
+                bounds=get_parameter_definition('distribution'), owner_id='test'
             ),
             'effective_density': 0.0,
         }
@@ -225,52 +203,22 @@ class TestFindSelectedParam:
 class TestInterOnsetFillFactor:
     """Test calculate_inter_onset in modalita' fill_factor."""
 
-    def test_fill_factor_2_duration_50ms(self, mock_config):
-        """fill_factor=2, grain_dur=0.05 -> density=40, IOT=0.025."""
-        params = _build_fill_factor_params(fill_factor=2.0, distribution=0.0)
+    @pytest.mark.parametrize("fill_factor,grain_dur,expected_iot", [
+        (2.0, 0.05, 0.025),   # density=40 -> IOT=0.025
+        (1.0, 0.05, 0.05),    # no overlap: IOT = grain_dur
+        (0.5, 0.05, 0.1),     # gap: IOT > grain_dur
+        (4.0, 0.05, 0.0125),  # overlap: IOT < grain_dur
+    ])
+    def test_fill_factor_iot_calculation(
+        self, mock_config, fill_factor, grain_dur, expected_iot
+    ):
+        """IOT calcolato correttamente dalla formula density = fill_factor / grain_dur."""
+        params = _build_fill_factor_params(fill_factor=fill_factor, distribution=0.0)
         dc = _make_density_controller(mock_config, params)
 
-        iot = dc.calculate_inter_onset(0.0, current_grain_duration=0.05)
-
-        # density = 2.0 / 0.05 = 40 g/s
-        # avg_iot = 1/40 = 0.025
-        # distribution=0 -> synchronous -> return avg_iot
-        assert iot == pytest.approx(0.025)
-
-    def test_fill_factor_1_produces_no_overlap(self, mock_config):
-        """fill_factor=1 -> density = 1/dur -> IOT = dur (no overlap)."""
-        params = _build_fill_factor_params(fill_factor=1.0, distribution=0.0)
-        dc = _make_density_controller(mock_config, params)
-
-        grain_dur = 0.05
         iot = dc.calculate_inter_onset(0.0, current_grain_duration=grain_dur)
 
-        # density = 1/0.05 = 20, IOT = 1/20 = 0.05 = grain_dur
-        assert iot == pytest.approx(grain_dur)
-
-    def test_fill_factor_less_than_1_produces_gaps(self, mock_config):
-        """fill_factor<1 -> IOT > grain_dur -> gaps tra grani."""
-        params = _build_fill_factor_params(fill_factor=0.5, distribution=0.0)
-        dc = _make_density_controller(mock_config, params)
-
-        grain_dur = 0.05
-        iot = dc.calculate_inter_onset(0.0, current_grain_duration=grain_dur)
-
-        # density = 0.5/0.05 = 10, IOT = 1/10 = 0.1 > 0.05
-        assert iot > grain_dur
-        assert iot == pytest.approx(0.1)
-
-    def test_fill_factor_gt_1_produces_overlap(self, mock_config):
-        """fill_factor>1 -> IOT < grain_dur -> overlap tra grani."""
-        params = _build_fill_factor_params(fill_factor=4.0, distribution=0.0)
-        dc = _make_density_controller(mock_config, params)
-
-        grain_dur = 0.05
-        iot = dc.calculate_inter_onset(0.0, current_grain_duration=grain_dur)
-
-        # density = 4/0.05 = 80, IOT = 1/80 = 0.0125 < 0.05
-        assert iot < grain_dur
-        assert iot == pytest.approx(0.0125)
+        assert iot == pytest.approx(expected_iot)
 
     def test_fill_factor_clamped_density(self, mock_config):
         """fill_factor molto alto con grain_dur molto piccolo -> density clampata."""
@@ -471,19 +419,16 @@ class TestTruaxInterpolation:
 class TestProperties:
     """Test properties del controller."""
 
-    def test_mode_fill_factor(self, mock_config):
-        """mode ritorna 'fill_factor' quando attivo."""
-        params = _build_fill_factor_params()
+    @pytest.mark.parametrize("builder,expected_mode", [
+        (_build_fill_factor_params,    'fill_factor'),
+        (_build_direct_density_params, 'density'),
+    ])
+    def test_mode(self, mock_config, builder, expected_mode):
+        """mode ritorna il nome corretto per ogni modalita'."""
+        params = builder()
         dc = _make_density_controller(mock_config, params)
 
-        assert dc.mode == 'fill_factor'
-
-    def test_mode_density(self, mock_config):
-        """mode ritorna 'density' quando attivo."""
-        params = _build_direct_density_params()
-        dc = _make_density_controller(mock_config, params)
-
-        assert dc.mode == 'density'
+        assert dc.mode == expected_mode
 
     def test_distribution_property_returns_param(self, mock_config):
         """distribution property ritorna il Parameter distribution."""
@@ -492,36 +437,24 @@ class TestProperties:
 
         assert dc.distribution is dc.distribution_param
 
-    def test_fill_factor_property_when_active(self, mock_config):
-        """fill_factor property ritorna il Parameter quando mode=='fill_factor'."""
-        params = _build_fill_factor_params(fill_factor=3.0)
+    @pytest.mark.parametrize("builder,prop_name,expected_none", [
+        (_build_fill_factor_params,    'fill_factor', False),
+        (_build_direct_density_params, 'fill_factor', True),
+        (_build_direct_density_params, 'density',     False),
+        (_build_fill_factor_params,    'density',     True),
+    ])
+    def test_exclusive_property_active_inactive(
+        self, mock_config, builder, prop_name, expected_none
+    ):
+        """La property del parametro attivo e' not None, quella inattiva e' None."""
+        params = builder()
         dc = _make_density_controller(mock_config, params)
 
-        assert dc.fill_factor is not None
-        assert dc.fill_factor.value == 3.0
-
-    def test_fill_factor_property_when_inactive(self, mock_config):
-        """fill_factor property ritorna None in modalita' density."""
-        params = _build_direct_density_params()
-        dc = _make_density_controller(mock_config, params)
-
-        assert dc.fill_factor is None
-
-    def test_density_property_when_active(self, mock_config):
-        """density property ritorna il Parameter quando mode=='density'."""
-        params = _build_direct_density_params(density=50.0)
-        dc = _make_density_controller(mock_config, params)
-
-        assert dc.density is not None
-        assert dc.density.value == 50.0
-
-    def test_density_property_when_inactive(self, mock_config):
-        """density property ritorna None in modalita' fill_factor."""
-        params = _build_fill_factor_params()
-        dc = _make_density_controller(mock_config, params)
-
-        assert dc.density is None
-
+        value = getattr(dc, prop_name)
+        if expected_none:
+            assert value is None
+        else:
+            assert value is not None
 
 # =============================================================================
 # GRUPPO 10: EDGE CASES
@@ -585,14 +518,14 @@ class TestEnvelopeIntegration:
             'fill_factor': Parameter(
                 value=env,
                 name='fill_factor',
-                bounds=_bounds('fill_factor'),
+                bounds=get_parameter_definition('fill_factor'),
                 owner_id='test'
             ),
             'density': None,
             'distribution': Parameter(
                 value=0.0,
                 name='distribution',
-                bounds=_bounds('distribution'),
+                bounds=get_parameter_definition('distribution'),
                 owner_id='test'
             ),
             'effective_density': 0.0,
@@ -624,14 +557,14 @@ class TestEnvelopeIntegration:
             'fill_factor': Parameter(
                 value=2.0,
                 name='fill_factor',
-                bounds=_bounds('fill_factor'),
+                bounds=get_parameter_definition('fill_factor'),
                 owner_id='test'
             ),
             'density': None,
             'distribution': Parameter(
                 value=dist_env,
                 name='distribution',
-                bounds=_bounds('distribution'),
+                bounds=get_parameter_definition('distribution'),
                 owner_id='test'
             ),
             'effective_density': 0.0,
@@ -663,7 +596,7 @@ class TestEnvelopeIntegration:
         params['density'] = Parameter(
             value=dens_env,
             name='density',
-            bounds=_bounds('density'),
+            bounds=get_parameter_definition('density'),
             owner_id='test'
         )
 

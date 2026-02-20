@@ -22,36 +22,12 @@ import pytest
 import math
 from unittest.mock import Mock, patch
 from pitch_controller import PitchController
-from stream_config import StreamConfig, StreamContext
 from parameter import Parameter
 from parameter_definitions import ParameterBounds, get_parameter_definition
 
 # =============================================================================
 # FIXTURES
 # =============================================================================
-
-@pytest.fixture
-def mock_config():
-    """Config minimale per PitchController."""
-    context = Mock(spec=StreamContext)
-    context.stream_id = "test_stream"
-    context.sample_dur_sec = 10.0
-    context.duration = 10.0
-
-    config = Mock(spec=StreamConfig)
-    config.context = context
-    config.time_mode = 'absolute'
-    config.distribution_mode = 'uniform'
-    config.dephase = False
-    config.range_always_active = False
-
-    return config
-
-
-def _bounds(name):
-    """Shortcut per ottenere bounds reali dal registry."""
-    return get_parameter_definition(name)
-
 
 def _make_pitch_controller(mock_config, loaded_params, raw_params=None):
     """Helper: crea PitchController con parametri pre-costruiti."""
@@ -70,7 +46,7 @@ def _build_ratio_params(ratio=1.0, mod_range=None):
         'pitch_ratio': Parameter(
             value=ratio,
             name='pitch_ratio',
-            bounds=_bounds('pitch_ratio'),
+            bounds=get_parameter_definition('pitch_ratio'),
             mod_range=mod_range,
             owner_id='test'
         ),
@@ -85,7 +61,7 @@ def _build_semitones_params(semitones=0.0, mod_range=None):
         'pitch_semitones': Parameter(
             value=semitones,
             name='pitch_semitones',
-            bounds=_bounds('pitch_semitones'),
+            bounds=get_parameter_definition('pitch_semitones'),
             mod_range=mod_range,
             owner_id='test'
         ),
@@ -193,11 +169,11 @@ class TestFindSelectedParam:
         params = {
             'pitch_ratio': Parameter(
                 value=1.0, name='pitch_ratio',
-                bounds=_bounds('pitch_ratio'), owner_id='test'
+                bounds=get_parameter_definition('pitch_ratio'), owner_id='test'
             ),
             'pitch_semitones': Parameter(
                 value=0.0, name='pitch_semitones',
-                bounds=_bounds('pitch_semitones'), owner_id='test'
+                bounds=get_parameter_definition('pitch_semitones'), owner_id='test'
             ),
         }
 
@@ -212,29 +188,19 @@ class TestFindSelectedParam:
 class TestCalculateRatio:
     """Test calculate() in modalita' ratio."""
 
-    def test_ratio_1_returns_unity(self, mock_config):
-        """ratio=1.0 -> nessuna trasposizione."""
-        params = _build_ratio_params(ratio=1.0)
+    @pytest.mark.parametrize("ratio,expected", [
+            (1.0, 1.0),   # unisono
+            (2.0, 2.0),   # ottava sopra
+            (0.5, 0.5),   # ottava sotto
+        ])
+    def test_ratio_returns_correct_value(self, mock_config, ratio, expected):
+        """ratio fisso calcolato a t=0 restituisce il valore atteso."""
+        params = _build_ratio_params(ratio=ratio)
         pc = _make_pitch_controller(mock_config, params)
 
         result = pc.calculate(0.0)
-        assert result == pytest.approx(1.0)
+        assert result == pytest.approx(expected)
 
-    def test_ratio_2_returns_octave_up(self, mock_config):
-        """ratio=2.0 -> ottava sopra."""
-        params = _build_ratio_params(ratio=2.0)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(2.0)
-
-    def test_ratio_05_returns_octave_down(self, mock_config):
-        """ratio=0.5 -> ottava sotto."""
-        params = _build_ratio_params(ratio=0.5)
-        pc = _make_pitch_controller(mock_config, params)
-
-        result = pc.calculate(0.0)
-        assert result == pytest.approx(0.5)
 
     def test_ratio_constant_over_time(self, mock_config):
         """Ratio fisso e' costante nel tempo."""
@@ -394,19 +360,16 @@ class TestMusicalIntervals:
 class TestProperties:
     """Test properties del controller."""
 
-    def test_mode_ratio(self, mock_config):
-        """mode ritorna 'ratio' quando attivo."""
-        params = _build_ratio_params()
+    @pytest.mark.parametrize("builder,expected_mode", [
+        (_build_ratio_params,     'ratio'),
+        (_build_semitones_params, 'semitones'),
+    ])
+    def test_mode(self, mock_config, builder, expected_mode):
+        """mode ritorna il nome corretto per ogni modalita'."""
+        params = builder()
         pc = _make_pitch_controller(mock_config, params)
 
-        assert pc.mode == 'ratio'
-
-    def test_mode_semitones(self, mock_config):
-        """mode ritorna 'semitones' quando attivo."""
-        params = _build_semitones_params()
-        pc = _make_pitch_controller(mock_config, params)
-
-        assert pc.mode == 'semitones'
+        assert pc.mode == expected_mode
 
     def test_base_ratio_when_ratio_mode(self, mock_config):
         """base_ratio ritorna il valore base in modo ratio."""
@@ -463,7 +426,7 @@ class TestEnvelopeIntegration:
             'pitch_ratio': Parameter(
                 value=env,
                 name='pitch_ratio',
-                bounds=_bounds('pitch_ratio'),
+                bounds=get_parameter_definition('pitch_ratio'),
                 owner_id='test'
             ),
             'pitch_semitones': None,
@@ -489,7 +452,7 @@ class TestEnvelopeIntegration:
             'pitch_semitones': Parameter(
                 value=env,
                 name='pitch_semitones',
-                bounds=_bounds('pitch_semitones'),
+                bounds=get_parameter_definition('pitch_semitones'),
                 owner_id='test'
             ),
         }
@@ -513,7 +476,7 @@ class TestEnvelopeIntegration:
             'pitch_ratio': Parameter(
                 value=env,
                 name='pitch_ratio',
-                bounds=_bounds('pitch_ratio'),
+                bounds=get_parameter_definition('pitch_ratio'),
                 owner_id='test'
             ),
             'pitch_semitones': None,
@@ -535,7 +498,7 @@ class TestEnvelopeIntegration:
             'pitch_ratio': Parameter(
                 value=env,
                 name='pitch_ratio',
-                bounds=_bounds('pitch_ratio'),
+                bounds=get_parameter_definition('pitch_ratio'),
                 owner_id='test'
             ),
             'pitch_semitones': None,
@@ -643,7 +606,7 @@ class TestStrategyBaseValue:
             'pitch_semitones': Parameter(
                 value=env,
                 name='pitch_semitones',
-                bounds=_bounds('pitch_semitones'),
+                bounds=get_parameter_definition('pitch_semitones'),
                 owner_id='test'
             ),
         }
@@ -724,7 +687,7 @@ class TestRealisticSequence:
             'pitch_semitones': Parameter(
                 value=env,
                 name='pitch_semitones',
-                bounds=_bounds('pitch_semitones'),
+                bounds=get_parameter_definition('pitch_semitones'),
                 owner_id='test'
             ),
         }

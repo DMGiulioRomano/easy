@@ -59,33 +59,10 @@ def _get_generator_class():
 
 
 # =============================================================================
-# MOCK HELPERS
+# MOCK
 # =============================================================================
 
-def make_mock_stream(stream_id='stream_01', sample='test.wav'):
-    """Crea un mock Stream con attributi necessari per Generator."""
-    stream = Mock()
-    stream.stream_id = stream_id
-    stream.sample = sample
-    stream.sample_table_num = None
-    stream.window_table_map = None
-    stream.generate_grains = Mock()
-    stream.__repr__ = Mock(return_value=f"Stream({stream_id})")
-    stream.__str__ = Mock(return_value=f"Stream({stream_id})")
-    return stream
-
-
-def make_mock_testina(testina_id='testina_01', sample_path='tape.wav'):
-    """Crea un mock Testina con attributi necessari per Generator."""
-    testina = Mock()
-    testina.testina_id = testina_id
-    testina.sample_path = sample_path
-    testina.sample_table_num = None
-    testina.__repr__ = Mock(return_value=f"Testina({testina_id})")
-    testina.__str__ = Mock(return_value=f"Testina({testina_id})")
-    return testina
-
-
+from conftest import make_mock_stream_for_generator, make_mock_testina_for_generator
 # =============================================================================
 # FIXTURES
 # =============================================================================
@@ -701,7 +678,7 @@ class TestCreateStreams:
     def test_creates_stream_objects(self, gen):
         """_create_streams crea oggetti Stream."""
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
 
         with patch('generator.Stream', return_value=mock_stream) as MockStream, \
              patch.object(gen, '_register_stream_windows', return_value={}):
@@ -712,7 +689,7 @@ class TestCreateStreams:
 
     def test_registers_sample(self, gen):
         """_create_streams registra il sample nel FtableManager."""
-        mock_stream = make_mock_stream(sample='audio.wav')
+        mock_stream = make_mock_stream_for_generator(sample='audio.wav')
         stream_data = [{'stream_id': 's1', 'sample': 'audio.wav', 'grain': {}}]
 
         with patch('generator.Stream', return_value=mock_stream), \
@@ -723,7 +700,7 @@ class TestCreateStreams:
 
     def test_assigns_sample_table_num(self, gen):
         """_create_streams assegna sample_table_num allo stream."""
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
         gen.ftable_manager.register_sample = Mock(return_value=42)
         stream_data = [{'stream_id': 's1', 'sample': 'audio.wav', 'grain': {}}]
 
@@ -735,7 +712,7 @@ class TestCreateStreams:
 
     def test_calls_register_windows(self, gen):
         """_create_streams chiama _register_stream_windows."""
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
         stream_data = [
             {'stream_id': 's1', 'sample': 'a.wav', 'grain': {'envelope': 'hanning'}},
         ]
@@ -748,7 +725,7 @@ class TestCreateStreams:
 
     def test_assigns_window_table_map(self, gen):
         """_create_streams assegna window_table_map."""
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
         window_map = {'hanning': 5, 'hamming': 6}
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
@@ -760,7 +737,7 @@ class TestCreateStreams:
 
     def test_calls_generate_grains(self, gen):
         """_create_streams chiama generate_grains() su ogni stream."""
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
         with patch('generator.Stream', return_value=mock_stream), \
@@ -774,7 +751,7 @@ class TestCreateStreams:
         streams_created = []
 
         def make_s(data):
-            s = make_mock_stream(stream_id=data['stream_id'])
+            s = make_mock_stream_for_generator(stream_id=data['stream_id'])
             streams_created.append(s)
             return s
 
@@ -798,7 +775,7 @@ class TestCreateStreams:
     def test_appends_to_existing_streams(self, gen):
         """_create_streams appende, non sovrascrive."""
         gen.streams = ['existing']
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
         with patch('generator.Stream', return_value=mock_stream), \
@@ -819,7 +796,7 @@ class TestCreateTestine:
     def test_creates_objects(self, gen):
         """_create_testine crea oggetti Testina."""
         testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
-        mock_testina = make_mock_testina()
+        mock_testina = make_mock_testina_for_generator()
 
         with patch('generator.Testina', return_value=mock_testina) as MockTestina:
             gen._create_testine(testina_data)
@@ -829,7 +806,7 @@ class TestCreateTestine:
 
     def test_registers_sample(self, gen):
         """_create_testine registra il sample_path nel FtableManager."""
-        mock_testina = make_mock_testina(sample_path='my_tape.wav')
+        mock_testina = make_mock_testina_for_generator(sample_path='my_tape.wav')
         testina_data = [{'testina_id': 't1', 'sample': 'my_tape.wav'}]
 
         with patch('generator.Testina', return_value=mock_testina):
@@ -839,7 +816,7 @@ class TestCreateTestine:
 
     def test_assigns_sample_table_num(self, gen):
         """_create_testine assegna sample_table_num."""
-        mock_testina = make_mock_testina()
+        mock_testina = make_mock_testina_for_generator()
         gen.ftable_manager.register_sample = Mock(return_value=99)
         testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
 
@@ -853,7 +830,7 @@ class TestCreateTestine:
         testine_created = []
 
         def make_t(data):
-            t = make_mock_testina(testina_id=data['testina_id'])
+            t = make_mock_testina_for_generator(testina_id=data['testina_id'])
             testine_created.append(t)
             return t
 
@@ -875,7 +852,7 @@ class TestCreateTestine:
     def test_appends_to_existing(self, gen):
         """_create_testine appende, non sovrascrive."""
         gen.testine = ['existing']
-        mock_testina = make_mock_testina()
+        mock_testina = make_mock_testina_for_generator()
         testina_data = [{'testina_id': 't1', 'sample': 'tape.wav'}]
 
         with patch('generator.Testina', return_value=mock_testina):
@@ -1069,8 +1046,8 @@ class TestIntegration:
             ]
         })
 
-        mock_stream = make_mock_stream()
-        mock_testina = make_mock_testina()
+        mock_stream = make_mock_stream_for_generator()
+        mock_testina = make_mock_testina_for_generator()
 
         with patch('builtins.open', mock_open(read_data=yaml_content)), \
              patch('generator.Stream', return_value=mock_stream), \
@@ -1097,7 +1074,7 @@ class TestIntegration:
             ]
         })
 
-        mock_stream = make_mock_stream()
+        mock_stream = make_mock_stream_for_generator()
 
         with patch('builtins.open', mock_open(read_data=yaml_content)), \
              patch('generator.Stream', return_value=mock_stream), \

@@ -26,19 +26,6 @@ from envelope import Envelope
 # FIXTURES
 # =============================================================================
 
-@pytest.fixture
-def mock_config():
-    """Config minimale per i test."""
-    context = Mock(spec=StreamContext)
-    context.stream_id = "test_stream"
-    context.sample_dur_sec = 10.0
-    
-    config = Mock(spec=StreamConfig)
-    config.context = context
-    config.time_mode = 'absolute'
-    
-    return config
-
 
 @pytest.fixture
 def pointer_factory(mock_config):
