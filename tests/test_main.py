@@ -67,11 +67,10 @@ def mocks():
     log_mod = _make_mock_logger_module()
 
     mock_modules = {
-        'generator': gen_mod,
-        'score_visualizer': viz_mod,
-        'logger': log_mod,
-        # dipendenze transitive che main non usa direttamente
-        # ma che generator/score_visualizer potrebbero richiedere
+        'engine.generator': gen_mod,
+        'rendering.score_visualizer': viz_mod,
+        'shared.logger': log_mod,
+        # dipendenze transitive
         'yaml': types.ModuleType('yaml'),
         'soundfile': types.ModuleType('soundfile'),
     }

@@ -399,17 +399,17 @@ class TestPathSamplesConstant:
     
     def test_pathsamples_exists(self):
         """Verifica che PATHSAMPLES sia definito."""
-        from src.utils import PATHSAMPLES
+        from utils import PATHSAMPLES
         assert PATHSAMPLES is not None
     
     def test_pathsamples_is_string(self):
         """PATHSAMPLES deve essere una stringa."""
-        from src.utils import PATHSAMPLES
+        from utils import PATHSAMPLES
         assert isinstance(PATHSAMPLES, str)
     
     def test_pathsamples_value(self):
         """PATHSAMPLES deve puntare a ./refs/."""
-        from src.utils import PATHSAMPLES
+        from utils import PATHSAMPLES
         assert PATHSAMPLES == './refs/'
     
     @patch('src.utils.sf.info')

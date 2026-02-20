@@ -14,9 +14,9 @@ Design Pattern:
 """
 
 from typing import Any
-from parameters.parameter import Parameter
-from parameters.parser import GranularParser
-from parameters.parameter_schema import ParameterSpec
+from parameter import Parameter
+from parser import GranularParser
+from parameter_schema import ParameterSpec
 import inspect
 
 class ParameterFactory:

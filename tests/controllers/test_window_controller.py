@@ -206,35 +206,45 @@ class GateFactory:
 # --- DEFAULT_PROB ---
 DEFAULT_PROB = 75.0
 
-
 # =============================================================================
 # IMPORT PRODUZIONE CON MOCK INJECTION
 # =============================================================================
 
-# Inietto i mock prima dell'import di WindowController
-sys.modules['window_registry'] = type(sys)('window_registry')
-sys.modules['window_registry'].WindowRegistry = MockWindowRegistry
-sys.modules['window_registry'].WindowSpec = WindowSpec
+import types as _types
+from unittest.mock import patch as _patch
 
-sys.modules['stream_config'] = type(sys)('stream_config')
-sys.modules['stream_config'].StreamConfig = StreamConfig
-sys.modules['stream_config'].StreamContext = StreamContext
+def _build_mock_modules():
+    _wr = _types.ModuleType('window_registry')
+    _wr.WindowRegistry = MockWindowRegistry
+    _wr.WindowSpec = WindowSpec
 
-sys.modules['gate_factory'] = type(sys)('gate_factory')
-sys.modules['gate_factory'].GateFactory = GateFactory
+    _sc = _types.ModuleType('stream_config')
+    _sc.StreamConfig = StreamConfig
+    _sc.StreamContext = StreamContext
 
-sys.modules['parameter_definitions'] = type(sys)('parameter_definitions')
-sys.modules['parameter_definitions'].DEFAULT_PROB = DEFAULT_PROB
+    _gf = _types.ModuleType('gate_factory')
+    _gf.GateFactory = GateFactory
 
-sys.modules['probability_gate'] = type(sys)('probability_gate')
-sys.modules['probability_gate'].ProbabilityGate = ProbabilityGate
-sys.modules['probability_gate'].NeverGate = NeverGate
-sys.modules['probability_gate'].AlwaysGate = AlwaysGate
-sys.modules['probability_gate'].RandomGate = RandomGate
-sys.modules['probability_gate'].EnvelopeGate = EnvelopeGate
+    _pd = _types.ModuleType('parameter_definitions')
+    _pd.DEFAULT_PROB = DEFAULT_PROB
 
-from window_controller import WindowController
+    _pg = _types.ModuleType('probability_gate')
+    _pg.ProbabilityGate = ProbabilityGate
+    _pg.NeverGate = NeverGate
+    _pg.AlwaysGate = AlwaysGate
+    _pg.RandomGate = RandomGate
+    _pg.EnvelopeGate = EnvelopeGate
 
+    return {
+        'window_registry': _wr,
+        'stream_config': _sc,
+        'gate_factory': _gf,
+        'parameter_definitions': _pd,
+        'probability_gate': _pg,
+    }
+
+with _patch.dict(sys.modules, _build_mock_modules()):
+    from window_controller import WindowController
 
 # =============================================================================
 # FIXTURES
