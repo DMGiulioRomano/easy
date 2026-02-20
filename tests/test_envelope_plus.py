@@ -903,5 +903,62 @@ class TestEnvelopeEndToEnd:
         assert env.evaluate(5) == pytest.approx(7.0)
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+
+# =============================================================================
+# TEST RIGHE MANCANTI: 79, 303, 399
+# =============================================================================
+
+class TestEnvelopeMissingLines:
+    """Copre le righe 79, 303, 399 di envelope.py."""
+
+    def test_invalid_input_type_raises(self):
+        """
+        Riga 79: raise ValueError quando breakpoints non e' ne' list ne' dict.
+        Il ramo else del costruttore.
+        """
+        with pytest.raises(ValueError, match="Formato envelope non valido"):
+            Envelope(42)  # intero: non e' list ne' dict
+
+    def test_invalid_input_string_raises(self):
+        """Riga 79: stringa come input non valido."""
+        with pytest.raises(ValueError, match="Formato envelope non valido"):
+            Envelope("not_valid")
+
+    def test_scale_raw_values_y_unsupported_type_raises(self):
+        """
+        Riga 399: raise ValueError in _scale_raw_values_y con tipo non supportato.
+        Passare un tipo che non e' ne' list ne' dict.
+        """
+        with pytest.raises(ValueError, match="Formato non supportato"):
+            Envelope._scale_raw_values_y(42.0, 2.0)  # float diretto: non supportato
+
+    def test_scale_raw_values_y_unsupported_string_raises(self):
+        """Riga 399: stringa come raw_data non supportata."""
+        with pytest.raises(ValueError, match="Formato non supportato"):
+            Envelope._scale_raw_values_y("invalid", 2.0)
+
+    def test_breakpoints_multi_segment_concatenation(self):
+        """
+        Riga 303: path multi-segmento nella property breakpoints.
+        Serve un Envelope con len(self.segments) > 1.
+
+        NOTA: se il tuo sistema attuale non produce mai multi-segmento,
+        puoi coprire questa riga forzando manualmente segments con mock.
+        """
+        from unittest.mock import MagicMock
+
+        env = Envelope([[0, 0], [1, 10]])
+
+        # Forza due segmenti artificiali con breakpoints diversi
+        seg1 = MagicMock()
+        seg1.breakpoints = [[0, 0], [0.5, 5]]
+        seg2 = MagicMock()
+        seg2.breakpoints = [[0.5, 5], [1.0, 10]]
+
+        env.segments = [seg1, seg2]
+
+        bps = env.breakpoints  # deve concatenare via il loop alla riga 303
+
+        assert len(bps) == 4
+        assert bps[0] == [0, 0]
+        assert bps[3] == [1.0, 10]

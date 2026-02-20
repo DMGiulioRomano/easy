@@ -974,3 +974,136 @@ class TestRobustnessMalformedInput:
         # Verifica che il log contenga separatori
         assert mock_logger.info.called
 
+# =============================================================================
+# TEST RIGHE MANCANTI: 175-176, 330, 389, 435-451
+# =============================================================================
+
+class TestEnvelopeBuilderMissingLines:
+    """Copre righe 175-176, 330, 389, 435-451 di envelope_builder.py."""
+    @pytest.fixture(autouse=True)
+    def reset_logger_state(self):
+        """Resetta lo stato del logger prima di ogni test in questa classe."""
+        import logger as logger_module
+        logger_module._clip_logger = None
+        logger_module._clip_logger_initialized = False
+        yield
+        if logger_module._clip_logger:
+            for h in logger_module._clip_logger.handlers[:]:
+                h.close()
+                logger_module._clip_logger.removeHandler(h)
+        logger_module._clip_logger = None
+        logger_module._clip_logger_initialized = False
+        
+    def test_expand_compact_end_time_le_time_offset_raises(self):
+        """
+        Riga 330: raise ValueError quando end_time <= time_offset.
+        end_time deve essere strettamente maggiore di time_offset.
+        """
+        from envelope_builder import EnvelopeBuilder
+
+        compact = [[[0, 0], [100, 1]], 0.3, 2]  # end_time=0.3
+        with pytest.raises(ValueError, match="end_time"):
+            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.5)
+
+    def test_expand_compact_end_time_equal_time_offset_raises(self):
+        """Riga 330: end_time == time_offset deve anche sollevare ValueError."""
+        from envelope_builder import EnvelopeBuilder
+
+        compact = [[[0, 0], [100, 1]], 0.5, 2]
+        with pytest.raises(ValueError, match="end_time"):
+            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.5)
+
+    def test_expand_compact_empty_pattern_raises(self):
+        """
+        Riga 389: raise ValueError quando pattern_points e' vuoto.
+        """
+        from envelope_builder import EnvelopeBuilder
+
+        compact = [[], 1.0, 2]  # pattern vuoto
+        with pytest.raises(ValueError, match="pattern_points"):
+            EnvelopeBuilder._expand_compact_format(compact, time_offset=0.0)
+
+    def test_log_compact_transformation_logger_none_early_return(self):
+        """
+        Righe 175-176: logger None -> return immediato in _log_compact_transformation.
+        Usa configure_clip_logger(enabled=False) per garantire che get_clip_logger ritorni None.
+        """
+        import logger as logger_module
+        from envelope_builder import EnvelopeBuilder
+
+        logger_module.configure_clip_logger(enabled=False)
+
+        compact = [[[0, 0], [100, 1]], 0.4, 2]
+        expanded = [[0.0, 0], [0.2, 1], [0.200001, 0], [0.4, 1]]
+
+        # Non deve sollevare e deve percorrere il ramo if logger is None: return
+        EnvelopeBuilder._log_compact_transformation(
+            compact, expanded,
+            time_offset=0.0,
+            total_duration=0.4,
+            distributor=None
+        )
+
+    def test_log_final_envelope_logger_none_early_return(self, tmp_path):
+        """
+        Righe 435-451 (early return): logger None -> return immediato in _log_final_envelope.
+        """
+        import logger as logger_module
+        from envelope_builder import EnvelopeBuilder
+
+        logger_module.configure_clip_logger(enabled=False)
+
+        raw = [[[0, 0], [100, 1]], 0.4, 2]
+        expanded = [[0.0, 0], [0.2, 1]]
+
+        EnvelopeBuilder._log_final_envelope(raw, expanded)
+
+    def test_log_final_envelope_body_with_active_logger(self, tmp_path):
+        """
+        Righe 435-451 (corpo completo): copre ENTRAMBI i rami:
+        - len(expanded) <= 20: stampa tutti
+        - len(expanded) > 20: stampa preview primi e ultimi (ramo else, righe 435-451)
+        """
+        import logger as logger_module
+        from envelope_builder import EnvelopeBuilder
+
+        logger_module.configure_clip_logger(
+            enabled=True,
+            console_enabled=False,
+            file_enabled=True,
+            log_dir=str(tmp_path),
+            yaml_name='test_final_envelope'
+        )
+
+        raw = [[[0, 0], [100, 1]], 2.0, 10]
+
+        # Piu' di 20 breakpoints per triggerare il ramo preview (else, righe 435-451)
+        expanded = [[i * 0.1, i] for i in range(25)]
+
+        EnvelopeBuilder._log_final_envelope(raw, expanded)
+
+    def test_log_compact_transformation_body_with_active_logger(self, tmp_path):
+        """
+        Verifica che il corpo di _log_compact_transformation venga eseguito
+        quando il logger e' attivo.
+        """
+        import logger as logger_module
+        from envelope_builder import EnvelopeBuilder
+
+        logger_module.configure_clip_logger(
+            enabled=True,
+            console_enabled=False,
+            file_enabled=True,
+            log_dir=str(tmp_path),
+            yaml_name='test_compact_transform'
+        )
+
+        compact = [[[0, 0], [100, 1]], 0.4, 2]
+        expanded = [[0.0, 0], [0.2, 1], [0.200001, 0], [0.4, 1]]
+
+        EnvelopeBuilder._log_compact_transformation(
+            compact, expanded,
+            time_offset=0.0,
+            total_duration=0.4,
+            distributor=None
+        )

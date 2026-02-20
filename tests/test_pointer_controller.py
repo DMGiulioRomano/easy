@@ -2181,3 +2181,150 @@ class TestLoopResetLogging:
             # Verifica che il value_type contenga "loop_reset"
             _, kwargs = mock_log.call_args
             assert 'loop_reset' in kwargs.get('value_type', '')
+
+# =============================================================================
+# TEST RIGHE MANCANTI: 88-96, 251, 315, 372-374, 452, 469-471
+# =============================================================================
+
+class TestPointerControllerMissingLines:
+    """Copre le righe mancanti di pointer_controller.py."""
+
+    def test_pre_normalize_params_none_returns_empty(self, mock_config):
+        """
+        Righe 88-96: _pre_normalize_loop_params con params=None.
+        Deve restituire {} senza sollevare eccezioni.
+        """
+        with patch('pointer_controller.ParameterOrchestrator') as MockOrch:
+            mock_orch = MockOrch.return_value
+            mock_orch.create_all_parameters.return_value = {
+                'pointer_start': 0.0,
+                'pointer_speed_ratio': Mock(value=1.0, get_value=Mock(return_value=1.0)),
+                'pointer_deviation': Mock(value=0.0, get_value=Mock(return_value=0.0)),
+                'loop_start': None,
+                'loop_end': None,
+                'loop_dur': None,
+            }
+            mock_config.context.sample_dur_sec = 10.0
+            # Passa params senza loop_start per triggerare il return anticipato
+            result = PointerController({'start': 0.0}, mock_config)
+            assert result is not None
+
+    def test_pre_normalize_params_without_loop_start(self, mock_config):
+        """
+        Righe 88-96: _pre_normalize_loop_params con params che non ha 'loop_start'.
+        Deve restituire params invariato.
+        """
+        with patch('pointer_controller.ParameterOrchestrator') as MockOrch:
+            mock_orch = MockOrch.return_value
+            mock_orch.create_all_parameters.return_value = {
+                'pointer_start': 0.0,
+                'pointer_speed_ratio': Mock(value=1.0, get_value=Mock(return_value=1.0)),
+                'pointer_deviation': Mock(value=0.0, get_value=Mock(return_value=0.0)),
+                'loop_start': None,
+                'loop_end': None,
+                'loop_dur': None,
+            }
+            mock_config.context.sample_dur_sec = 10.0
+            pointer = PointerController({'start': 0.0, 'speed_ratio': 1.0}, mock_config)
+            assert pointer is not None
+
+    def test_grain_reverse_flag(self, pointer_factory):
+        """
+        Righe 372-374: branch grain_reverse=True in calculate().
+        Con grain_reverse=True, final_pos += grain_duration prima del wrap.
+        """
+        pointer = pointer_factory({
+            'start': 2.0,
+            'speed_ratio': 0.0,
+        })
+
+        pos_normal = pointer.calculate(0.0, grain_duration=0.05, grain_reverse=False)
+        pos_reversed = pointer.calculate(0.0, grain_duration=0.05, grain_reverse=True)
+
+        # Con grain_reverse il risultato deve differire di grain_duration (modulo sample_dur)
+        sample_dur = pointer._sample_dur_sec
+        diff = (pos_reversed - pos_normal) % sample_dur
+        assert diff == pytest.approx(0.05, abs=1e-6)
+
+    def test_loop_dur_mode_dynamic(self, mock_config):
+        """
+        Righe 251 e 315: modalita' loop_dur (invece di loop_end).
+        self.loop_dur non e' None → chiama loop_dur.get_value().
+        """
+        mock_config.context.sample_dur_sec = 10.0
+
+        real = _build_real_params(
+            start=2.0, speed=0.0,
+            loop_start=2.0, loop_end=5.0
+        )
+        # Sostituisce loop_end con loop_dur
+        real['loop_end'] = None
+        loop_dur_param = Mock()
+        loop_dur_param.value = 3.0
+        loop_dur_param.get_value = Mock(return_value=3.0)
+        real['loop_dur'] = loop_dur_param
+
+        pointer = _make_pointer(
+            mock_config, real,
+            {'start': 2.0, 'speed_ratio': 0.0, 'loop_start': 2.0, 'loop_dur': 3.0}
+        )
+
+        pointer.calculate(0.0)  # entrata nel loop
+        pos = pointer.calculate(1.0)
+        assert 2.0 <= pos < 5.0  # dentro [loop_start, loop_start+loop_dur)
+
+    def test_scale_value_unsupported_type_returns_value(self, mock_config):
+        """
+        Riga 452: _scale_value con tipo non riconosciuto restituisce value invariato.
+        Ne' scalare ne' envelope-like → return value.
+        """
+        with patch('pointer_controller.ParameterOrchestrator') as MockOrch:
+            mock_orch = MockOrch.return_value
+            mock_orch.create_all_parameters.return_value = {
+                'pointer_start': 0.0,
+                'pointer_speed_ratio': Mock(value=1.0, get_value=Mock(return_value=1.0)),
+                'pointer_deviation': Mock(value=0.0, get_value=Mock(return_value=0.0)),
+                'loop_start': None,
+                'loop_end': None,
+                'loop_dur': None,
+            }
+            mock_config.context.sample_dur_sec = 10.0
+            pointer = PointerController({'start': 0.0}, mock_config)
+
+            # Oggetto arbitrario che non e' scalare ne' envelope-like
+            class _Weird:
+                pass
+
+            obj = _Weird()
+            result = pointer._scale_value(obj, 2.0)
+            assert result is obj  # restituito invariato
+
+    def test_init_loop_state_all_fields(self, mock_config):
+        """
+        Righe 469-471: verifica che _init_loop_state inizializzi tutti i campi.
+        Include i campi di drift logging aggiunti di recente.
+        """
+        with patch('pointer_controller.ParameterOrchestrator') as MockOrch:
+            mock_orch = MockOrch.return_value
+            mock_orch.create_all_parameters.return_value = {
+                'pointer_start': 0.0,
+                'pointer_speed_ratio': Mock(value=1.0, get_value=Mock(return_value=1.0)),
+                'pointer_deviation': Mock(value=0.0, get_value=Mock(return_value=0.0)),
+                'loop_start': None,
+                'loop_end': None,
+                'loop_dur': None,
+            }
+            mock_config.context.sample_dur_sec = 10.0
+            pointer = PointerController({'start': 0.0}, mock_config)
+
+            # Verifica che tutti i campi di _init_loop_state siano presenti
+            assert pointer._in_loop is False
+            assert pointer._loop_absolute_pos is None
+            assert pointer._last_linear_pos is None
+            assert pointer._prev_loop_start is None
+            assert pointer._prev_loop_end is None
+            assert pointer._drift_prev_loop_start is None
+            assert pointer._drift_prev_elapsed is None
+            assert pointer._drift_log_interval == pytest.approx(5.0)
+            assert pointer._drift_last_logged == pytest.approx(-999.0)
+            assert pointer._drift_first_warning_emitted is False

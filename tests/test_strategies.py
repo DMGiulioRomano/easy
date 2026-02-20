@@ -1212,3 +1212,99 @@ class TestEdgeCases:
         assert r1 != r2
         assert r1 == pytest.approx(2.0)
         assert r2 == pytest.approx(2 ** (7/12))
+
+# =============================================================================
+# TEST COPERTURA CORPI ABSTRACT (righe 22, 28, 34, 90, 95)
+# =============================================================================
+
+class TestAbstractMethodBodies:
+    """
+    Copre i corpi 'pass' dei metodi astratti chiamandoli via super().
+    In Python i corpi degli abstract method sono codice eseguibile e
+    richiedono chiamata esplicita via super() per essere coperti.
+    """
+
+    def test_pitch_strategy_abstract_calculate_body(self):
+        """Copre riga 22: corpo pass di PitchStrategy.calculate."""
+        from strategies import PitchStrategy
+
+        class _Concrete(PitchStrategy):
+            def calculate(self, elapsed_time: float) -> float:
+                return super().calculate(elapsed_time)  # chiama il pass
+            @property
+            def name(self) -> str:
+                return "test"
+            @property
+            def base_value(self):
+                return 0.0
+
+        obj = _Concrete()
+        result = obj.calculate(0.0)
+        assert result is None  # pass restituisce None
+
+    def test_pitch_strategy_abstract_name_body(self):
+        """Copre riga 28: corpo pass di PitchStrategy.name."""
+        from strategies import PitchStrategy
+
+        class _Concrete(PitchStrategy):
+            def calculate(self, elapsed_time: float) -> float:
+                return 1.0
+            @property
+            def name(self) -> str:
+                return super().name  # chiama il pass
+            @property
+            def base_value(self):
+                return 0.0
+
+        obj = _Concrete()
+        result = obj.name
+        assert result is None
+
+    def test_pitch_strategy_abstract_base_value_body(self):
+        """Copre riga 34: corpo pass di PitchStrategy.base_value."""
+        from strategies import PitchStrategy
+
+        class _Concrete(PitchStrategy):
+            def calculate(self, elapsed_time: float) -> float:
+                return 1.0
+            @property
+            def name(self) -> str:
+                return "test"
+            @property
+            def base_value(self):
+                return super().base_value  # chiama il pass
+
+        obj = _Concrete()
+        result = obj.base_value
+        assert result is None
+
+    def test_density_strategy_abstract_calculate_density_body(self):
+        """Copre riga 90: corpo pass di DensityStrategy.calculate_density."""
+        from strategies import DensityStrategy
+
+        class _Concrete(DensityStrategy):
+            def calculate_density(self, elapsed_time: float, **context) -> float:
+                return super().calculate_density(elapsed_time, **context)
+            @property
+            def name(self) -> str:
+                return "test"
+
+        obj = _Concrete()
+        result = obj.calculate_density(0.0)
+        assert result is None
+
+    def test_density_strategy_abstract_name_body(self):
+        """Copre riga 95: corpo pass di DensityStrategy.name."""
+        from strategies import DensityStrategy
+
+        class _Concrete(DensityStrategy):
+            def calculate_density(self, elapsed_time: float, **context) -> float:
+                return 1.0
+            @property
+            def name(self) -> str:
+                return super().name  # chiama il pass
+
+        obj = _Concrete()
+        result = obj.name
+        assert result is None
+        
