@@ -31,7 +31,7 @@ Strategia di mocking:
 Nota sugli import:
 - Tutti gli import di moduli di produzione avvengono lazy (dentro funzioni)
   per evitare contaminazione di sys.modules con altri test.
-- Si usa patch('generator.XXX') per mockare le dipendenze importate
+- Si usa patch('engine.generator.XXX') per mockare le dipendenze importate
   nel namespace di generator.py.
 """
 
@@ -53,7 +53,7 @@ _import_cache = {}
 def _get_generator_class():
     """Import lazy di Generator."""
     if 'Generator' not in _import_cache:
-        from generator import Generator
+        from engine.generator import Generator
         _import_cache['Generator'] = Generator
     return _import_cache['Generator']
 
@@ -71,8 +71,8 @@ from conftest import make_mock_stream_for_generator, make_mock_cartridge_for_gen
 def gen():
     """Generator con path YAML fittizio e dipendenze mockate."""
     Generator = _get_generator_class()
-    with patch('generator.FtableManager') as MockFtm, \
-         patch('generator.ScoreWriter') as MockSw:
+    with patch('engine.generator.FtableManager') as MockFtm, \
+         patch('engine.generator.ScoreWriter') as MockSw:
         mock_ftm = MockFtm.return_value
         mock_ftm.register_sample = Mock(side_effect=lambda p: hash(p) % 1000)
         mock_ftm.register_window = Mock(side_effect=lambda n: hash(n) % 1000)
@@ -91,64 +91,64 @@ class TestGeneratorInit:
     def test_init_stores_yaml_path(self):
         """Il costruttore salva yaml_path."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('my_config.yml')
         assert g.yaml_path == 'my_config.yml'
 
     def test_init_data_is_none(self):
         """data e' None prima di load_yaml()."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('config.yml')
         assert g.data is None
 
     def test_init_streams_empty(self):
         """streams e' lista vuota all'inizializzazione."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('config.yml')
         assert g.streams == []
 
     def test_init_cartridges_empty(self):
         """cartridges e' lista vuota all'inizializzazione."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('config.yml')
         assert g.cartridges == []
 
     def test_init_creates_ftable_manager(self):
         """Il costruttore crea un FtableManager."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager') as MockFtm, \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager') as MockFtm, \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('config.yml')
         MockFtm.assert_called_once_with(start_num=1)
 
     def test_init_creates_score_writer_with_ftm(self):
         """Il costruttore crea un ScoreWriter con il FtableManager."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager') as MockFtm, \
-             patch('generator.ScoreWriter') as MockSw:
+        with patch('engine.generator.FtableManager') as MockFtm, \
+             patch('engine.generator.ScoreWriter') as MockSw:
             g = Generator('config.yml')
         MockSw.assert_called_once_with(MockFtm.return_value)
 
     def test_init_ftable_manager_attribute(self):
         """ftable_manager e' l'istanza creata."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager') as MockFtm, \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager') as MockFtm, \
+             patch('engine.generator.ScoreWriter'):
             g = Generator('config.yml')
         assert g.ftable_manager is MockFtm.return_value
 
     def test_init_score_writer_attribute(self):
         """score_writer e' l'istanza creata."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter') as MockSw:
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter') as MockSw:
             g = Generator('config.yml')
         assert g.score_writer is MockSw.return_value
 
@@ -680,7 +680,7 @@ class TestCreateStreams:
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
         mock_stream = make_mock_stream_for_generator()
 
-        with patch('generator.Stream', return_value=mock_stream) as MockStream, \
+        with patch('engine.generator.Stream', return_value=mock_stream) as MockStream, \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -692,7 +692,7 @@ class TestCreateStreams:
         mock_stream = make_mock_stream_for_generator(sample='audio.wav')
         stream_data = [{'stream_id': 's1', 'sample': 'audio.wav', 'grain': {}}]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -704,7 +704,7 @@ class TestCreateStreams:
         gen.ftable_manager.register_sample = Mock(return_value=42)
         stream_data = [{'stream_id': 's1', 'sample': 'audio.wav', 'grain': {}}]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -717,7 +717,7 @@ class TestCreateStreams:
             {'stream_id': 's1', 'sample': 'a.wav', 'grain': {'envelope': 'hanning'}},
         ]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value={'hanning': 5}) as mock_rw:
             gen._create_streams(stream_data)
 
@@ -729,7 +729,7 @@ class TestCreateStreams:
         window_map = {'hanning': 5, 'hamming': 6}
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value=window_map):
             gen._create_streams(stream_data)
 
@@ -740,7 +740,7 @@ class TestCreateStreams:
         mock_stream = make_mock_stream_for_generator()
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -761,7 +761,7 @@ class TestCreateStreams:
             {'stream_id': 's3', 'sample': 'c.wav', 'grain': {}},
         ]
 
-        with patch('generator.Stream', side_effect=make_s), \
+        with patch('engine.generator.Stream', side_effect=make_s), \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -778,7 +778,7 @@ class TestCreateStreams:
         mock_stream = make_mock_stream_for_generator()
         stream_data = [{'stream_id': 's1', 'sample': 'a.wav', 'grain': {}}]
 
-        with patch('generator.Stream', return_value=mock_stream), \
+        with patch('engine.generator.Stream', return_value=mock_stream), \
              patch.object(gen, '_register_stream_windows', return_value={}):
             gen._create_streams(stream_data)
 
@@ -798,7 +798,7 @@ class TestCreatecartridges:
         cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
         mock_cartridge = make_mock_cartridge_for_generator()
 
-        with patch('generator.Cartridge', return_value=mock_cartridge) as MockCartridge:
+        with patch('engine.generator.Cartridge', return_value=mock_cartridge) as MockCartridge:
             gen._create_cartridges(cartridge_data)
 
         MockCartridge.assert_called_once_with(cartridge_data[0])
@@ -809,7 +809,7 @@ class TestCreatecartridges:
         mock_cartridge = make_mock_cartridge_for_generator(sample_path='my_tape.wav')
         cartridge_data = [{'cartridge_id': 't1', 'sample': 'my_tape.wav'}]
 
-        with patch('generator.Cartridge', return_value=mock_cartridge):
+        with patch('engine.generator.Cartridge', return_value=mock_cartridge):
             gen._create_cartridges(cartridge_data)
 
         gen.ftable_manager.register_sample.assert_called_once_with('my_tape.wav')
@@ -820,7 +820,7 @@ class TestCreatecartridges:
         gen.ftable_manager.register_sample = Mock(return_value=99)
         cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
 
-        with patch('generator.Cartridge', return_value=mock_cartridge):
+        with patch('engine.generator.Cartridge', return_value=mock_cartridge):
             gen._create_cartridges(cartridge_data)
 
         assert mock_cartridge.sample_table_num == 99
@@ -839,7 +839,7 @@ class TestCreatecartridges:
             {'cartridge_id': 't2', 'sample': 'b.wav'},
         ]
 
-        with patch('generator.Cartridge', side_effect=make_t):
+        with patch('engine.generator.Cartridge', side_effect=make_t):
             gen._create_cartridges(cartridge_data)
 
         assert len(gen.cartridges) == 2
@@ -855,7 +855,7 @@ class TestCreatecartridges:
         mock_cartridge = make_mock_cartridge_for_generator()
         cartridge_data = [{'cartridge_id': 't1', 'sample': 'tape.wav'}]
 
-        with patch('generator.Cartridge', return_value=mock_cartridge):
+        with patch('engine.generator.Cartridge', return_value=mock_cartridge):
             gen._create_cartridges(cartridge_data)
 
         assert len(gen.cartridges) == 2
@@ -876,7 +876,7 @@ class TestRegisterStreamWindows:
             'grain': {'envelope': 'hanning'}
         }
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen._register_stream_windows(stream_data)
 
@@ -892,7 +892,7 @@ class TestRegisterStreamWindows:
             'grain': {'envelope': ['hanning', 'hamming']}
         }
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning', 'hamming']
             gen.ftable_manager.register_window = Mock(
                 side_effect=lambda n: {'hanning': 10, 'hamming': 11}[n]
@@ -905,7 +905,7 @@ class TestRegisterStreamWindows:
         """Ritorna mappa {nome: table_num}."""
         stream_data = {'stream_id': 's1', 'grain': {}}
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen.ftable_manager.register_window = Mock(return_value=5)
             result = gen._register_stream_windows(stream_data)
@@ -917,7 +917,7 @@ class TestRegisterStreamWindows:
         """stream_id default e' 'unknown' se assente."""
         stream_data = {'grain': {'envelope': 'hanning'}}
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen._register_stream_windows(stream_data)
 
@@ -930,7 +930,7 @@ class TestRegisterStreamWindows:
         """Senza chiave 'grain' usa dict vuoto per params."""
         stream_data = {'stream_id': 's1'}
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen._register_stream_windows(stream_data)
 
@@ -943,7 +943,7 @@ class TestRegisterStreamWindows:
         """Lista vuota di finestre produce mappa vuota."""
         stream_data = {'stream_id': 's1', 'grain': {}}
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = []
             result = gen._register_stream_windows(stream_data)
 
@@ -954,7 +954,7 @@ class TestRegisterStreamWindows:
         stream_data = {'stream_id': 's1', 'grain': {'envelope': 'all'}}
         all_windows = ['hanning', 'hamming', 'bartlett']
 
-        with patch('generator.WindowController') as MockWC:
+        with patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = all_windows
             gen.ftable_manager.register_window = Mock(
                 side_effect=lambda n: {'hanning': 10, 'hamming': 11, 'bartlett': 12}[n]
@@ -1050,9 +1050,9 @@ class TestIntegration:
         mock_cartridge = make_mock_cartridge_for_generator()
 
         with patch('builtins.open', mock_open(read_data=yaml_content)), \
-             patch('generator.Stream', return_value=mock_stream), \
-             patch('generator.Cartridge', return_value=mock_cartridge), \
-             patch('generator.WindowController') as MockWC:
+             patch('engine.generator.Stream', return_value=mock_stream), \
+             patch('engine.generator.Cartridge', return_value=mock_cartridge), \
+             patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen.ftable_manager.register_sample = Mock(return_value=1)
             gen.ftable_manager.register_window = Mock(return_value=2)
@@ -1077,8 +1077,8 @@ class TestIntegration:
         mock_stream = make_mock_stream_for_generator()
 
         with patch('builtins.open', mock_open(read_data=yaml_content)), \
-             patch('generator.Stream', return_value=mock_stream), \
-             patch('generator.WindowController') as MockWC:
+             patch('engine.generator.Stream', return_value=mock_stream), \
+             patch('engine.generator.WindowController') as MockWC:
             MockWC.parse_window_list.return_value = ['hanning']
             gen.ftable_manager.register_sample = Mock(return_value=1)
             gen.ftable_manager.register_window = Mock(return_value=2)
@@ -1226,8 +1226,8 @@ class TestParametrized:
     def test_init_various_paths(self, yaml_path):
         """Vari formati di yaml_path sono accettati."""
         Generator = _get_generator_class()
-        with patch('generator.FtableManager'), \
-             patch('generator.ScoreWriter'):
+        with patch('engine.generator.FtableManager'), \
+             patch('engine.generator.ScoreWriter'):
             g = Generator(yaml_path)
         assert g.yaml_path == yaml_path
 

@@ -10,8 +10,8 @@ Organizzazione:
 """
 
 import pytest
-from envelope_segment import Segment, NormalSegment
-from envelope_interpolation import LinearInterpolation, StepInterpolation, CubicInterpolation
+from envelopes.envelope_segment import Segment, NormalSegment
+from envelopes.envelope_interpolation import LinearInterpolation, StepInterpolation, CubicInterpolation
 
 
 # =============================================================================
@@ -244,7 +244,6 @@ class TestSegmentAbstractMethodBodies:
 
     def test_abstract_evaluate_body(self):
         """Chiama Segment.evaluate per coprire riga 72 (pass)."""
-        from envelope_interpolation import LinearInterpolation
         seg = self._make_concrete_segment_calling_super(
             [[0.0, 0.0], [1.0, 1.0]], LinearInterpolation()
         )
@@ -253,7 +252,6 @@ class TestSegmentAbstractMethodBodies:
 
     def test_abstract_integrate_body(self):
         """Chiama Segment.integrate per coprire riga 86 (pass)."""
-        from envelope_interpolation import LinearInterpolation
         seg = self._make_concrete_segment_calling_super(
             [[0.0, 0.0], [1.0, 1.0]], LinearInterpolation()
         )

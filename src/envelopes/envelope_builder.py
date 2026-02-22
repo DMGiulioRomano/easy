@@ -206,7 +206,7 @@ class EnvelopeBuilder:
             [[0.3, 30], [0.45, 50], ...] # cicli accelerano
         """
         # Import TimeDistributionFactory
-        from time_distribution import TimeDistributionFactory
+        from envelopes.time_distribution import TimeDistributionFactory
         
         # Parse input
         pattern_points_pct = compact[0]
@@ -292,7 +292,7 @@ class EnvelopeBuilder:
             distributor: TimeDistributionStrategy usata (opzionale)
         """
         # Importa logger locale per evitare circular imports
-        from logger import get_clip_logger
+        from shared.logger import get_clip_logger
         
         logger = get_clip_logger()
         if logger is None:

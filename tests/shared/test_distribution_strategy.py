@@ -20,9 +20,8 @@ import statistics
 import sys
 import os
 from abc import ABC
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from distribution_strategy import (
+from shared.distribution_strategy import (
     DistributionStrategy,
     UniformDistribution,
     GaussianDistribution,

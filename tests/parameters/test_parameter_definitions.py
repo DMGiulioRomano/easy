@@ -27,7 +27,7 @@ Organizzazione:
 import pytest
 from dataclasses import fields, FrozenInstanceError
 
-from parameter_definitions import (
+from parameters.parameter_definitions import (
     ParameterBounds,
     DEFAULT_PROB,
     GRANULAR_PARAMETERS,
@@ -793,7 +793,7 @@ class TestIntegrationWithParameterSchema:
     def test_stream_schema_params_have_bounds(self):
         """Ogni parametro nello STREAM schema ha bounds definiti."""
         try:
-            from parameter_schema import STREAM_PARAMETER_SCHEMA
+            from parameters.parameter_schema import STREAM_PARAMETER_SCHEMA
             for spec in STREAM_PARAMETER_SCHEMA:
                 if spec.is_smart:
                     assert spec.name in GRANULAR_PARAMETERS, (
@@ -804,7 +804,7 @@ class TestIntegrationWithParameterSchema:
 
     def test_pointer_schema_params_have_bounds(self):
         try:
-            from parameter_schema import POINTER_PARAMETER_SCHEMA
+            from parameters.parameter_schema import POINTER_PARAMETER_SCHEMA
             for spec in POINTER_PARAMETER_SCHEMA:
                 if spec.is_smart:
                     assert spec.name in GRANULAR_PARAMETERS, (
@@ -815,7 +815,7 @@ class TestIntegrationWithParameterSchema:
 
     def test_pitch_schema_params_have_bounds(self):
         try:
-            from parameter_schema import PITCH_PARAMETER_SCHEMA
+            from parameters.parameter_schema import PITCH_PARAMETER_SCHEMA
             for spec in PITCH_PARAMETER_SCHEMA:
                 if spec.is_smart:
                     assert spec.name in GRANULAR_PARAMETERS, (
@@ -826,7 +826,7 @@ class TestIntegrationWithParameterSchema:
 
     def test_density_schema_params_have_bounds(self):
         try:
-            from parameter_schema import DENSITY_PARAMETER_SCHEMA
+            from parameters.parameter_schema import DENSITY_PARAMETER_SCHEMA
             for spec in DENSITY_PARAMETER_SCHEMA:
                 if spec.is_smart:
                     assert spec.name in GRANULAR_PARAMETERS, (
@@ -837,7 +837,7 @@ class TestIntegrationWithParameterSchema:
 
     def test_voice_schema_params_have_bounds(self):
         try:
-            from parameter_schema import VOICE_PARAMETER_SCHEMA
+            from parameters.parameter_schema import VOICE_PARAMETER_SCHEMA
             for spec in VOICE_PARAMETER_SCHEMA:
                 if spec.is_smart:
                     assert spec.name in GRANULAR_PARAMETERS, (

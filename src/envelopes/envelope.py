@@ -12,7 +12,6 @@ from typing import Union, List, Dict, Any
 from envelopes.envelope_factory import InterpolationStrategyFactory
 from envelopes.envelope_segment import NormalSegment, Segment
 from envelopes.envelope_interpolation import InterpolationStrategy
-import copy
 
 class Envelope:
     """
@@ -246,7 +245,7 @@ class Envelope:
         Returns:
             bool: True se l'oggetto è envelope-like
         """
-        from envelope_builder import EnvelopeBuilder
+        from envelopes.envelope_builder import EnvelopeBuilder
         
         # Istanza Envelope
         if isinstance(obj, Envelope):
@@ -285,7 +284,7 @@ class Envelope:
         Usato da PointerController._scale_value per mantenere compatibilita'
         col pipeline parser a valle.
         """
-        from envelope_builder import EnvelopeBuilder
+        from envelopes.envelope_builder import EnvelopeBuilder
         import copy
         
         def _scale_list_y(points_list):
@@ -343,7 +342,7 @@ def create_scaled_envelope(
     Se time_mode='normalized', moltiplica i tempi [t, v] per 'duration'.
     Nota: I formati compatti (che usano total_time esplicito) NON vengono scalati.
     """
-    from envelope_builder import EnvelopeBuilder
+    from envelopes.envelope_builder import EnvelopeBuilder
 
     # 1. Gestione DICT
     if isinstance(raw_data, dict):
@@ -375,7 +374,7 @@ def _scale_time_recursive(points: List, factor: float) -> List:
     Returns:
         Lista con tempi scalati
     """
-    from envelope_builder import EnvelopeBuilder
+    from envelopes.envelope_builder import EnvelopeBuilder
 
     # CASO 1: L'intera lista è un formato compatto
     if EnvelopeBuilder._is_compact_format(points):

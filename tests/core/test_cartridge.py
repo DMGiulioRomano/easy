@@ -1,7 +1,7 @@
 # tests/test_cartridge.py
 
 import pytest
-from cartridge import Cartridge
+from core.cartridge import Cartridge
 
 
 # =============================================================================

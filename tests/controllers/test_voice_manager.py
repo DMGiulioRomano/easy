@@ -35,19 +35,11 @@ import sys
 import pytest
 import math
 from unittest.mock import patch, MagicMock
-
-# ---------------------------------------------------------------------------
-# Import isolati: evitiamo che moduli con side-effects inquinino altri test
-# ---------------------------------------------------------------------------
-
-# I moduli del progetto risiedono in src/; aggiungiamo il path solo se serve
-import importlib
-
-
-def _src_path():
-    import os
-    return os.path.join(os.path.dirname(__file__), '..', 'src')
-
+from controllers.voice_manager import VoiceManager
+from core.stream_config import StreamContext
+from core.stream_config import StreamConfig
+from envelopes.envelope import Envelope
+from parameters.parameter import Parameter
 
 # ---------------------------------------------------------------------------
 # Helpers per costruire StreamConfig / StreamContext minimi senza toccare
@@ -61,7 +53,6 @@ def make_stream_context(
     sample='test.wav',
     sample_dur_sec=5.0,
 ):
-    from stream_config import StreamContext
     return StreamContext(
         stream_id=stream_id,
         onset=onset,
@@ -72,14 +63,12 @@ def make_stream_context(
 
 
 def make_stream_config(**kwargs):
-    from stream_config import StreamConfig
     ctx = kwargs.pop('context', make_stream_context())
     return StreamConfig(context=ctx, **kwargs)
 
 
 def make_voice_manager(params=None, config=None):
     """Costruisce un VoiceManager con params e config minimali."""
-    from voice_manager import VoiceManager
     if params is None:
         params = {}
     if config is None:
@@ -140,18 +129,15 @@ class TestVoiceManagerInitCustom:
 
     def test_pitch_offset_loaded(self):
         """offset_pitch viene caricato come attributo Parameter."""
-        from parameter import Parameter
         vm = make_voice_manager(params={'offset_pitch': 2.0})
         assert vm.voice_pitch_offset is not None
         assert isinstance(vm.voice_pitch_offset, Parameter)
 
     def test_pointer_offset_loaded(self):
-        from parameter import Parameter
         vm = make_voice_manager(params={'pointer_offset': 0.1})
         assert isinstance(vm.voice_pointer_offset, Parameter)
 
     def test_pointer_range_loaded(self):
-        from parameter import Parameter
         vm = make_voice_manager(params={'pointer_range': 0.05})
         assert isinstance(vm.voice_pointer_range, Parameter)
 
@@ -199,7 +185,6 @@ class TestCalculateMaxVoicesEnvelope:
 
     def test_envelope_max_is_picked(self):
         """Envelope che va da 1 a 4: max_voices == 4."""
-        from envelope import Envelope
         vm = make_voice_manager(params={'number': [[0, 1], [5, 4], [10, 2]]})
         # Il parser converte la lista in Envelope internamente
         # verifichiamo solo che max_voices sia il massimo

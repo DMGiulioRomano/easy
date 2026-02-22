@@ -11,7 +11,7 @@ Coverage:
 """
 
 import pytest
-from envelope import Envelope, create_scaled_envelope
+from envelopes.envelope import Envelope, create_scaled_envelope
 
 # =============================================================================
 # 1. TEST CREATE_SCALED_ENVELOPE (SCALING TEMPO / ASSE X)
@@ -340,7 +340,7 @@ class TestScaleRawValuesY:
         Ramo else di _scale_time_recursive: elemento non riconoscibile
         viene passato invariato (ne' compatto, ne' [t, v] a due elementi).
         """
-        from envelope import _scale_time_recursive
+        from envelopes.envelope import _scale_time_recursive
 
         raw_points = [
             [0.5, 10],      # standard [t, v] -> scalato

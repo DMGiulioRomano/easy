@@ -25,15 +25,15 @@ import sys
 import os
 
 # Aggiungi src al path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-sys.path.insert(0, '/home/claude/src')
 
-from envelope_builder import EnvelopeBuilder
-from envelope import Envelope
-from envelope_segment import NormalSegment
-from envelope_interpolation import (
+from envelopes.envelope_builder import EnvelopeBuilder
+from envelopes.envelope import Envelope
+from envelopes.envelope_segment import NormalSegment
+from envelopes.envelope_interpolation import (
     LinearInterpolation, StepInterpolation, CubicInterpolation
 )
+from envelopes.envelope_builder import EnvelopeBuilder
+from unittest.mock import MagicMock
 
 
 # =============================================================================
@@ -671,7 +671,6 @@ class TestBreakpointsProperty:
         """
         env = Envelope([[0, 0], [1, 1]])
         # Simula multi-segmento
-        from envelope_interpolation import LinearInterpolation
         seg2 = NormalSegment([[2, 2], [3, 3]], LinearInterpolation())
         env.segments.append(seg2)
 
@@ -869,7 +868,6 @@ class TestEnvelopeEndToEnd:
 
         # Secondo ciclo inizia con discontinuita'
         # Il valore al tempo 1.0+epsilon torna a 0
-        from envelope_builder import EnvelopeBuilder
         eps = EnvelopeBuilder.DISCONTINUITY_OFFSET
         # Appena dopo la discontinuita' il valore e' ~0
         val = env.evaluate(1.0 + eps)
@@ -943,7 +941,6 @@ class TestEnvelopeMissingLines:
         NOTA: se il tuo sistema attuale non produce mai multi-segmento,
         puoi coprire questa riga forzando manualmente segments con mock.
         """
-        from unittest.mock import MagicMock
 
         env = Envelope([[0, 0], [1, 10]])
 

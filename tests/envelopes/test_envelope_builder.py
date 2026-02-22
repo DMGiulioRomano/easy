@@ -21,7 +21,7 @@ Coverage:
 
 import pytest
 from unittest.mock import patch, MagicMock, call
-from envelope_builder import EnvelopeBuilder, detect_format_type
+from envelopes.envelope_builder import EnvelopeBuilder, detect_format_type
 
 
 # =============================================================================
@@ -611,7 +611,7 @@ class TestValidationErrors:
 class TestLoggingTransformations:
     """Test logging delle trasformazioni (con mock)."""
     
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_logging_called_on_expand(self, mock_get_logger, simple_compact):
         """Logging chiamato durante expand."""
         mock_logger = MagicMock()
@@ -622,7 +622,7 @@ class TestLoggingTransformations:
         # Logger deve essere chiamato
         assert mock_logger.info.called
     
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_logging_contains_input_info(self, mock_get_logger, simple_compact):
         """Log contiene info formato compatto."""
         mock_logger = MagicMock()
@@ -637,7 +637,7 @@ class TestLoggingTransformations:
         assert 'total_time=0.4' in log_text or '0.4s' in log_text
         assert '4' in log_text  # n_reps
     
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_logging_disabled_when_logger_none(self, mock_get_logger, simple_compact):
         """Nessun errore se logger è None."""
         mock_get_logger.return_value = None
@@ -646,7 +646,7 @@ class TestLoggingTransformations:
         expanded = EnvelopeBuilder._expand_compact_format(simple_compact)
         assert len(expanded) == 8
     
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_logging_called_for_each_compact(self, mock_get_logger):
         """Logging chiamato per ogni formato compatto."""
         mock_logger = MagicMock()
@@ -782,7 +782,7 @@ class TestRobustnessMalformedInput:
 
     # Test aggiuntivi per _log_compact_transformation (da aggiungere a TestLoggingTransformations)
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_compact_direct_call(self, mock_get_logger):
         """Test chiamata diretta a _log_compact_transformation."""
         mock_logger = MagicMock()
@@ -807,7 +807,7 @@ class TestRobustnessMalformedInput:
         
         assert mock_logger.info.called
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_shows_pattern_points(self, mock_get_logger):
         """Log mostra pattern points correttamente."""
         mock_logger = MagicMock()
@@ -829,7 +829,7 @@ class TestRobustnessMalformedInput:
 
 
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_shows_cycle_info(self, mock_get_logger):
         """Log mostra info cicli (total_time, n_reps, cycle_duration)."""
         mock_logger = MagicMock()
@@ -848,7 +848,7 @@ class TestRobustnessMalformedInput:
         # Verifica che il log contenga info sui cicli
         assert mock_logger.info.called
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_shows_interpolation_type(self, mock_get_logger):
         """Log mostra tipo interpolazione se presente."""
         mock_logger = MagicMock()
@@ -868,7 +868,7 @@ class TestRobustnessMalformedInput:
         assert mock_logger.info.called
 
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_shows_output_summary(self, mock_get_logger):
         """Log mostra summary output (n_breakpoints, time_range)."""
         mock_logger = MagicMock()
@@ -894,7 +894,7 @@ class TestRobustnessMalformedInput:
         assert mock_logger.info.called
 
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_shows_preview_breakpoints(self, mock_get_logger):
         """Log mostra preview breakpoints (primi e ultimi 5)."""
         mock_logger = MagicMock()
@@ -916,7 +916,7 @@ class TestRobustnessMalformedInput:
 
 
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_no_crash_if_logger_none(self, mock_get_logger):
         """Nessun crash se get_clip_logger ritorna None."""
         mock_get_logger.return_value = None
@@ -933,7 +933,7 @@ class TestRobustnessMalformedInput:
         EnvelopeBuilder._log_compact_transformation(compact, expanded, time_offset, total_duration, distributor)
 
 
-    @patch('logger.get_clip_logger')
+    @patch('shared.logger.get_clip_logger')
     def test_log_separator_lines(self, mock_get_logger):
         """Log contiene linee separatore per leggibilità."""
         mock_logger = MagicMock()
@@ -963,8 +963,6 @@ class TestEnvelopeBuilderMissingLines:
         """
         Righe 175-176: quinto elemento presente ma non str/dict -> return False.
         """
-        from envelope_builder import EnvelopeBuilder
-
         # 5 elementi con quinto elemento intero (non str, non dict)
         item = [[[0, 0], [100, 1]], 1.0, 2, 'linear', 42]
         assert EnvelopeBuilder._is_compact_format(item) is False
@@ -973,10 +971,8 @@ class TestEnvelopeBuilderMissingLines:
         """
         Riga 330: time_dist_spec presente -> logger.info viene chiamato con spec.
         """
-        from unittest.mock import patch, MagicMock
-        from envelope_builder import EnvelopeBuilder
 
-        with patch('logger.get_clip_logger') as mock_get_logger:
+        with patch('shared.logger.get_clip_logger') as mock_get_logger:
             mock_logger = MagicMock()
             mock_get_logger.return_value = mock_logger
 

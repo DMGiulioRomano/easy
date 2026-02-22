@@ -23,7 +23,7 @@ Coverage:
 
 import pytest
 from dataclasses import FrozenInstanceError, fields
-from stream_config import StreamConfig, StreamContext
+from core.stream_config import StreamConfig, StreamContext
 
 
 # =============================================================================

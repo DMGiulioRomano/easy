@@ -31,9 +31,8 @@ import pytest
 import math
 from unittest.mock import Mock, patch, MagicMock, PropertyMock, call
 from dataclasses import dataclass
-
-# Path setup
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from core.stream_config import StreamContext, StreamConfig
+from core.stream import Stream
 
 
 # =============================================================================
@@ -112,7 +111,6 @@ def _make_mock_window_controller():
 def _make_mock_config(stream_id='test_stream', duration=1.0,
                       sample_dur_sec=5.0, onset=0.0):
     """Crea mock StreamConfig + StreamContext."""
-    from stream_config import StreamContext, StreamConfig
     context = StreamContext(
         stream_id=stream_id,
         onset=onset,
@@ -160,7 +158,7 @@ def stream_factory():
         pan_value=0.5,
         reverse_mode='auto',
     ):
-        from stream import Stream
+        
 
         # Bypass __init__ completamente
         s = object.__new__(Stream)
@@ -214,13 +212,13 @@ class TestInitStreamContext:
     def test_all_required_fields_present(self, stream_factory):
         """Con tutti i campi presenti, non solleva errori."""
         s = stream_factory()
-        from stream import Stream
+        
 
         # Simula _init_stream_context su un oggetto gia' creato
         s2 = object.__new__(Stream)
         params = _minimal_yaml_params()
 
-        with patch('stream.get_sample_duration', return_value=5.0):
+        with patch('core.stream.get_sample_duration', return_value=5.0):
             s2._init_stream_context(params)
 
         assert s2.stream_id == 'test_stream'
@@ -231,44 +229,44 @@ class TestInitStreamContext:
 
     def test_missing_single_field_raises(self):
         """Parametro singolo mancante -> ValueError con nome."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         params = {'onset': 0.0, 'duration': 1.0, 'sample': 'test.wav'}
         # Manca stream_id
 
-        with patch('stream.get_sample_duration', return_value=5.0):
+        with patch('core.stream.get_sample_duration', return_value=5.0):
             with pytest.raises(ValueError, match="Parametro obbligatorio mancante"):
                 s._init_stream_context(params)
 
     def test_missing_multiple_fields_raises(self):
         """Piu' parametri mancanti -> ValueError con nomi."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         params = {'sample': 'test.wav'}
         # Mancano stream_id, onset, duration
 
-        with patch('stream.get_sample_duration', return_value=5.0):
+        with patch('core.stream.get_sample_duration', return_value=5.0):
             with pytest.raises(ValueError, match="Parametri obbligatori mancanti"):
                 s._init_stream_context(params)
 
     def test_empty_params_raises(self):
         """Params completamente vuoto -> ValueError."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
-        with patch('stream.get_sample_duration', return_value=5.0):
+        with patch('core.stream.get_sample_duration', return_value=5.0):
             with pytest.raises(ValueError):
                 s._init_stream_context({})
 
     def test_extra_fields_ignored(self):
         """Campi extra non causano errori."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         params = _minimal_yaml_params()
         params['extra_field'] = 'ignored'
         params['another'] = 42
 
-        with patch('stream.get_sample_duration', return_value=5.0):
+        with patch('core.stream.get_sample_duration', return_value=5.0):
             s._init_stream_context(params)
 
         assert s.stream_id == 'test_stream'
@@ -276,11 +274,11 @@ class TestInitStreamContext:
 
     def test_sample_dur_sec_from_util(self):
         """sample_dur_sec viene da get_sample_duration, non da params."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         params = _minimal_yaml_params()
 
-        with patch('stream.get_sample_duration', return_value=3.14):
+        with patch('core.stream.get_sample_duration', return_value=3.14):
             s._init_stream_context(params)
 
         assert s.sample_dur_sec == 3.14
@@ -295,7 +293,7 @@ class TestInitGrainReverse:
 
     def test_reverse_absent_means_auto(self, stream_factory):
         """Chiave 'reverse' assente -> mode 'auto'."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {}}  # No reverse key
@@ -306,7 +304,7 @@ class TestInitGrainReverse:
 
     def test_reverse_none_means_forced_true(self, stream_factory):
         """Chiave 'reverse:' vuota (None in YAML) -> mode True."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {'reverse': None}}
@@ -317,7 +315,7 @@ class TestInitGrainReverse:
 
     def test_reverse_true_raises(self):
         """reverse: true -> ValueError (semantica ristretta)."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {'reverse': True}}
@@ -327,7 +325,7 @@ class TestInitGrainReverse:
 
     def test_reverse_false_raises(self):
         """reverse: false -> ValueError."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {'reverse': False}}
@@ -337,7 +335,7 @@ class TestInitGrainReverse:
 
     def test_reverse_string_raises(self):
         """reverse: 'auto' -> ValueError."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {'reverse': 'auto'}}
@@ -347,7 +345,7 @@ class TestInitGrainReverse:
 
     def test_reverse_number_raises(self):
         """reverse: 1 -> ValueError."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {'grain': {'reverse': 1}}
@@ -357,7 +355,7 @@ class TestInitGrainReverse:
 
     def test_no_grain_key_means_auto(self):
         """Nessuna chiave 'grain' -> auto mode."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
         s.stream_id = 'test'
         params = {}
@@ -376,7 +374,7 @@ class TestInitStreamParameters:
 
     def test_creates_orchestrator_and_assigns(self):
         """Crea orchestrator, chiama create_all_parameters, assegna attributi."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
         mock_vol = _make_mock_parameter(-6.0, 'volume')
@@ -385,7 +383,7 @@ class TestInitStreamParameters:
 
         config = Mock()
 
-        with patch('stream.ParameterOrchestrator') as MockOrch:
+        with patch('core.stream.ParameterOrchestrator') as MockOrch:
             mock_orch_inst = MockOrch.return_value
             mock_orch_inst.create_all_parameters.return_value = mock_params
 
@@ -397,19 +395,19 @@ class TestInitStreamParameters:
 
     def test_uses_stream_parameter_schema(self):
         """Passa STREAM_PARAMETER_SCHEMA a create_all_parameters."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
         config = Mock()
 
-        with patch('stream.ParameterOrchestrator') as MockOrch:
+        with patch('core.stream.ParameterOrchestrator') as MockOrch:
             mock_orch_inst = MockOrch.return_value
             mock_orch_inst.create_all_parameters.return_value = {}
 
             s._init_stream_parameters({}, config)
 
         call_args = mock_orch_inst.create_all_parameters.call_args
-        from parameter_schema import STREAM_PARAMETER_SCHEMA
+        from parameters.parameter_schema import STREAM_PARAMETER_SCHEMA
         assert call_args.kwargs['schema'] is STREAM_PARAMETER_SCHEMA \
             or call_args[1].get('schema') is STREAM_PARAMETER_SCHEMA \
             or call_args[0][1] is STREAM_PARAMETER_SCHEMA
@@ -425,7 +423,7 @@ class TestInitControllers:
     def test_creates_all_controllers(self):
         """Crea PointerController, PitchController, DensityController,
         WindowController, VoiceManager."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
         config = Mock()
@@ -437,11 +435,11 @@ class TestInitControllers:
             'fill_factor': 2.0,
         }
 
-        with patch('stream.PointerController') as MockPtr, \
-             patch('stream.PitchController') as MockPitch, \
-             patch('stream.DensityController') as MockDens, \
-             patch('stream.WindowController') as MockWin, \
-             patch('stream.VoiceManager') as MockVM:
+        with patch('core.stream.PointerController') as MockPtr, \
+             patch('core.stream.PitchController') as MockPitch, \
+             patch('core.stream.DensityController') as MockDens, \
+             patch('core.stream.WindowController') as MockWin, \
+             patch('core.stream.VoiceManager') as MockVM:
 
             s._init_controllers(params, config)
 
@@ -453,17 +451,17 @@ class TestInitControllers:
 
     def test_pointer_receives_pointer_subdict(self):
         """PointerController riceve params['pointer'] o {} se assente."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
         config = Mock()
         params = {'pointer': {'start': 5.0}}
 
-        with patch('stream.PointerController') as MockPtr, \
-             patch('stream.PitchController'), \
-             patch('stream.DensityController'), \
-             patch('stream.WindowController'), \
-             patch('stream.VoiceManager'):
+        with patch('core.stream.PointerController') as MockPtr, \
+             patch('core.stream.PitchController'), \
+             patch('core.stream.DensityController'), \
+             patch('core.stream.WindowController'), \
+             patch('core.stream.VoiceManager'):
 
             s._init_controllers(params, config)
 
@@ -472,17 +470,17 @@ class TestInitControllers:
 
     def test_missing_subkeys_default_to_empty(self):
         """Sotto-chiavi mancanti producono {} come params."""
-        from stream import Stream
+        
         s = object.__new__(Stream)
 
         config = Mock()
         params = {}  # Nessuna sotto-chiave
 
-        with patch('stream.PointerController') as MockPtr, \
-             patch('stream.PitchController') as MockPitch, \
-             patch('stream.DensityController'), \
-             patch('stream.WindowController') as MockWin, \
-             patch('stream.VoiceManager') as MockVM:
+        with patch('core.stream.PointerController') as MockPtr, \
+             patch('core.stream.PitchController') as MockPitch, \
+             patch('core.stream.DensityController'), \
+             patch('core.stream.WindowController') as MockWin, \
+             patch('core.stream.VoiceManager') as MockVM:
 
             s._init_controllers(params, config)
 
@@ -501,7 +499,7 @@ class TestStreamInit:
 
     def test_full_init_with_mocks(self):
             """Init completo con tutte le dipendenze mockate."""
-            from stream import Stream
+            
 
             params = _minimal_yaml_params(duration=2.0)
 
@@ -516,16 +514,16 @@ class TestStreamInit:
                 self_stream.sample = p['sample']
                 self_stream.sample_dur_sec = 5.0
 
-            with patch('stream.get_sample_duration', return_value=5.0), \
-                patch('stream.StreamContext') as MockSCtx, \
-                patch('stream.StreamConfig') as MockSC, \
+            with patch('core.stream.get_sample_duration', return_value=5.0), \
+                patch('core.stream.StreamContext') as MockSCtx, \
+                patch('core.stream.StreamConfig') as MockSC, \
                 patch.object(Stream, '_init_stream_context', fake_init_ctx), \
-                patch('stream.ParameterOrchestrator') as MockOrch, \
-                patch('stream.PointerController'), \
-                patch('stream.PitchController'), \
-                patch('stream.DensityController'), \
-                patch('stream.WindowController'), \
-                patch('stream.VoiceManager'):
+                patch('core.stream.ParameterOrchestrator') as MockOrch, \
+                patch('core.stream.PointerController'), \
+                patch('core.stream.PitchController'), \
+                patch('core.stream.DensityController'), \
+                patch('core.stream.WindowController'), \
+                patch('core.stream.VoiceManager'):
 
                 MockSCtx.from_yaml.return_value = Mock()
                 MockSC.from_yaml.return_value = Mock()
@@ -747,7 +745,7 @@ class TestCreateGrain:
 
     def test_creates_grain_object(self, stream_factory):
         """_create_grain ritorna un oggetto Grain."""
-        from grain import Grain
+        from core.grain import Grain
         s = stream_factory()
 
         grain = s._create_grain(voice_index=0, elapsed_time=0.0, grain_dur=0.05)

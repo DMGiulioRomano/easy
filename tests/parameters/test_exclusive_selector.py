@@ -12,8 +12,8 @@ Copre:
 
 import pytest
 
-from exclusive_selector import ExclusiveGroupSelector
-from parameter_schema import (
+from parameters.exclusive_selector import ExclusiveGroupSelector
+from parameters.parameter_schema import (
     ParameterSpec,
     PITCH_PARAMETER_SCHEMA,
     DENSITY_PARAMETER_SCHEMA,

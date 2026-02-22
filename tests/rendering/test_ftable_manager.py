@@ -33,105 +33,23 @@ from unittest.mock import patch, MagicMock, call
 from dataclasses import dataclass
 from typing import Optional, List
 
-# =============================================================================
-# SETUP: Mock minimale di WindowRegistry per isolamento
-# =============================================================================
-
-@dataclass
-class WindowSpec:
-    """Replica della dataclass WindowSpec per i test."""
-    name: str
-    gen_routine: int
-    gen_params: list
-    description: str
-    family: str = "window"
-
-
-class MockWindowRegistry:
-    """
-    Mock completo di WindowRegistry che replica il comportamento reale.
-    Usato come riferimento per costruire i mock nei singoli test.
-    """
-    WINDOWS = {
-        'hanning': WindowSpec('hanning', 20, [2, 1], "Hanning window", "window"),
-        'hamming': WindowSpec('hamming', 20, [1, 1], "Hamming window", "window"),
-        'bartlett': WindowSpec('bartlett', 20, [3, 1], "Bartlett window", "window"),
-        'blackman': WindowSpec('blackman', 20, [4, 1], "Blackman window", "window"),
-        'gaussian': WindowSpec('gaussian', 20, [6, 1, 3], "Gaussian window", "window"),
-        'kaiser': WindowSpec('kaiser', 20, [7, 1, 6], "Kaiser window", "window"),
-        'rectangle': WindowSpec('rectangle', 20, [8, 1], "Rectangle window", "window"),
-        'sinc': WindowSpec('sinc', 20, [9, 1, 1], "Sinc function", "window"),
-        'half_sine': WindowSpec('half_sine', 9, [0.5, 1, 0], "Half-sine", "custom"),
-        'expodec': WindowSpec('expodec', 16, [1, 1024, 4, 0], "Exponential decay", "asymmetric"),
-        'expodec_strong': WindowSpec('expodec_strong', 16, [1, 1024, 10, 0], "Strong exp decay", "asymmetric"),
-        'exporise': WindowSpec('exporise', 16, [0, 1024, -4, 1], "Exponential rise", "asymmetric"),
-        'exporise_strong': WindowSpec('exporise_strong', 16, [0, 1024, -10, 1], "Strong exp rise", "asymmetric"),
-        'rexpodec': WindowSpec('rexpodec', 16, [1, 1024, -4, 0], "Reverse exp decay", "asymmetric"),
-        'rexporise': WindowSpec('rexporise', 16, [0, 1024, 4, 1], "Reverse exp rise", "asymmetric"),
-    }
-    ALIASES = {'triangle': 'bartlett'}
-
-    @classmethod
-    def get(cls, name):
-        resolved = cls.ALIASES.get(name, name)
-        return cls.WINDOWS.get(resolved)
-
-    @classmethod
-    def all_names(cls):
-        return list(cls.WINDOWS.keys()) + list(cls.ALIASES.keys())
-
-    @classmethod
-    def generate_ftable_statement(cls, table_num, name, size=1024):
-        spec = cls.get(name)
-        if not spec:
-            raise ValueError(f"WINDOW '{name}' non trovato nel registro")
-        params_str = ' '.join(str(p) for p in spec.gen_params)
-        return f"f {table_num} 0 {size} {spec.gen_routine} {params_str}"
+from controllers.window_registry import WindowRegistry, WindowSpec
+from rendering.ftable_manager import FtableManager
 
 
 # =============================================================================
 # FIXTURES
 # =============================================================================
 
-@pytest.fixture(autouse=True)
-def mock_registry():
-    """
-    Patcha WindowRegistry con il mock completo.
-    
-    Strategia: pre-inietta un modulo fittizio window_registry in sys.modules
-    per permettere a ftable_manager.py di importare senza errori,
-    poi patcha l'attributo WindowRegistry nel modulo ftable_manager.
-    """
-    import types
-    fake_module = types.ModuleType('window_registry')
-    fake_module.WindowRegistry = MockWindowRegistry
-
-    with patch.dict('sys.modules', {'window_registry': fake_module}):
-        # Forza reimport pulito
-        if 'ftable_manager' in sys.modules:
-            del sys.modules['ftable_manager']
-
-        import ftable_manager
-        # Patcha direttamente l'attributo nel modulo importato
-        with patch.object(ftable_manager, 'WindowRegistry', MockWindowRegistry):
-            yield MockWindowRegistry
-
-        # Cleanup
-        if 'ftable_manager' in sys.modules:
-            del sys.modules['ftable_manager']
-
-
 @pytest.fixture
 def fm():
     """FtableManager con start_num=1 e WindowRegistry mockato."""
-    from ftable_manager import FtableManager
     return FtableManager(start_num=1)
 
 
 @pytest.fixture
 def fm_offset():
     """FtableManager con start_num=100 per test di offset."""
-    from ftable_manager import FtableManager
     return FtableManager(start_num=100)
 
 
@@ -154,13 +72,12 @@ class TestFtableManagerInit:
 
     def test_default_start_num(self):
         """start_num=1 di default."""
-        from ftable_manager import FtableManager
         fm = FtableManager()
         assert fm.next_num == 1
 
     def test_custom_start_num(self):
         """start_num custom viene rispettato."""
-        from ftable_manager import FtableManager
+
         fm = FtableManager(start_num=50)
         assert fm.next_num == 50
 
@@ -182,13 +99,13 @@ class TestFtableManagerInit:
 
     def test_start_num_zero(self):
         """start_num=0 e' accettato."""
-        from ftable_manager import FtableManager
+
         fm = FtableManager(start_num=0)
         assert fm.next_num == 0
 
     def test_start_num_negative(self):
         """start_num negativo e' accettato (non validato)."""
-        from ftable_manager import FtableManager
+
         fm = FtableManager(start_num=-5)
         assert fm.next_num == -5
 
@@ -749,7 +666,7 @@ class TestWriteToFile:
         fm.register_window("hanning")
 
         # Ora patcha WindowRegistry.get per ritornare None
-        with patch('ftable_manager.WindowRegistry') as mock_wr:
+        with patch('rendering.ftable_manager.WindowRegistry') as mock_wr:
             mock_wr.get.return_value = None
 
             buf = io.StringIO()
@@ -1048,7 +965,7 @@ class TestParametrized:
     @pytest.mark.parametrize("start_num", [0, 1, 10, 100, 1000])
     def test_various_start_nums(self, start_num):
         """Vari valori di start_num."""
-        from ftable_manager import FtableManager
+
         fm = FtableManager(start_num=start_num)
         num = fm.register_sample("/test.wav")
         assert num == start_num

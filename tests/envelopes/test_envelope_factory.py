@@ -11,8 +11,8 @@ Organizzazione:
 """
 
 import pytest
-from envelope_factory import InterpolationStrategyFactory
-from envelope_interpolation import (
+from envelopes.envelope_factory import InterpolationStrategyFactory
+from envelopes.envelope_interpolation import (
     InterpolationStrategy,
     LinearInterpolation,
     StepInterpolation,

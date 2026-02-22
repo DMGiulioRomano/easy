@@ -10,7 +10,7 @@ Coverage:
 """
 
 import pytest
-from time_distribution import (
+from envelopes.time_distribution import (
     TimeDistributionFactory,
     LinearDistribution,
     ExponentialDistribution,

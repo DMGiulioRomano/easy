@@ -24,11 +24,11 @@ import pytest
 import logging
 from unittest.mock import patch
 from enum import Enum
-from gate_factory import GateFactory, DephaseMode
-from probability_gate import (
+from parameters.gate_factory import GateFactory, DephaseMode
+from shared.probability_gate import (
     ProbabilityGate, NeverGate, AlwaysGate, RandomGate, EnvelopeGate
 )
-from envelope import Envelope
+from envelopes.envelope import Envelope
 
 
 # =============================================================================
@@ -1059,7 +1059,6 @@ class TestCreateGateFallthrough:
 
     def test_unhandled_mode_returns_never_gate(self):
         """Mock _classify_dephase per restituire un modo non gestito."""
-        from unittest.mock import patch
 
         # Crea un valore enum non gestito dall'if/elif
         unhandled = object()  # valore che non corrisponde a nessun DephaseMode
