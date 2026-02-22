@@ -1,6 +1,6 @@
 # src/window_controller.py
 from typing import List, Tuple, Dict, Any
-from window_registry import WindowRegistry
+from controllers.window_registry import WindowRegistry
 import random
 from core.stream_config import StreamConfig
 from parameters.gate_factory import GateFactory

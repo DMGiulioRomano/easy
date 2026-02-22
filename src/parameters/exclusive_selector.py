@@ -94,7 +94,7 @@ class ExclusiveGroupSelector:
         2. Il valore non è None (a meno che il default non sia None?)
         3. Per liste/dict: se esiste, è specificato
         """
-        from utils import get_nested
+        from shared.utils import get_nested
 
         value = get_nested(yaml_data, spec.yaml_path, None)
         

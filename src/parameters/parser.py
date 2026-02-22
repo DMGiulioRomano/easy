@@ -153,7 +153,7 @@ class GranularParser:
         Returns:
             Parametro validato (clippato se necessario)
         """
-        from logger import log_config_warning, CLIP_LOG_CONFIG
+        from shared.logger import log_config_warning, CLIP_LOG_CONFIG
         
         if param is None:
             return None

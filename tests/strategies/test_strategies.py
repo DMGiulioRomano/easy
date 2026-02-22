@@ -151,6 +151,10 @@ mock_paramdef_mod.ParameterBounds = ParameterBounds
 mock_paramdef_mod.get_parameter_definition = _mock_get_parameter_definition
 
 # Inject temporaneo con ripristino automatico garantito
+# Rimuovi dalla cache per forzare reimport pulito dentro il contesto mockato
+for _mod_name in ['strategie', 'strategy_registry']:
+    sys.modules.pop(_mod_name, None)
+
 with patch.dict(sys.modules, {
     'parameter': mock_parameter_mod,
     'envelope': mock_envelope_mod,

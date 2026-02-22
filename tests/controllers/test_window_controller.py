@@ -244,7 +244,7 @@ def _build_mock_modules():
     }
 
 with _patch.dict(sys.modules, _build_mock_modules()):
-    from window_controller import WindowController
+    from controllers.window_controller import WindowController
 
 # =============================================================================
 # FIXTURES

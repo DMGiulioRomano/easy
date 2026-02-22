@@ -13,7 +13,7 @@ usare catene di if/elif, garantendo estensibilità e pulizia.
 import random
 from typing import Union, Optional, Callable, Dict
 from envelopes.envelope import Envelope
-from parameter_definitions import ParameterBounds
+from parameters.parameter_definitions import ParameterBounds
 from shared.logger import log_clip_warning
 from shared.probability_gate import *
 from shared.distribution_strategy import DistributionFactory, DistributionStrategy

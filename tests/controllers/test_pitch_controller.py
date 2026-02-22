@@ -21,9 +21,9 @@ Coverage:
 import pytest
 import math
 from unittest.mock import Mock, patch
-from pitch_controller import PitchController
-from parameter import Parameter
-from parameter_definitions import ParameterBounds, get_parameter_definition
+from controllers.pitch_controller import PitchController
+from parameters.parameter import Parameter
+from parameters.parameter_definitions import ParameterBounds, get_parameter_definition
 
 # =============================================================================
 # FIXTURES
@@ -34,7 +34,7 @@ def _make_pitch_controller(mock_config, loaded_params, raw_params=None):
     if raw_params is None:
         raw_params = {}
 
-    with patch('pitch_controller.ParameterOrchestrator') as MockOrch:
+    with patch('controllers.pitch_controller.ParameterOrchestrator') as MockOrch:
         mock_orch = MockOrch.return_value
         mock_orch.create_all_parameters.return_value = loaded_params
         return PitchController(raw_params, mock_config)
@@ -361,7 +361,7 @@ class TestEnvelopeIntegration:
 
     def test_ratio_envelope_varies_over_time(self, mock_config):
         """Ratio come Envelope varia nel tempo."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 1.0], [10, 2.0]])
 
@@ -386,7 +386,7 @@ class TestEnvelopeIntegration:
 
     def test_semitones_envelope_varies_over_time(self, mock_config):
         """Semitoni come Envelope varia nel tempo."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 0.0], [10, 12.0]])
 
@@ -411,7 +411,7 @@ class TestEnvelopeIntegration:
 
     def test_ratio_envelope_with_reverse(self, mock_config):
         """Envelope + reverse produce ratio negativo."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 1.0], [10, 4.0]])
 
@@ -433,7 +433,7 @@ class TestEnvelopeIntegration:
 
     def test_base_ratio_is_envelope_object(self, mock_config):
         """base_ratio ritorna l'oggetto Envelope quando e' envelope."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 1.0], [10, 2.0]])
 
@@ -540,7 +540,7 @@ class TestStrategyBaseValue:
 
     def test_envelope_base_value(self, mock_config):
         """base_value ritorna Envelope quando il valore e' un envelope."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 0.0], [10, 12.0]])
 
@@ -621,7 +621,7 @@ class TestRealisticSequence:
 
     def test_pitch_sequence_semitones_glissando(self, mock_config):
         """Genera glissando: 0 -> 12 semitoni (ratio 1.0 -> 2.0)."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 0.0], [10, 12.0]])
 

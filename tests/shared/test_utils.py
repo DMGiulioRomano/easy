@@ -24,7 +24,7 @@ from utils import get_sample_duration, random_percent, get_nested
 class TestGetSampleDuration:
     """Test per get_sample_duration() - usa mock di soundfile."""
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_get_duration_normal_file(self, mock_info):
         """File audio normale restituisce durata corretta."""
         mock_info.return_value = Mock(duration=2.5)
@@ -34,7 +34,7 @@ class TestGetSampleDuration:
         assert result == 2.5
         mock_info.assert_called_once_with('./refs/test.wav')
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_get_duration_zero_length(self, mock_info):
         """File audio di lunghezza zero."""
         mock_info.return_value = Mock(duration=0.0)
@@ -43,7 +43,7 @@ class TestGetSampleDuration:
         
         assert result == 0.0
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_get_duration_very_short(self, mock_info):
         """File audio molto breve (< 1ms)."""
         mock_info.return_value = Mock(duration=0.0001)
@@ -52,7 +52,7 @@ class TestGetSampleDuration:
         
         assert result == pytest.approx(0.0001)
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_get_duration_very_long(self, mock_info):
         """File audio molto lungo (ore)."""
         mock_info.return_value = Mock(duration=3600.0)
@@ -61,7 +61,7 @@ class TestGetSampleDuration:
         
         assert result == 3600.0
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_path_construction(self, mock_info):
         """Verifica che il path sia costruito correttamente."""
         mock_info.return_value = Mock(duration=1.0)
@@ -70,7 +70,7 @@ class TestGetSampleDuration:
         
         mock_info.assert_called_once_with('./refs/subfolder/file.wav')
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_different_extensions(self, mock_info):
         """Funziona con diverse estensioni audio."""
         mock_info.return_value = Mock(duration=1.0)
@@ -82,7 +82,7 @@ class TestGetSampleDuration:
         
         assert mock_info.call_count == len(extensions)
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_file_not_found_error(self, mock_info):
         """File non esistente solleva errore."""
         mock_info.side_effect = FileNotFoundError("File not found")
@@ -90,7 +90,7 @@ class TestGetSampleDuration:
         with pytest.raises(FileNotFoundError):
             get_sample_duration('nonexistent.wav')
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_invalid_audio_file(self, mock_info):
         """File non valido solleva errore soundfile."""
         mock_info.side_effect = RuntimeError("Invalid audio file")
@@ -360,7 +360,7 @@ class TestGetNested:
 class TestUtilsIntegration:
     """Test di integrazione tra le funzioni utilities."""
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_chaining_functions(self, mock_info):
         """Test concatenazione funzioni utils."""
         mock_info.return_value = Mock(duration=2.5)
@@ -412,7 +412,7 @@ class TestPathSamplesConstant:
         from utils import PATHSAMPLES
         assert PATHSAMPLES == './refs/'
     
-    @patch('src.utils.sf.info')
+    @patch('utils.sf.info')
     def test_pathsamples_used_in_get_duration(self, mock_info):
         """get_sample_duration usa PATHSAMPLES."""
         mock_info.return_value = Mock(duration=1.0)

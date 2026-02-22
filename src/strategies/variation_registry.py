@@ -5,7 +5,7 @@ Segue lo stesso pattern di strategy_registry.py per coerenza.
 """
 
 from typing import Dict, Type
-from variation_strategy import (
+from strategies.variation_strategy import (
     VariationStrategy,
     AdditiveVariation,
     QuantizedVariation,

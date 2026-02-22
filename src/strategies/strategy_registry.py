@@ -5,7 +5,7 @@ Permette di aggiungere nuove strategie SENZA modificare controller esistenti.
 """
 
 from typing import Dict, Type
-from strategie import *
+from strategies.strategie import *
 
 # =============================================================================
 # REGISTRI
@@ -66,7 +66,7 @@ class StrategyFactory:
         
         # La strategia density ha bisogno anche del parametro distribution
         distribution_param = all_params.get('distribution')
-        if not distribution_param or not isinstance(distribution_param, Parameter):
+        if distribution_param is None or not isinstance(distribution_param, Parameter):
             raise ValueError("Density strategy richiede parametro 'distribution' valido")        
         strategy_class = DENSITY_STRATEGIES[selected_param_name]
         return strategy_class(param_obj, distribution_param)

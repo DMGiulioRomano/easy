@@ -15,7 +15,7 @@ Ispirato al DMX-1000 di Barry Truax (1988).
 import random
 from typing import List, Optional, Union
 
-from grain import Grain
+from core.grain import Grain
 from envelopes.envelope import Envelope
 from controllers.window_controller import WindowController
 from controllers.pointer_controller import PointerController

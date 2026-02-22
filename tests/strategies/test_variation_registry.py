@@ -26,9 +26,6 @@ Organizzazione:
 import pytest
 from typing import Dict, Type
 
-import sys
-sys.path.insert(0, '/home/claude')
-
 from distribution_strategy import DistributionStrategy
 from variation_strategy import (
     VariationStrategy,

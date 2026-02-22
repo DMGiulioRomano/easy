@@ -51,7 +51,7 @@ class Envelope:
             })
         """
         # Import qui per evitare circular import
-        from envelope_builder import EnvelopeBuilder
+        from envelopes.envelope_builder import EnvelopeBuilder
         
         # Parse type e raw_points
         if isinstance(breakpoints, dict):

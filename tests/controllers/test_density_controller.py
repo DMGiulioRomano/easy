@@ -21,9 +21,9 @@ Coverage:
 import pytest
 import random as stdlib_random
 from unittest.mock import Mock, patch, MagicMock
-from density_controller import DensityController
-from parameter import Parameter
-from parameter_definitions import get_parameter_definition
+from controllers.density_controller import DensityController
+from parameters.parameter import Parameter
+from parameters.parameter_definitions import get_parameter_definition
 
 # =============================================================================
 # FIXTURES
@@ -40,7 +40,7 @@ def _make_density_controller(mock_config, loaded_params, raw_params=None):
     if raw_params is None:
         raw_params = {}
 
-    with patch('density_controller.ParameterOrchestrator') as MockOrch:
+    with patch('controllers.density_controller.ParameterOrchestrator') as MockOrch:
         mock_orch = MockOrch.return_value
         mock_orch.create_all_parameters.return_value = loaded_params
         return DensityController(raw_params, mock_config)
@@ -507,7 +507,7 @@ class TestEnvelopeIntegration:
 
     def test_fill_factor_envelope(self, mock_config):
         """fill_factor come Envelope produce density variabile."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         env = Envelope([[0, 1.0], [10, 4.0]])
 
@@ -546,7 +546,7 @@ class TestEnvelopeIntegration:
 
     def test_distribution_envelope(self, mock_config):
         """distribution come Envelope varia nel tempo."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         dist_env = Envelope([[0, 0.0], [10, 1.0]])
 
@@ -584,7 +584,7 @@ class TestEnvelopeIntegration:
 
     def test_density_envelope(self, mock_config):
         """density diretta come Envelope."""
-        from envelope import Envelope
+        from envelopes.envelope import Envelope
 
         dens_env = Envelope([[0, 10.0], [10, 100.0]])
 
@@ -659,7 +659,7 @@ class TestTruaxFormula:
         d = 0.7
 
         # Mock random per risultato deterministico
-        with patch('density_controller.random.uniform', return_value=0.03):
+        with patch('controllers.density_controller.random.uniform', return_value=0.03):
             result = dc._apply_truax_distribution(avg_iot, 0.0)
 
             # expected = (1-0.7)*0.025 + 0.7*0.03 = 0.0075 + 0.021 = 0.0285
@@ -671,7 +671,7 @@ class TestTruaxFormula:
         params = _build_fill_factor_params(fill_factor=2.0, distribution=1.0)
         dc = _make_density_controller(mock_config, params)
 
-        with patch('density_controller.random.uniform', return_value=0.0):
+        with patch('controllers.density_controller.random.uniform', return_value=0.0):
             result = dc._apply_truax_distribution(0.025, 0.0)
             # d=1.0: (1-1)*0.025 + 1*0 = 0.0
             assert result == pytest.approx(0.0)
@@ -682,7 +682,7 @@ class TestTruaxFormula:
         dc = _make_density_controller(mock_config, params)
 
         avg_iot = 0.025
-        with patch('density_controller.random.uniform', return_value=2.0 * avg_iot):
+        with patch('controllers.density_controller.random.uniform', return_value=2.0 * avg_iot):
             result = dc._apply_truax_distribution(avg_iot, 0.0)
             # d=1.0: (1-1)*0.025 + 1*0.05 = 0.05
             assert result == pytest.approx(2.0 * avg_iot)

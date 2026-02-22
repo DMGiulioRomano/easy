@@ -380,7 +380,7 @@ class EnvelopeBuilder:
             raw_input: Input originale (può essere misto, compatto, legacy)
             expanded: Lista finale espansa di breakpoints
         """
-        from logger import get_clip_logger
+        from shared.logger import get_clip_logger
         
         logger = get_clip_logger()
         if logger is None:
