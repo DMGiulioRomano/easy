@@ -1,7 +1,7 @@
 # make/clean.mk
 # Pulizia directory generate
 
-.PHONY: clean clean-all clean-generated clean-output clean-logs
+.PHONY: clean clean-all clean-generated clean-output clean-logs clean-test-cache
 
 clean:
 	@echo "[CLEAN] Removing generated files..."

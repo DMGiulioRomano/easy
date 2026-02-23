@@ -1259,3 +1259,170 @@ class TestParametrized:
         result = gen._eval_math_expressions("(1/0)")
         # Quando eval lancia ZeroDivisionError, ritorna l'originale
         assert result == "(1/0)"
+
+# =============================================================================
+# 10. TEST generate_score_files_per_stream()
+# =============================================================================
+
+class TestGenerateScoreFilesPerStream:
+    """Test per generate_score_files_per_stream() - un file per stream/cartridge."""
+
+    def _make_stream(self, stream_id):
+        s = Mock()
+        s.stream_id = stream_id
+        return s
+
+    def _make_cartridge(self, cartridge_id):
+        c = Mock()
+        c.cartridge_id = cartridge_id
+        return c
+
+    def test_returns_list(self, gen):
+        """Il metodo ritorna una lista."""
+        gen.streams = []
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream()
+        assert isinstance(result, list)
+
+    def test_empty_streams_and_cartridges_returns_empty_list(self, gen):
+        """Con liste vuote non genera nessun file."""
+        gen.streams = []
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream()
+        assert result == []
+
+    def test_one_file_per_stream(self, gen):
+        """Genera esattamente un file per ogni stream."""
+        gen.streams = [self._make_stream('s1'), self._make_stream('s2')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream()
+        assert len(result) == 2
+
+    def test_one_file_per_cartridge(self, gen):
+        """Genera esattamente un file per ogni cartridge."""
+        gen.streams = []
+        gen.cartridges = [self._make_cartridge('c1'), self._make_cartridge('c2')]
+        result = gen.generate_score_files_per_stream()
+        assert len(result) == 2
+
+    def test_streams_and_cartridges_combined(self, gen):
+        """Genera file per stream E per cartridges."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = [self._make_cartridge('c1'), self._make_cartridge('c2')]
+        result = gen.generate_score_files_per_stream()
+        assert len(result) == 3
+
+    def test_stream_filename_uses_stream_id(self, gen):
+        """Il nome del file stream contiene stream_id."""
+        gen.streams = [self._make_stream('texture_01')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream()
+        assert any('texture_01' in path for path in result)
+
+    def test_cartridge_filename_uses_cartridge_id(self, gen):
+        """Il nome del file cartridge contiene cartridge_id."""
+        gen.streams = []
+        gen.cartridges = [self._make_cartridge('tape_head_A')]
+        result = gen.generate_score_files_per_stream()
+        assert any('tape_head_A' in path for path in result)
+
+    def test_files_have_sco_extension(self, gen):
+        """Tutti i file generati hanno estensione .sco."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = [self._make_cartridge('c1')]
+        result = gen.generate_score_files_per_stream()
+        assert all(path.endswith('.sco') for path in result)
+
+    def test_base_name_prefix_applied_to_streams(self, gen):
+        """Con base_name, il prefisso viene applicato ai file stream."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream(base_name='my_piece')
+        assert any('my_piece_s1' in path for path in result)
+
+    def test_base_name_prefix_applied_to_cartridges(self, gen):
+        """Con base_name, il prefisso viene applicato ai file cartridge."""
+        gen.streams = []
+        gen.cartridges = [self._make_cartridge('c1')]
+        result = gen.generate_score_files_per_stream(base_name='my_piece')
+        assert any('my_piece_c1' in path for path in result)
+
+    def test_without_base_name_no_prefix(self, gen):
+        """Senza base_name, il file inizia direttamente con stream_id."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream(output_dir='.')
+        filename = os.path.basename(result[0])
+        assert filename == 's1.sco'
+
+    def test_output_dir_applied_to_paths(self, gen, tmp_path):
+        """I file vengono creati nella output_dir specificata."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream(output_dir=str(tmp_path))
+        assert all(str(tmp_path) in path for path in result)
+
+    def test_output_dir_created_if_not_exists(self, gen, tmp_path):
+        """La output_dir viene creata se non esiste."""
+        new_dir = str(tmp_path / 'new_subdir')
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = []
+        gen.generate_score_files_per_stream(output_dir=new_dir)
+        assert os.path.isdir(new_dir)
+
+    def test_stream_written_with_only_its_stream(self, gen):
+        """Ogni chiamata a write_score per stream passa solo quello stream."""
+        s1 = self._make_stream('s1')
+        s2 = self._make_stream('s2')
+        gen.streams = [s1, s2]
+        gen.cartridges = []
+
+        gen.generate_score_files_per_stream()
+
+        calls = gen.score_writer.write_score.call_args_list
+        stream_calls = [c for c in calls]
+        assert stream_calls[0].kwargs['streams'] == [s1]
+        assert stream_calls[0].kwargs['cartridges'] == []
+        assert stream_calls[1].kwargs['streams'] == [s2]
+        assert stream_calls[1].kwargs['cartridges'] == []
+
+    def test_cartridge_written_with_only_its_cartridge(self, gen):
+        """Ogni chiamata a write_score per cartridge passa solo quella cartridge."""
+        c1 = self._make_cartridge('c1')
+        c2 = self._make_cartridge('c2')
+        gen.streams = []
+        gen.cartridges = [c1, c2]
+
+        gen.generate_score_files_per_stream()
+
+        calls = gen.score_writer.write_score.call_args_list
+        assert calls[0].kwargs['streams'] == []
+        assert calls[0].kwargs['cartridges'] == [c1]
+        assert calls[1].kwargs['cartridges'] == [c2]
+
+    def test_yaml_source_passed_to_each_call(self, gen):
+        """yaml_source viene passato a ogni chiamata di write_score."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = [self._make_cartridge('c1')]
+
+        gen.generate_score_files_per_stream()
+
+        for call in gen.score_writer.write_score.call_args_list:
+            assert call.kwargs['yaml_source'] == 'test_config.yml'
+
+    def test_write_score_called_once_per_element(self, gen):
+        """write_score viene chiamato esattamente N volte (stream + cartridges)."""
+        gen.streams = [self._make_stream('s1'), self._make_stream('s2')]
+        gen.cartridges = [self._make_cartridge('c1')]
+
+        gen.generate_score_files_per_stream()
+
+        assert gen.score_writer.write_score.call_count == 3
+
+    def test_default_output_dir_is_current_dir(self, gen):
+        """Senza output_dir, i file vengono messi nella directory corrente."""
+        gen.streams = [self._make_stream('s1')]
+        gen.cartridges = []
+        result = gen.generate_score_files_per_stream()
+        # Il path deve essere relativo alla dir corrente
+        assert os.path.dirname(result[0]) == '.'

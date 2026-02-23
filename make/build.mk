@@ -32,7 +32,36 @@ ifeq ($(PRECLEAN), true)
 ALL_PRE += clean
 endif
 
-# --- Target principale ---
+
+
+ifeq ($(STEMS), true)
+
+# --- Pipeline STEMS: 1 yml → N sco → N aif ---
+
+.PHONY: all
+all: $(ALL_PRE) stems-build
+
+.PHONY: stems-build
+stems-build:
+	python3.11 $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco --per-stream
+	@for sco in $(GENDIR)/*.sco; do \
+		stem=$$(basename $$sco .sco); \
+		csound \
+			--env:INCDIR+=$(PWD_DIR)/$(INCDIR) \
+			--env:SSDIR+=$(PWD_DIR)/$(SSDIR) \
+			--env:SFDIR=$(PWD_DIR)/$(SFDIR) \
+			-m 134 \
+			$(CSDIR)/main.orc $$sco \
+			--logfile=$(LOGDIR)/$$stem.log \
+			-o $(SFDIR)/$$stem.aif; \
+	done
+	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
+		for aif in $(SFDIR)/*.aif; do open "$$aif"; done; \
+	fi
+
+else
+
+# --- Pipeline normale: 1 yml → 1 sco → 1 aif ---
 
 .PHONY: all
 ifeq ($(TEST), true)
@@ -60,3 +89,5 @@ $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
 		open "$@"; \
 	fi
+
+endif

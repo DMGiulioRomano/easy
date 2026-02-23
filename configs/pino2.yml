@@ -5,6 +5,13 @@ streams:
   - stream_id: "texture1"
     time_mode: normalized
     onset: 0.0
-    duration: 30
+    duration: 3
+    #time_scale: .3
+    sample: "pino2.wav"
+
+  - stream_id: "texture1"
+    time_mode: normalized
+    onset: 10.0
+    duration: 3
     #time_scale: .3
     sample: "pino2.wav"

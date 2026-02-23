@@ -19,6 +19,8 @@ SHOWSTATIC ?= true
 FILE ?= test-lez
 TEST ?= false
 PRECLEAN ?=true
+STEMS ?= false
+
 # Include moduli
 include make/test.mk
 include make/utils.mk

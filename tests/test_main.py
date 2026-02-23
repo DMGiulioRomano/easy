@@ -422,4 +422,73 @@ class TestErrorHandling:
         assert exc_info.value.code == 1
 
 
-# =========================================
+# =============================================================================
+# TEST FLAG --per-stream / -p
+# =============================================================================
+
+class TestPerStreamFlag:
+    """
+    Con --per-stream o -p, main() deve chiamare
+    generate_score_files_per_stream() invece di generate_score_file().
+    """
+
+    def test_per_stream_long_flag_calls_per_stream_method(self, mocks):
+        """--per-stream chiama generate_score_files_per_stream."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--per-stream']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_files_per_stream.assert_called_once()
+
+    def test_per_stream_short_flag_calls_per_stream_method(self, mocks):
+        """-p chiama generate_score_files_per_stream."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '-p']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_files_per_stream.assert_called_once()
+
+    def test_per_stream_does_not_call_generate_score_file(self, mocks):
+        """Con --per-stream, generate_score_file non viene chiamato."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--per-stream']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_file.assert_not_called()
+
+    def test_without_per_stream_calls_generate_score_file(self, mocks):
+        """Senza --per-stream, generate_score_file viene chiamato normalmente."""
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_file.assert_called_once()
+
+    def test_per_stream_passes_output_dir_from_output_file(self, mocks):
+        """output_dir viene estratta dal dirname di output_file."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'scores/out.sco', '--per-stream']):
+            mocks['main'].main()
+        call_kwargs = mocks['generator_instance'].generate_score_files_per_stream.call_args.kwargs
+        assert call_kwargs['output_dir'] == 'scores'
+
+    def test_per_stream_passes_base_name_from_output_file(self, mocks):
+        """base_name viene estratto dal basename senza estensione di output_file."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'scores/my_piece.sco', '--per-stream']):
+            mocks['main'].main()
+        call_kwargs = mocks['generator_instance'].generate_score_files_per_stream.call_args.kwargs
+        assert call_kwargs['base_name'] == 'my_piece'
+
+    def test_per_stream_default_output_file_uses_current_dir(self, mocks):
+        """Senza output_file esplicito, output_dir e' la dir corrente."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', '--per-stream']):
+            mocks['main'].main()
+        call_kwargs = mocks['generator_instance'].generate_score_files_per_stream.call_args.kwargs
+        assert call_kwargs['output_dir'] == '.'
+
+    def test_per_stream_exception_exits_with_1(self, mocks):
+        """Un errore in generate_score_files_per_stream causa sys.exit(1)."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(
+            side_effect=IOError("disk full")
+        )
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--per-stream']):
+            with pytest.raises(SystemExit) as exc_info:
+                mocks['main'].main()
+        assert exc_info.value.code == 1

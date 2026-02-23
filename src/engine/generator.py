@@ -128,7 +128,64 @@ class Generator:
             cartridges=self.cartridges,
             yaml_source=self.yaml_path
         )
-    
+
+    def generate_score_files_per_stream(
+        self,
+        output_dir: str = '.',
+        base_name: str = None
+    ) -> List[str]:
+        """
+        Genera un file .sco separato per ogni stream e per ogni cartridge.
+
+        Il nome file e' derivato da stream_id / cartridge_id.
+        Se base_name e' fornito: {base_name}_{id}.sco
+        Altrimenti: {id}.sco
+
+        Args:
+            output_dir: directory di output
+            base_name: prefisso opzionale per i nomi file
+
+        Returns:
+            Lista dei path file generati
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+        generated = []
+
+        for stream in self.streams:
+            filename = (
+                f"{base_name}_{stream.stream_id}.sco"
+                if base_name
+                else f"{stream.stream_id}.sco"
+            )
+            filepath = os.path.join(output_dir, filename)
+
+            self.score_writer.write_score(
+                filepath=filepath,
+                streams=[stream],
+                cartridges=[],
+                yaml_source=self.yaml_path
+            )
+            generated.append(filepath)
+
+        for cartridge in self.cartridges:
+            filename = (
+                f"{base_name}_{cartridge.cartridge_id}.sco"
+                if base_name
+                else f"{cartridge.cartridge_id}.sco"
+            )
+            filepath = os.path.join(output_dir, filename)
+
+            self.score_writer.write_score(
+                filepath=filepath,
+                streams=[],
+                cartridges=[cartridge],
+                yaml_source=self.yaml_path
+            )
+            generated.append(filepath)
+
+        return generated
+
     # =========================================================================
     # CREAZIONE STREAM
     # =========================================================================
@@ -313,3 +370,4 @@ class Generator:
             window_map[window_name] = table_num
         
         return window_map
+        

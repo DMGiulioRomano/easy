@@ -273,7 +273,7 @@ class Stream:
         voice_ptr_range = self._voice_manager.get_voice_pointer_range(elapsed_time)
         voice_ptr_deviation = random.uniform(-0.5, 0.5) * voice_ptr_range * self.sample_dur_sec
         
-        pointer_pos = base_pointer #+ voice_pointer_offset + voice_ptr_deviation
+        pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
         
         volume = self.volume.get_value(elapsed_time)
         pan = self.pan.get_value(elapsed_time)        
