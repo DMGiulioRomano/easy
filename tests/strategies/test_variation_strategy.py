@@ -26,8 +26,8 @@ import random
 from unittest.mock import Mock, patch, MagicMock
 from abc import ABC
 
-from distribution_strategy import DistributionStrategy
-from variation_strategy import (
+from shared.distribution_strategy import DistributionStrategy
+from strategies.variation_strategy import (
     VariationStrategy,
     AdditiveVariation,
     QuantizedVariation,

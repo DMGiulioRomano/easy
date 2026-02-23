@@ -516,12 +516,12 @@ class TestDistributionStrategyEdgeCases:
     def test_zero_center(self):
         """Distribuzioni funzionano con center=0."""
         dist = GaussianDistribution()
-        
-        samples = [dist.sample(center=0.0, spread=5.0) for _ in range(100)]
+
+        samples = [dist.sample(center=0.0, spread=5.0) for _ in range(1000)]
         mean = statistics.mean(samples)
-        
+
         assert abs(mean) < 1.0
-    
+
     def test_fractional_spread(self):
         """Distribuzioni funzionano con spread frazionario."""
         dist = UniformDistribution()

@@ -15,7 +15,7 @@ Organizzazione:
 import pytest
 import math
 from typing import List
-from envelope_interpolation import *
+from envelopes.envelope_interpolation import *
 # =============================================================================
 # FIXTURES
 # =============================================================================
