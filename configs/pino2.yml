@@ -9,7 +9,7 @@ streams:
     #time_scale: .3
     sample: "pino2.wav"
 
-  - stream_id: "texture1"
+  - stream_id: "texture2"
     time_mode: normalized
     onset: 10.0
     duration: 3

@@ -37,13 +37,14 @@ endif
 ifeq ($(STEMS), true)
 
 # --- Pipeline STEMS: 1 yml → N sco → N aif ---
+PYFLAGS += --show-static
 
 .PHONY: all
 all: $(ALL_PRE) stems-build
 
 .PHONY: stems-build
 stems-build:
-	python3.11 $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco --per-stream
+	python3.11 $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco $(PYFLAGS)
 	@for sco in $(GENDIR)/*.sco; do \
 		stem=$$(basename $$sco .sco); \
 		csound \
