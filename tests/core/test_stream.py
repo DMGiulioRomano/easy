@@ -762,14 +762,6 @@ class TestCreateGrain:
         assert args[0] == pytest.approx(1.5)
         assert args[1] == pytest.approx(0.03)
 
-    def test_voice_pitch_multiplier_called_correctly(self, stream_factory):
-        """get_voice_pitch_multiplier riceve voice_index e elapsed_time."""
-        s = stream_factory()
-
-        s._create_grain(elapsed_time=3.0, grain_dur=0.05)
-
-        s._voice_manager.get_voice_pitch_multiplier.assert_called_once_with(2, 3.0)
-
 
 # =============================================================================
 # 10. TEST _calculate_grain_reverse
@@ -1222,9 +1214,9 @@ class TestStreamParametrized:
 
     @pytest.mark.parametrize("max_voices", [1, 2, 5, 10])
     def test_voice_count(self, stream_factory, max_voices):
-        """Numero di voci corrisponde a max_voices."""
+        """Single voice stream: voices contiene sempre esattamente 1 lista."""
         s = stream_factory(max_voices=max_voices, duration=0.3, inter_onset=0.1)
 
         s.generate_grains()
 
-        assert len(s.voices) == max_voices
+        assert len(s.voices) == 1

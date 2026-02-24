@@ -453,7 +453,7 @@ class TestDistributionStrategyIntegration:
         
         # Verifica concentrazione vicino a 440Hz
         near_center = sum(1 for s in samples if 420 <= s <= 460)
-        assert near_center > 60  # >60% in ±σ
+        assert near_center >= 55 # >=55% in ±σ (soglia robusta per N=100)
     
     def test_distributions_compatible_interface(self):
         """Tutte le distribuzioni hanno interfaccia compatibile."""

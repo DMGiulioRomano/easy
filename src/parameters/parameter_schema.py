@@ -218,35 +218,6 @@ DENSITY_PARAMETER_SCHEMA: List[ParameterSpec] = [
     )
 ]
 
-# =============================================================================
-# VOICE PARAMETER SCHEMA
-# =============================================================================
-# Parametri gestiti da VoiceManager.
-# =============================================================================
-
-VOICE_PARAMETER_SCHEMA: List[ParameterSpec] = [
-    ParameterSpec(
-        name='num_voices',
-        yaml_path='number',
-        default=1
-    ),
-    ParameterSpec(
-        name='voice_pitch_offset',
-        yaml_path='offset_pitch',
-        default=0.0
-    ),
-    ParameterSpec(
-        name='voice_pointer_offset',
-        yaml_path='pointer_offset',
-        default=0.0
-    ),
-    ParameterSpec(
-        name='voice_pointer_range',
-        yaml_path='pointer_range',
-        default=0.0
-    ),
-]
-
 
 # =============================================================================
 # REGISTRY COMPLETO: Tutti gli schema indicizzati
@@ -257,7 +228,6 @@ ALL_SCHEMAS = {
     'pointer': POINTER_PARAMETER_SCHEMA,
     'pitch': PITCH_PARAMETER_SCHEMA,
     'density': DENSITY_PARAMETER_SCHEMA,
-    'voice': VOICE_PARAMETER_SCHEMA,
 }
 
 
@@ -270,7 +240,7 @@ def get_schema(schema_name: str) -> List[ParameterSpec]:
     Recupera uno schema per nome.
     
     Args:
-        schema_name: 'stream', 'pointer', 'pitch', 'density', 'voice'
+        schema_name: 'stream', 'pointer', 'pitch', 'density'
         
     Raises:
         KeyError: Se lo schema non esiste.

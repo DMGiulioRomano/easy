@@ -194,26 +194,20 @@ class Stream:
         # Reset stato
         self.voices = []
         self.grains = []
-                
+        voice_grains: List[Grain] = []                
         # 2. Loop per ogni voice
         current_onset = 0.0
         
         # Loop temporale per questa voice
         while current_onset < self.duration:
             elapsed_time = current_onset
-
             grain_dur = self.grain_duration.get_value(elapsed_time)
-            
             grain = self._create_grain(elapsed_time, grain_dur)
-            self.voices.append(grain)
-            # 3. Calcola inter-onset (sempre, per mantenere fase)
-            inter_onset = self._density.calculate_inter_onset(
-                elapsed_time,
-                grain_dur
-            )
+            voice_grains.append(grain)
+            inter_onset = self._density.calculate_inter_onset(elapsed_time,grain_dur)
             current_onset += inter_onset
-        # 4. Flatten per backward compatibility
-        self.grains = [grain for voice in self.voices for grain in voice]
+        self.voices = [voice_grains]
+        self.grains = voice_grains
         self.generated = True
         
         return self.voices
