@@ -438,8 +438,7 @@ class TestInitControllers:
         with patch('core.stream.PointerController') as MockPtr, \
              patch('core.stream.PitchController') as MockPitch, \
              patch('core.stream.DensityController') as MockDens, \
-             patch('core.stream.WindowController') as MockWin, \
-             patch('core.stream.VoiceManager') as MockVM:
+             patch('core.stream.WindowController') as MockWin:
 
             s._init_controllers(params, config)
 
@@ -447,7 +446,6 @@ class TestInitControllers:
         MockPitch.assert_called_once()
         MockDens.assert_called_once()
         MockWin.assert_called_once()
-        MockVM.assert_called_once()
 
     def test_pointer_receives_pointer_subdict(self):
         """PointerController riceve params['pointer'] o {} se assente."""
@@ -479,15 +477,13 @@ class TestInitControllers:
         with patch('core.stream.PointerController') as MockPtr, \
              patch('core.stream.PitchController') as MockPitch, \
              patch('core.stream.DensityController'), \
-             patch('core.stream.WindowController') as MockWin, \
-             patch('core.stream.VoiceManager') as MockVM:
+             patch('core.stream.WindowController') as MockWin:
 
             s._init_controllers(params, config)
 
         assert MockPtr.call_args.kwargs['params'] == {}
         assert MockPitch.call_args.kwargs['params'] == {}
         assert MockWin.call_args.kwargs['params'] == {}
-        assert MockVM.call_args.kwargs['params'] == {}
 
 
 # =============================================================================
@@ -631,75 +627,7 @@ class TestGenerateGrainsSingleVoice:
         assert len(s.voices[0]) == 0
 
 
-# =============================================================================
-# 7. TEST generate_grains - MULTI-VOICE
-# =============================================================================
-
-class TestGenerateGrainsMultiVoice:
-    """Test generate_grains con voci multiple."""
-
-    def test_creates_voice_lists(self, stream_factory):
-        """Crea una lista per ogni voce."""
-        s = stream_factory(max_voices=3, duration=0.3, inter_onset=0.1)
-
-        s.generate_grains()
-
-        assert len(s.voices) == 3
-
-    def test_each_voice_has_grains(self, stream_factory):
-        """Ogni voce attiva produce grani."""
-        s = stream_factory(max_voices=3, duration=0.3, inter_onset=0.1)
-
-        s.generate_grains()
-
-        for voice in s.voices:
-            assert len(voice) > 0
-
-    def test_flattened_includes_all_voices(self, stream_factory):
-        """self.grains contiene grani da tutte le voci."""
-        s = stream_factory(max_voices=3, duration=0.3, inter_onset=0.1)
-
-        s.generate_grains()
-
-        total_per_voice = sum(len(v) for v in s.voices)
-        assert len(s.grains) == total_per_voice
-
-    def test_inactive_voice_no_grains(self, stream_factory):
-        """Voce inattiva non produce grani ma mantiene fase."""
-        s = stream_factory(max_voices=2, duration=0.3, inter_onset=0.1)
-
-        # Voice 1 sempre inattiva
-        def voice_active(idx, time):
-            return idx == 0
-
-        s._voice_manager.is_voice_active = Mock(side_effect=voice_active)
-
-        s.generate_grains()
-
-        assert len(s.voices[0]) > 0
-        assert len(s.voices[1]) == 0
-
-    def test_dynamic_voice_activation(self, stream_factory):
-        """Voce che si attiva a meta' stream."""
-        s = stream_factory(max_voices=2, duration=1.0, inter_onset=0.1)
-
-        # Voice 1 attiva solo dopo t=0.5
-        def voice_active(idx, time):
-            if idx == 0:
-                return True
-            return time >= 0.5
-
-        s._voice_manager.is_voice_active = Mock(side_effect=voice_active)
-
-        s.generate_grains()
-
-        # Voice 0: tutti i grani
-        # Voice 1: solo dalla meta' in poi
-        assert len(s.voices[1]) < len(s.voices[0])
-        assert len(s.voices[1]) > 0
-
-
-# =============================================================================
+    # =============================================================================
 # 8. TEST generate_grains - STATO E RESET
 # =============================================================================
 
@@ -748,7 +676,7 @@ class TestCreateGrain:
         from core.grain import Grain
         s = stream_factory()
 
-        grain = s._create_grain(voice_index=0, elapsed_time=0.0, grain_dur=0.05)
+        grain = s._create_grain(elapsed_time=0.0, grain_dur=0.05)
 
         assert isinstance(grain, Grain)
 
@@ -756,7 +684,7 @@ class TestCreateGrain:
         """onset = stream.onset + elapsed_time."""
         s = stream_factory(onset=10.0)
 
-        grain = s._create_grain(0, elapsed_time=2.5, grain_dur=0.05)
+        grain = s._create_grain(elapsed_time=2.5, grain_dur=0.05)
 
         assert grain.onset == pytest.approx(12.5)
 
@@ -764,26 +692,25 @@ class TestCreateGrain:
         """Durata del grano passata come argomento."""
         s = stream_factory()
 
-        grain = s._create_grain(0, 0.0, grain_dur=0.123)
+        grain = s._create_grain(0.0, grain_dur=0.123)
 
         assert grain.duration == pytest.approx(0.123)
 
-    def test_grain_pitch_includes_voice_multiplier(self, stream_factory):
-        """pitch_ratio = base_pitch * voice_pitch_multiplier."""
+    def test_grain_pitch_from_pitch_controller(self, stream_factory):
+        """pitch_ratio viene direttamente da PitchController.calculate()."""
         s = stream_factory()
         s._pitch.calculate.return_value = 2.0
-        s._voice_manager.get_voice_pitch_multiplier.return_value = 0.5
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
-        assert grain.pitch_ratio == pytest.approx(1.0)
+        assert grain.pitch_ratio == pytest.approx(2.0)
 
     def test_grain_pointer_from_controller(self, stream_factory):
         """pointer_pos viene dal PointerController."""
         s = stream_factory()
         s._pointer.calculate.return_value = 3.7
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
         assert grain.pointer_pos == pytest.approx(3.7)
 
@@ -792,7 +719,7 @@ class TestCreateGrain:
         s = stream_factory()
         s.volume.get_value.return_value = -12.0
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
         assert grain.volume == pytest.approx(-12.0)
 
@@ -801,7 +728,7 @@ class TestCreateGrain:
         s = stream_factory()
         s.pan.get_value.return_value = 0.75
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
         assert grain.pan == pytest.approx(0.75)
 
@@ -810,7 +737,7 @@ class TestCreateGrain:
         s = stream_factory()
         s.sample_table_num = 42
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
         assert grain.sample_table == 42
 
@@ -820,7 +747,7 @@ class TestCreateGrain:
         s._window_controller.select_window.return_value = 'hanning'
         s.window_table_map = {'hanning': 99}
 
-        grain = s._create_grain(0, 0.0, 0.05)
+        grain = s._create_grain(0.0, 0.05)
 
         assert grain.envelope_table == 99
 
@@ -828,7 +755,7 @@ class TestCreateGrain:
         """PointerController.calculate riceve elapsed_time, grain_dur e grain_reverse."""
         s = stream_factory()
 
-        s._create_grain(0, elapsed_time=1.5, grain_dur=0.03)
+        s._create_grain(elapsed_time=1.5, grain_dur=0.03)
 
         s._pointer.calculate.assert_called_once()
         args = s._pointer.calculate.call_args[0]
@@ -839,7 +766,7 @@ class TestCreateGrain:
         """get_voice_pitch_multiplier riceve voice_index e elapsed_time."""
         s = stream_factory()
 
-        s._create_grain(voice_index=2, elapsed_time=3.0, grain_dur=0.05)
+        s._create_grain(elapsed_time=3.0, grain_dur=0.05)
 
         s._voice_manager.get_voice_pitch_multiplier.assert_called_once_with(2, 3.0)
 

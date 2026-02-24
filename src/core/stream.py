@@ -127,14 +127,7 @@ class Stream:
         self._window_controller = WindowController(
             params=params.get('grain', {}),
             config=config
-        )
-
-        # VOICE MANAGER
-        self._voice_manager = VoiceManager(
-            params=params.get('voices', {}),
-            config=config
-        )
-    
+        )    
             
     def _init_grain_reverse(self, params: dict) -> None:
         """
@@ -201,43 +194,31 @@ class Stream:
         # Reset stato
         self.voices = []
         self.grains = []
-        
-        # 1. Determina max voices
-        max_voices = self._voice_manager.max_voices
-        
+                
         # 2. Loop per ogni voice
-        for voice_index in range(max_voices):
-            voice_grains: List[Grain] = []
-            current_onset = 0.0
-            
-            # Loop temporale per questa voice
-            while current_onset < self.duration:
-                elapsed_time = current_onset
-
-                grain_dur = self.grain_duration.get_value(elapsed_time)
-                
-                # 4. Verifica se voice è attiva
-                if self._voice_manager.is_voice_active(voice_index, elapsed_time):
-                    grain = self._create_grain(voice_index, elapsed_time, grain_dur)
-                    voice_grains.append(grain)
-                
-                # 5. Calcola inter-onset (sempre, per mantenere fase)
-                inter_onset = self._density.calculate_inter_onset(
-                    elapsed_time,
-                    grain_dur
-                )
-                current_onset += inter_onset
-            
-            self.voices.append(voice_grains)
+        current_onset = 0.0
         
-        # 6. Flatten per backward compatibility
+        # Loop temporale per questa voice
+        while current_onset < self.duration:
+            elapsed_time = current_onset
+
+            grain_dur = self.grain_duration.get_value(elapsed_time)
+            
+            grain = self._create_grain(elapsed_time, grain_dur)
+            self.voices.append(grain)
+            # 3. Calcola inter-onset (sempre, per mantenere fase)
+            inter_onset = self._density.calculate_inter_onset(
+                elapsed_time,
+                grain_dur
+            )
+            current_onset += inter_onset
+        # 4. Flatten per backward compatibility
         self.grains = [grain for voice in self.voices for grain in voice]
         self.generated = True
         
         return self.voices
     
     def _create_grain(self, 
-                      voice_index: int, 
                       elapsed_time: float, 
                       grain_dur: float) -> Grain:
         """
@@ -255,26 +236,12 @@ class Stream:
 
         # === 1. PITCH ===
         # Base + Voice Offset
-        base_pitch = self._pitch.calculate(elapsed_time, grain_reverse=grain_reverse)
-        voice_pitch_mult = self._voice_manager.get_voice_pitch_multiplier(
-            voice_index, elapsed_time
-        )
-        pitch_ratio = base_pitch * voice_pitch_mult
+        pitch_ratio = self._pitch.calculate(elapsed_time, grain_reverse=grain_reverse)
         
         # === 2. POINTER ===
         # Base + Voice Offset + Jitter Voce
-        base_pointer = self._pointer.calculate(elapsed_time,grain_dur,grain_reverse)
-        
-        voice_pointer_offset = self._voice_manager.get_voice_pointer_offset(
-            voice_index, elapsed_time
-        ) * self.sample_dur_sec  # Scala offset normalizzato in secondi
-        
-        # Variazione stocastica specifica per le voci
-        voice_ptr_range = self._voice_manager.get_voice_pointer_range(elapsed_time)
-        voice_ptr_deviation = random.uniform(-0.5, 0.5) * voice_ptr_range * self.sample_dur_sec
-        
-        pointer_pos = base_pointer + voice_pointer_offset + voice_ptr_deviation
-        
+        pointer_pos = self._pointer.calculate(elapsed_time,grain_dur,grain_reverse)
+                                
         volume = self.volume.get_value(elapsed_time)
         pan = self.pan.get_value(elapsed_time)        
         # === 6. ONSET ===
