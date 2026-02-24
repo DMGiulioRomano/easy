@@ -6,10 +6,10 @@ COMMIT?="."
 .PHONY: open pdf sync rx-stop
 
 open:
-	open $(SFDIR)/*.aif
+	$(OPEN_CMD) $(SFDIR)/*.aif
 
 pdf:
-	open $(GENDIR)/*.pdf
+	$(OPEN_CMD) $(GENDIR)/*.pdf
 
 sync:
 	git add .
@@ -18,12 +18,10 @@ sync:
 	git push
 
 rx-stop:
-	@if [ "$$(uname)" = "Darwin" ] && \
-	   [ -d "/Applications/iZotope RX 11 Audio Editor.app" ] && \
-	   pgrep -f "iZotope RX 11" >/dev/null; then \
+	@if [ "$(HAS_RX11)" = "true" ] && pgrep -f "iZotope RX 11" >/dev/null 2>&1; then \
 		echo "RX 11 attivo: AUTOKILL=true, chiusura in corso"; \
-		osascript -e 'tell application "iZotope RX 11 Audio Editor" to quit' || true; \
+		$(KILL_RX_CMD) || true; \
 		sleep 1; \
 	else \
-		echo "make: Nothing to be done for 'all'..."; \
+		echo "make: Nothing to be done for 'rx-stop'."; \
 	fi

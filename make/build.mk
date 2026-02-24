@@ -74,9 +74,10 @@ endif
 # --- Regole di build ---
 
 # YAML → SCO (Python)
-$(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES) | $(GENDIR)
-	$(PYTHON_CMD) $(INCDIR)/main.py $< $@ $(PYFLAGS)
+$(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES) | $(GENDIR) venv-setup
 
+	$(PYTHON_VENV) $(INCDIR)/main.py $< $@ $(PYFLAGS)
+	
 # SCO → AIF (Csound)
 $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 	csound \
@@ -87,8 +88,8 @@ $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)
 		$(CSDIR)/main.orc $< \
 		--logfile=$(LOGDIR)/$*.log \
 		-o $@
-	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
-		open "$@"; \
+	@if [ "$(AUTOPEN)" = "true" ] && [ "$(OPEN_CMD)" != "" ]; then \
+		$(OPEN_CMD) "$@"; \
 	fi
 
 endif

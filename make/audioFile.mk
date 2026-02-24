@@ -8,5 +8,4 @@ INPUT?=001
 $(INPUT)-$(SKIP_)-$(DURATA_).wav: refs/$(INPUT).wav
 	sox $(SSDIR)/$(INPUT).wav $@ trim $(SKIP) $(DURATA)
 	mv $@ $(SSDIR)/$@
-	@if [ "$(AUTOPEN)" = "true" ]; then open $(SSDIR)/$@; fi
-
+	@if [ "$(AUTOPEN)" = "true" ]; then $(OPEN_CMD) $(SSDIR)/$@; fi

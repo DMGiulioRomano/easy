@@ -1,5 +1,24 @@
 # Makefile Principale
+# --- Rilevazione OS ---
+OS := $(shell uname -s)
 
+ifeq ($(OS), Darwin)
+    OPEN_CMD     := open
+    PYTHON_CMD   := python3.12
+    HAS_RX11     := $(shell [ -d "/Applications/iZotope RX 11 Audio Editor.app" ] && echo "true" || echo "false")
+    KILL_RX_CMD  := osascript -e 'tell application "iZotope RX 11 Audio Editor" to quit'
+else ifeq ($(OS), Linux)
+    OPEN_CMD     := xdg-open
+    PYTHON_CMD   := python3.12
+    HAS_RX11     := false
+    KILL_RX_CMD  := true
+else
+    # Fallback / Windows con WSL o altri sistemi
+    OPEN_CMD     := echo "Apertura automatica non supportata su questo OS:"
+    PYTHON_CMD   := python3
+    HAS_RX11     := false
+    KILL_RX_CMD  := true
+endif
 
 # --- Configurazione directory ---
 PWD_DIR := $(shell pwd)
