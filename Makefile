@@ -59,9 +59,8 @@ $(LOGDIR):
 
 # --- Setup iniziale ---
 .PHONY: setup
-setup: $(GENDIR) $(SFDIR) $(LOGDIR) venv-setup
-	@echo "✅ [SETUP] Project ready."
-
+setup: check-system-deps $(GENDIR) $(SFDIR) $(LOGDIR) venv-setup
+	@echo "[SETUP] Project ready."
 # --- Help ---
 .DEFAULT_GOAL := help
 
@@ -95,3 +94,25 @@ help:
 	@echo "  AUTOPEN=true/false   - Auto-apri file generati"
 	@echo "  AUTOVISUAL=true/false- Genera visualizzazioni PDF"
 	@echo "  TEST=true/false      - Build tutti i file o solo FILE"
+
+.PHONY: install-system-deps check-system-deps
+
+check-system-deps:
+	@echo "[CHECK] Verifica dipendenze di sistema..."
+	@command -v csound >/dev/null 2>&1 || { echo "ERRORE: csound non trovato. Esegui: make install-system-deps"; exit 1; }
+	@command -v sox >/dev/null 2>&1 || { echo "ERRORE: sox non trovato. Esegui: make install-system-deps"; exit 1; }
+	@command -v python3.12 >/dev/null 2>&1 || { echo "ERRORE: python3.12 non trovato. Esegui: make install-system-deps"; exit 1; }
+	@echo "[CHECK] Tutte le dipendenze di sistema trovate."
+
+install-system-deps:
+	ifeq ($(OS), Darwin)
+		@echo "[DEPS] Installazione dipendenze macOS via Homebrew..."
+		@command -v brew >/dev/null 2>&1 || { echo "Homebrew non trovato. Installa da https://brew.sh"; exit 1; }
+		brew install python@3.12 sox csound
+	else ifeq ($(OS), Linux)
+		@echo "[DEPS] Installazione dipendenze Linux via apt..."
+		sudo apt update
+		sudo apt install -y python3.12 python3.12-venv sox csound
+	else
+		@echo "Sistema non supportato per installazione automatica."
+	endif

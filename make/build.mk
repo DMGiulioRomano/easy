@@ -56,8 +56,8 @@ stems-build: venv-setup
 			--logfile=$(LOGDIR)/$$stem.log \
 			-o $(SFDIR)/$$stem.aif; \
 	done
-	@if [ "$(AUTOPEN)" = "true" ] && [ "$$(uname)" = "Darwin" ]; then \
-		for aif in $(SFDIR)/*.aif; do open "$$aif"; done; \
+	@if [ "$(AUTOPEN)" = "true" ]; then \
+		for aif in $(SFDIR)/*.aif; do $(OPEN_CMD) "$$aif"; done; \
 	fi
 
 else

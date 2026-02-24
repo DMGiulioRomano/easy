@@ -15,7 +15,7 @@ ifeq ($(shell which python$(PYTHON_VERSION) 2>/dev/null),)
         ifeq ($(PYTHON_CHECK),OK)
             PYTHON_CMD := python3
         else
-            $(error Python $(PYTHON_VERSION) non trovato. Installalo con: brew install python@3.12 o apt install python3.12)
+            $(error Python $(PYTHON_VERSION) non trovato.)
         endif
     else
         PYTHON_CMD := python3.12
