@@ -105,14 +105,14 @@ check-system-deps:
 	@echo "[CHECK] Tutte le dipendenze di sistema trovate."
 
 install-system-deps:
-	ifeq ($(OS), Darwin)
-		@echo "[DEPS] Installazione dipendenze macOS via Homebrew..."
-		@command -v brew >/dev/null 2>&1 || { echo "Homebrew non trovato. Installa da https://brew.sh"; exit 1; }
-		brew install python@3.12 sox csound
-	else ifeq ($(OS), Linux)
-		@echo "[DEPS] Installazione dipendenze Linux via apt..."
-		sudo apt update
-		sudo apt install -y python3.12 python3.12-venv sox csound
-	else
-		@echo "Sistema non supportato per installazione automatica."
-	endif
+ifeq ($(OS), Darwin)
+	@echo "[DEPS] Installazione dipendenze macOS via Homebrew..."
+	@command -v brew >/dev/null 2>&1 || { echo "Homebrew non trovato. Installa da https://brew.sh"; exit 1; }
+	brew install python@3.12 sox csound
+else ifeq ($(OS), Linux)
+	@echo "[DEPS] Installazione dipendenze Linux via apt..."
+	sudo apt update
+	sudo apt install -y python3.12 python3.12-venv sox csound
+else
+	@echo "Sistema non supportato per installazione automatica."
+endif
