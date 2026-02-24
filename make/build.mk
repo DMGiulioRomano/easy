@@ -43,8 +43,8 @@ PYFLAGS += --show-static
 all: $(ALL_PRE) stems-build
 
 .PHONY: stems-build
-stems-build:
-	python3.11 $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco $(PYFLAGS)
+stems-build: venv-setup
+	$(PYTHON_VENV) $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco $(PYFLAGS)
 	@for sco in $(GENDIR)/*.sco; do \
 		stem=$$(basename $$sco .sco); \
 		csound \
