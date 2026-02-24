@@ -835,17 +835,6 @@ class TestIntegrationWithParameterSchema:
         except ImportError:
             pytest.skip("parameter_schema non importabile")
 
-    def test_voice_schema_params_have_bounds(self):
-        try:
-            from parameters.parameter_schema import VOICE_PARAMETER_SCHEMA
-            for spec in VOICE_PARAMETER_SCHEMA:
-                if spec.is_smart:
-                    assert spec.name in GRANULAR_PARAMETERS, (
-                        f"Schema param '{spec.name}' manca in GRANULAR_PARAMETERS"
-                    )
-        except ImportError:
-            pytest.skip("parameter_schema non importabile")
-
 
 # =============================================================================
 # 13. EDGE CASES E ROBUSTEZZA

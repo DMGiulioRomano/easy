@@ -75,7 +75,7 @@ endif
 
 # YAML → SCO (Python)
 $(GENDIR)/%.sco: $(YMLDIR)/%.yml $(PYTHON_SOURCES) | $(GENDIR)
-	python3.11 $(INCDIR)/main.py $< $@ $(PYFLAGS)
+	$(PYTHON_CMD) $(INCDIR)/main.py $< $@ $(PYFLAGS)
 
 # SCO → AIF (Csound)
 $(SFDIR)/%.aif: $(GENDIR)/%.sco $(YMLDIR)/%.yml | $(SFDIR) $(LOGDIR)

@@ -458,9 +458,7 @@ class TestInitControllers:
         with patch('core.stream.PointerController') as MockPtr, \
              patch('core.stream.PitchController'), \
              patch('core.stream.DensityController'), \
-             patch('core.stream.WindowController'), \
-             patch('core.stream.VoiceManager'):
-
+             patch('core.stream.WindowController'):
             s._init_controllers(params, config)
 
         call_kwargs = MockPtr.call_args
@@ -518,9 +516,7 @@ class TestStreamInit:
                 patch('core.stream.PointerController'), \
                 patch('core.stream.PitchController'), \
                 patch('core.stream.DensityController'), \
-                patch('core.stream.WindowController'), \
-                patch('core.stream.VoiceManager'):
-
+                patch('core.stream.WindowController'):
                 MockSCtx.from_yaml.return_value = Mock()
                 MockSC.from_yaml.return_value = Mock()
 
@@ -873,12 +869,6 @@ class TestStreamProperties:
 
         assert s.sampleDurSec == 7.5
 
-    def test_num_voices_property(self, stream_factory):
-        """num_voices espone valore dal VoiceManager."""
-        s = stream_factory()
-        s._voice_manager.num_voices_value = 4
-
-        assert s.num_voices == 4
 
     def test_density_property(self, stream_factory):
         """density espone valore dal DensityController."""

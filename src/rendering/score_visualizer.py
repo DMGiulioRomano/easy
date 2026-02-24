@@ -820,7 +820,6 @@ class ScoreVisualizer:
             POINTER_PARAMETER_SCHEMA, 
             PITCH_PARAMETER_SCHEMA,
             DENSITY_PARAMETER_SCHEMA,
-            VOICE_PARAMETER_SCHEMA
         )
         
         envelopes = {}
@@ -831,9 +830,7 @@ class ScoreVisualizer:
             STREAM_PARAMETER_SCHEMA + 
             POINTER_PARAMETER_SCHEMA + 
             PITCH_PARAMETER_SCHEMA + 
-            DENSITY_PARAMETER_SCHEMA +
-            VOICE_PARAMETER_SCHEMA
-        )
+            DENSITY_PARAMETER_SCHEMA        )
         
         # Itera su tutte le specifiche dei parametri
         for spec in all_schemas:

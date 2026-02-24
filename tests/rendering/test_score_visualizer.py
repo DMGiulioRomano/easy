@@ -46,7 +46,6 @@ _param_schema_mod.STREAM_PARAMETER_SCHEMA = []
 _param_schema_mod.POINTER_PARAMETER_SCHEMA = []
 _param_schema_mod.PITCH_PARAMETER_SCHEMA = []
 _param_schema_mod.DENSITY_PARAMETER_SCHEMA = []
-_param_schema_mod.VOICE_PARAMETER_SCHEMA = []
 sys.modules.setdefault('parameter_schema', _param_schema_mod)
 
 from rendering.score_visualizer import ScoreVisualizer  # noqa: E402

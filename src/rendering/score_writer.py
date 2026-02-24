@@ -130,13 +130,7 @@ class ScoreWriter:
         # Density parameters
         f.write(f'; Density: {self._format_param(stream.density, 1, " g/s")}\n')
         f.write(f'; Distribution: {self._format_param(stream.distribution)}\n')
-        
-        # Voice parameters
-        if isinstance(stream.num_voices, (Parameter, Envelope)):
-            f.write(f'; Num voices: {self._format_param(stream.num_voices, 1, " voices")}\n')
-        else:
-            f.write(f'; Num voices: {stream.num_voices}\n')
-        
+                
         # Statistiche
         total_grains = sum(len(voice_grains) for voice_grains in stream.voices)
         f.write(f'; Total grains: {total_grains}\n\n')

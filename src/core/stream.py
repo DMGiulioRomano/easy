@@ -21,7 +21,6 @@ from controllers.window_controller import WindowController
 from controllers.pointer_controller import PointerController
 from controllers.pitch_controller import PitchController
 from controllers.density_controller import DensityController
-from controllers.voice_manager import VoiceManager
 from shared.utils import get_sample_duration
 from parameters.parameter_schema import STREAM_PARAMETER_SCHEMA
 from parameters.parameter_orchestrator import ParameterOrchestrator
@@ -300,12 +299,7 @@ class Stream:
     def sampleDurSec(self) -> float:
         """Alias per backward compatibility."""
         return self.sample_dur_sec
-    
-    @property
-    def num_voices(self) -> Union[int, Envelope]:
-        """Espone num_voices per ScoreVisualizer."""
-        return self._voice_manager.num_voices_value
-    
+        
     @property
     def density(self) -> Optional[Union[float, Envelope]]:
         """Espone density per Generator/ScoreVisualizer."""

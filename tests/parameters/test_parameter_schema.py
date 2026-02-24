@@ -4,7 +4,7 @@ Test suite completa per parameter_schema.py
 
 Modulo sotto test:
 - ParameterSpec (dataclass frozen)
-- 5 schema costanti (STREAM, POINTER, PITCH, DENSITY, VOICE)
+- 5 schema costanti (STREAM, POINTER, PITCH, DENSITY)
 - ALL_SCHEMAS registry
 - _SCHEMA_BY_NAME flat index
 - Helper functions: get_schema, get_all_schema_names,
@@ -16,7 +16,6 @@ Organizzazione:
 3. POINTER_PARAMETER_SCHEMA - contenuto e gruppi esclusivi
 4. PITCH_PARAMETER_SCHEMA - contenuto e gruppi esclusivi
 5. DENSITY_PARAMETER_SCHEMA - contenuto e gruppi esclusivi
-6. VOICE_PARAMETER_SCHEMA - contenuto
 7. ALL_SCHEMAS registry - completezza e consistenza
 8. _SCHEMA_BY_NAME flat index - unicita' e coerenza
 9. get_schema() - successo e errore
@@ -36,7 +35,6 @@ from parameters.parameter_schema import (
     POINTER_PARAMETER_SCHEMA,
     PITCH_PARAMETER_SCHEMA,
     DENSITY_PARAMETER_SCHEMA,
-    VOICE_PARAMETER_SCHEMA,
     ALL_SCHEMAS,
     get_schema,
     get_all_schema_names,
@@ -454,61 +452,6 @@ class TestDensityParameterSchema:
         names = [s.name for s in DENSITY_PARAMETER_SCHEMA]
         assert len(names) == len(set(names))
 
-
-# =============================================================================
-# 6. VOICE_PARAMETER_SCHEMA
-# =============================================================================
-
-class TestVoiceParameterSchema:
-    """Contenuto di VOICE_PARAMETER_SCHEMA."""
-
-    def test_is_list_of_specs(self):
-        assert isinstance(VOICE_PARAMETER_SCHEMA, list)
-        for spec in VOICE_PARAMETER_SCHEMA:
-            assert isinstance(spec, ParameterSpec)
-
-    def test_expected_parameters(self):
-        names = {s.name for s in VOICE_PARAMETER_SCHEMA}
-        assert names == {
-            'num_voices', 'voice_pitch_offset',
-            'voice_pointer_offset', 'voice_pointer_range'
-        }
-
-    def test_num_voices_defaults(self):
-        spec = next(s for s in VOICE_PARAMETER_SCHEMA if s.name == 'num_voices')
-        assert spec.yaml_path == 'number'
-        assert spec.default == 1
-
-    def test_voice_pitch_offset_defaults(self):
-        spec = next(s for s in VOICE_PARAMETER_SCHEMA if s.name == 'voice_pitch_offset')
-        assert spec.yaml_path == 'offset_pitch'
-        assert spec.default == 0.0
-
-    def test_voice_pointer_offset_defaults(self):
-        spec = next(s for s in VOICE_PARAMETER_SCHEMA if s.name == 'voice_pointer_offset')
-        assert spec.yaml_path == 'pointer_offset'
-        assert spec.default == 0.0
-
-    def test_voice_pointer_range_defaults(self):
-        spec = next(s for s in VOICE_PARAMETER_SCHEMA if s.name == 'voice_pointer_range')
-        assert spec.yaml_path == 'pointer_range'
-        assert spec.default == 0.0
-
-    def test_no_exclusive_groups(self):
-        """Voice schema non ha gruppi esclusivi."""
-        for spec in VOICE_PARAMETER_SCHEMA:
-            assert spec.exclusive_group is None
-
-    def test_all_are_smart(self):
-        """Tutti i parametri voice sono smart (is_smart=True)."""
-        for spec in VOICE_PARAMETER_SCHEMA:
-            assert spec.is_smart is True, f"'{spec.name}' dovrebbe essere smart"
-
-    def test_unique_names(self):
-        names = [s.name for s in VOICE_PARAMETER_SCHEMA]
-        assert len(names) == len(set(names))
-
-
 # =============================================================================
 # 7. ALL_SCHEMAS REGISTRY
 # =============================================================================
@@ -521,7 +464,7 @@ class TestAllSchemasRegistry:
 
     def test_expected_keys(self):
         assert set(ALL_SCHEMAS.keys()) == {
-            'stream', 'pointer', 'pitch', 'density', 'voice'
+            'stream', 'pointer', 'pitch', 'density'
         }
 
     def test_stream_reference(self):
@@ -536,9 +479,6 @@ class TestAllSchemasRegistry:
 
     def test_density_reference(self):
         assert ALL_SCHEMAS['density'] is DENSITY_PARAMETER_SCHEMA
-
-    def test_voice_reference(self):
-        assert ALL_SCHEMAS['voice'] is VOICE_PARAMETER_SCHEMA
 
     def test_all_values_are_lists(self):
         for name, schema in ALL_SCHEMAS.items():
@@ -597,7 +537,7 @@ class TestSchemaByNameIndex:
 
     def test_controller_params_in_index(self):
         """I parametri dei controller sono nel flat index."""
-        controller_names = ['pointer_start', 'pitch_ratio', 'fill_factor', 'num_voices']
+        controller_names = ['pointer_start', 'pitch_ratio', 'fill_factor']
         for name in controller_names:
             assert name in _SCHEMA_BY_NAME
 
@@ -614,7 +554,6 @@ class TestGetSchema:
         ('pointer', POINTER_PARAMETER_SCHEMA),
         ('pitch', PITCH_PARAMETER_SCHEMA),
         ('density', DENSITY_PARAMETER_SCHEMA),
-        ('voice', VOICE_PARAMETER_SCHEMA),
     ])
     def test_returns_correct_schema(self, schema_name, expected_schema):
         result = get_schema(schema_name)
@@ -655,7 +594,7 @@ class TestGetAllSchemaNames:
 
     def test_contains_all_expected_names(self):
         result = get_all_schema_names()
-        assert set(result) == {'stream', 'pointer', 'pitch', 'density', 'voice'}
+        assert set(result) == {'stream', 'pointer', 'pitch', 'density'}
 
     def test_count_matches_all_schemas(self):
         assert len(get_all_schema_names()) == len(ALL_SCHEMAS)
@@ -689,8 +628,6 @@ class TestGetParameterSpecFromSchema:
         ('density', 'density'),
         ('density', 'distribution'),
         ('density', 'effective_density'),
-        ('voice', 'num_voices'),
-        ('voice', 'voice_pitch_offset'),
     ])
     def test_returns_correct_spec(self, schema_name, param_name):
         """Recupera la spec corretta per ogni combinazione schema/parametro."""
@@ -732,8 +669,6 @@ class TestGetParameterSpec:
         'loop_start', 'loop_end', 'loop_dur',
         'pitch_ratio', 'pitch_semitones',
         'fill_factor', 'density', 'distribution', 'effective_density',
-        'num_voices', 'voice_pitch_offset', 'voice_pointer_offset',
-        'voice_pointer_range',
     ])
     def test_returns_spec_for_all_known_params(self, param_name):
         spec = get_parameter_spec(param_name)
@@ -782,7 +717,7 @@ class TestGetAllParameterNames:
     def test_does_not_include_controller_params(self):
         """Non include parametri dai controller (pointer, pitch, etc.)."""
         result = set(get_all_parameter_names())
-        controller_only = {'pointer_start', 'pitch_ratio', 'fill_factor', 'num_voices'}
+        controller_only = {'pointer_start', 'pitch_ratio', 'fill_factor'}
         assert result.isdisjoint(controller_only), (
             f"Parametri controller trovati: {result & controller_only}"
         )
