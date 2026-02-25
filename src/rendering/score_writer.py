@@ -132,6 +132,7 @@ class ScoreWriter:
         f.write(f'; Distribution: {self._format_param(stream.distribution)}\n')
                 
         # Statistiche
+        f.write(f'; Num voices: {self._format_param(stream.num_voices)}\n')
         total_grains = sum(len(voice_grains) for voice_grains in stream.voices)
         f.write(f'; Total grains: {total_grains}\n\n')
     
