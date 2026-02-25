@@ -180,7 +180,6 @@ class Stream:
         Genera grani per tutte le voices.
         
         Algoritmo:
-        1. Determina max_voices dall'envelope/valore fisso
         2. Per ogni voice (0 a max_voices-1):
            - Mantiene il proprio current_onset
            - Verifica se è attiva (voice_index < active_voices)
