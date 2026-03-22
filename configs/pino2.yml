@@ -10,9 +10,9 @@ streams:
     sample: "pino2.wav"
 
   - stream_id: "texture2"
-    time_mode: absolute
+    time_mode: normalized
     onset: 10.0
-    duration: 3
+    duration: 10
     #time_scale: .3
     sample: "pino2.wav"
     pointer:
@@ -23,3 +23,7 @@ streams:
       duration: .05
     pitch:
     dephase:
+    density: 
+      - [[[0, 10], [100, 50]],
+         1.0, 5, "linear",
+         {type: power, exponent: 2.0}]
