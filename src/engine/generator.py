@@ -135,6 +135,7 @@ class Generator:
         base_name: str = None,
         cache_manager=None,
         aif_dir: str = None,
+        aif_prefix: str = None,   
     ) -> List[str]:
         """
         Genera un file .sco separato per ogni stream e per ogni cartridge.
@@ -167,10 +168,13 @@ class Generator:
                 if s.stream_id in self._stream_data_map
             ]
             dirty_dicts = cache_manager.get_dirty_stream_dicts(
-                raw_dicts, aif_dir=aif_dir
+                raw_dicts,
+                aif_dir=aif_dir,
+                aif_prefix=aif_prefix,
             )
             dirty_ids = {d['stream_id'] for d in dirty_dicts}
             streams_to_write = [s for s in self.streams if s.stream_id in dirty_ids]
+            print(f"[CACHE] Stream da scrivere: {[s.stream_id for s in streams_to_write]}", flush=True)
         else:
             streams_to_write = self.streams
             dirty_dicts = None
@@ -230,7 +234,11 @@ class Generator:
         
         for stream_data in stream_data_list:
             # 1. Crea stream
+            import json
+            print(f"[DEBUG] PRIMA Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
+
             stream = Stream(stream_data)
+            print(f"[DEBUG] DOPO  Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
             self._stream_data_map[stream_data['stream_id']] = stream_data
             # 2. Registra ftable sample
             stream.sample_table_num = self.ftable_manager.register_sample(stream.sample)

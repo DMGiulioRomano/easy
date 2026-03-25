@@ -14,6 +14,12 @@ AIF_FILES := $(patsubst $(GENDIR)/%.sco,$(SFDIR)/%.aif,$(SCO_FILES))
 PYFLAGS :=
 ALL_PRE :=
 
+
+ifeq ($(CACHE), true)
+PRECLEAN := false
+endif
+
+
 # 1. Se AUTOVISUAL è true, aggiungi --visualize
 ifeq ($(AUTOVISUAL), true)
 PYFLAGS += --visualize
@@ -38,17 +44,20 @@ ifeq ($(STEMS), true)
 
 # --- Pipeline STEMS: 1 yml → N sco → N aif ---
 PYFLAGS += --show-static
+PYFLAGS += --per-stream
 
 ifeq ($(CACHE), true)
 PYFLAGS += --cache --cache-dir $(CACHEDIR) --aif-dir $(SFDIR)
-PRECLEAN := false
 endif
+
 
 .PHONY: all
 all: $(ALL_PRE) stems-build
 
 .PHONY: stems-build
-stems-build: venv-setup
+stems-build: venv-setup $(CACHEDIR)
+	@echo "[STEMS] Pulizia score intermedi..."
+	rm -f $(GENDIR)/*.sco
 	$(PYTHON_VENV) $(INCDIR)/main.py $(YMLDIR)/$(FILE).yml $(GENDIR)/$(FILE).sco $(PYFLAGS)
 	@for sco in $(GENDIR)/*.sco; do \
 		stem=$$(basename $$sco .sco); \

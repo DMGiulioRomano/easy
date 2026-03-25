@@ -29,7 +29,7 @@ CSDIR  := csound
 SFDIR  := output
 SSDIR  := refs
 YMLDIR := configs
-CACHE ?= false
+CACHE ?= true
 CACHEDIR := cache
 # --- Flags configurabili ---
 AUTOKILL ?= true
@@ -39,7 +39,7 @@ SHOWSTATIC ?= true
 FILE ?= PGE_test
 TEST ?= false
 PRECLEAN ?=true
-STEMS ?= false
+STEMS ?= true
 
 # Include moduli
 include make/test.mk
@@ -58,9 +58,11 @@ $(SFDIR):
 $(LOGDIR):
 	mkdir -p $@
 
+$(CACHEDIR):
+	mkdir -p $@
 # --- Setup iniziale ---
 .PHONY: setup
-setup: check-system-deps $(GENDIR) $(SFDIR) $(LOGDIR) venv-setup
+setup: check-system-deps $(GENDIR) $(SFDIR) $(LOGDIR) $(CACHEDIR) venv-setup
 	@echo "[SETUP] Project ready."
 # --- Help ---
 .DEFAULT_GOAL := help

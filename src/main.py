@@ -76,6 +76,7 @@ def main():
                 base_name=base_name,
                 cache_manager=cache_manager,
                 aif_dir=aif_dir,
+                aif_prefix=base_name,   
             )
             print(f"\n Generazione completata! {len(generated)} file generati:")
             for path in generated:

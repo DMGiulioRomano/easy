@@ -91,20 +91,6 @@ class StreamCacheManager:
     # =========================================================================
 
     def is_dirty(self, stream_dict: dict, aif_path: Optional[str]) -> bool:
-        """
-        Determina se uno stream deve essere ricompilato.
-
-        Args:
-            stream_dict: dict parametri dello stream dallo YAML
-            aif_path: path del file .aif di output, o None per ignorare
-                      il check sul file
-
-        Returns:
-            True se lo stream e' dirty (deve essere ricompilato)
-
-        Raises:
-            ValueError: se stream_dict non contiene 'stream_id'
-        """
         if 'stream_id' not in stream_dict:
             raise ValueError(
                 "stream_dict deve contenere 'stream_id' per il lookup nel manifest"
@@ -112,6 +98,12 @@ class StreamCacheManager:
 
         stream_id = stream_dict['stream_id']
         manifest = self.load()
+        
+        current_fp = self.compute_fingerprint(stream_dict)
+        saved_fp = manifest.get(stream_id, 'NON_PRESENTE')
+        match = current_fp == saved_fp
+        aif_exists = os.path.exists(aif_path) if aif_path is not None else 'N/A'
+        print(f"[CACHE DEBUG] {stream_id}: match={match} aif_path={aif_path} aif_exists={aif_exists}", flush=True)
 
         if stream_id not in manifest:
             return True
@@ -128,32 +120,25 @@ class StreamCacheManager:
         self,
         stream_dicts: List[dict],
         aif_dir: Optional[str],
+        aif_prefix: Optional[str] = None,
     ) -> List[dict]:
-        """
-        Filtra una lista di stream dict restituendo solo quelli dirty.
-
-        Il path del .aif per ogni stream e' calcolato come:
-            {aif_dir}/{stream_id}.aif
-        Se aif_dir e' None, il check sul file viene ignorato.
-
-        Args:
-            stream_dicts: lista di dict parametri stream dallo YAML
-            aif_dir: directory dei file .aif di output, o None
-
-        Returns:
-            Lista dei soli stream dict che devono essere ricompilati
-        """
         dirty = []
         for d in stream_dicts:
+            stream_id = d.get('stream_id', '')
             if aif_dir is not None:
-                stream_id = d.get('stream_id', '')
-                aif_path = os.path.join(aif_dir, f"{stream_id}.aif")
+                filename = f"{aif_prefix}_{stream_id}.aif" if aif_prefix else f"{stream_id}.aif"
+                aif_path = os.path.join(aif_dir, filename)
             else:
                 aif_path = None
 
-            if self.is_dirty(d, aif_path=aif_path):
+            dirty_flag = self.is_dirty(d, aif_path=aif_path)
+            status = "DIRTY" if dirty_flag else "clean"
+            print(f"[CACHE] {stream_id}: {status}", flush=True)
+
+            if dirty_flag:
                 dirty.append(d)
 
+        print(f"[CACHE] {len(dirty)}/{len(stream_dicts)} stream da ricompilare", flush=True)
         return dirty
 
     # =========================================================================
