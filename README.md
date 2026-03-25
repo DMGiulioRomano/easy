@@ -113,6 +113,7 @@ make FILE=my-config all
 | `make FILE=name all` | Build a specific config file from `configs/name.yml` |
 | `make all TEST=true` | Build all `.yml` files in `configs/` |
 | `make all STEMS=true FILE=name` | Build one yml into multiple separate stem files |
+| `make all STEMS=true FILE=name CACHE=true` | Incremental stem build: only re-render changed streams |
 
 ### Testing
 
@@ -138,6 +139,7 @@ make FILE=my-config all
 | `make clean` | Remove all generated files (`.sco`, `.aif`, logs) |
 | `make clean-all` | Full cleanup including virtual environment |
 | `make venv-clean` | Remove virtual environment only |
+| `make clean-cache` | Remove stream fingerprint manifests |
 
 ---
 
@@ -157,6 +159,8 @@ All flags can be passed on the command line and override defaults:
 | `STEMS` | `false` | Split output into per-stream files when `true` |
 | `SKIP` | `0.0` | Start time in seconds for audio trim (`audioFile.mk`) |
 | `DURATA` | `30.0` | Duration in seconds for audio trim (`audioFile.mk`) |
+| `CACHE` | `true` | Skip unchanged streams when `STEMS=true` |
+| `CACHEDIR` | `cache` | Directory for stream fingerprint manifests |
 
 Example:
 

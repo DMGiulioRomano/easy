@@ -234,11 +234,11 @@ class Generator:
         
         for stream_data in stream_data_list:
             # 1. Crea stream
-            import json
-            print(f"[DEBUG] PRIMA Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
+            #import json
+            #print(f"[DEBUG] PRIMA Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
 
             stream = Stream(stream_data)
-            print(f"[DEBUG] DOPO  Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
+            #print(f"[DEBUG] DOPO  Stream({stream_data.get('stream_id')}): {json.dumps(stream_data, default=str)[:200]}", flush=True)
             self._stream_data_map[stream_data['stream_id']] = stream_data
             # 2. Registra ftable sample
             stream.sample_table_num = self.ftable_manager.register_sample(stream.sample)

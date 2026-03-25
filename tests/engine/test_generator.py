@@ -1528,9 +1528,9 @@ class TestGenerateScoreFilesPerStreamWithCache:
         from unittest.mock import MagicMock
         cm = MagicMock()
         if dirty_ids is None:
-            cm.get_dirty_stream_dicts.side_effect = lambda dicts, aif_dir: dicts
+            cm.get_dirty_stream_dicts.side_effect = lambda dicts, **kwargs: dicts
         else:
-            def filter_dirty(dicts, aif_dir):
+            def filter_dirty(dicts, **kwargs):
                 return [d for d in dicts if d.get('stream_id') in dirty_ids]
             cm.get_dirty_stream_dicts.side_effect = filter_dirty
         return cm

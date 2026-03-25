@@ -53,8 +53,8 @@ $(VENV_MARKER): $(REQUIREMENTS) check-python
 	@echo "🔧 [VENV] Creazione/aggiornamento Virtual Environment con Python $(PYTHON_VERSION)..."
 	@echo "📦 Python command: $(PYTHON_CMD)"
 	@$(PYTHON_CMD) -m venv $(VENV_DIR)
-	@$(PIP_VENV) install --upgrade pip
-	@$(PIP_VENV) install -r $(REQUIREMENTS)
+	@$(PIP_VENV) install -q --upgrade pip
+	@$(PIP_VENV) install -q -r $(REQUIREMENTS)
 	@touch $(VENV_MARKER)
 	@echo "✅ [VENV] Ambiente Python $(PYTHON_VERSION) pronto."
 
