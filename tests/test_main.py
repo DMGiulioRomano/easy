@@ -460,4 +460,342 @@ class TestPerStreamFlag:
         with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--per-stream']):
             with pytest.raises(SystemExit) as exc_info:
                 mocks['main'].main()
+        assert exc_info.value.code == 1# =============================================================================
+# TEST FLAG --renderer csound|numpy
+# =============================================================================
+
+class TestRendererFlag:
+    """
+    Verifica il parsing di --renderer e il branching corretto tra
+    ramo csound (default) e ramo numpy.
+
+    I tre moduli lazy del ramo numpy (RendererFactory, SampleRegistry,
+    NumpyWindowRegistry) vengono patchati a runtime via patch.dict
+    perche' sono importati dentro main() al momento dell'esecuzione,
+    non al caricamento del modulo.
+    """
+
+    # -------------------------------------------------------------------------
+    # HELPER INTERNI
+    # -------------------------------------------------------------------------
+
+    def _make_numpy_modules(self):
+        """
+        Costruisce i tre moduli mock per il ramo numpy.
+
+        Returns:
+            tuple: (mock_modules_dict, factory_cls, renderer_instance,
+                    sample_reg_instance, window_reg_instance)
+        """
+        # RendererFactory
+        factory_cls = MagicMock(name='RendererFactory')
+        renderer_instance = MagicMock(name='renderer_instance')
+        factory_cls.create.return_value = renderer_instance
+
+        factory_mod = types.ModuleType('rendering.renderer_factory')
+        factory_mod.RendererFactory = factory_cls
+
+        # SampleRegistry
+        sample_reg_cls = MagicMock(name='SampleRegistry')
+        sample_reg_instance = MagicMock(name='sample_reg_instance')
+        sample_reg_cls.return_value = sample_reg_instance
+
+        sample_reg_mod = types.ModuleType('rendering.sample_registry')
+        sample_reg_mod.SampleRegistry = sample_reg_cls
+
+        # NumpyWindowRegistry
+        window_reg_cls = MagicMock(name='NumpyWindowRegistry')
+        window_reg_instance = MagicMock(name='window_reg_instance')
+        window_reg_cls.return_value = window_reg_instance
+
+        window_reg_mod = types.ModuleType('rendering.numpy_window_registry')
+        window_reg_mod.NumpyWindowRegistry = window_reg_cls
+
+        modules = {
+            'rendering.renderer_factory': factory_mod,
+            'rendering.sample_registry': sample_reg_mod,
+            'rendering.numpy_window_registry': window_reg_mod,
+        }
+
+        return (
+            modules,
+            factory_cls, renderer_instance,
+            sample_reg_cls, sample_reg_instance,
+            window_reg_cls, window_reg_instance,
+        )
+
+    def _setup_generator_for_numpy(self, mocks, table_map=None, streams=None):
+        """
+        Configura il generator_instance mock per il ramo numpy.
+
+        Args:
+            table_map: dict {int: (ftype, key)} da restituire da get_all_tables().
+                       Default: {1: ('sample', 'voice.wav'), 2: ('window', 'hanning')}
+            streams:   lista di stream mock. Default: un solo stream con stream_id='s1'
+        """
+        if table_map is None:
+            table_map = {
+                1: ('sample', 'voice.wav'),
+                2: ('window', 'hanning'),
+            }
+        if streams is None:
+            mock_stream = MagicMock()
+            mock_stream.stream_id = 's1'
+            streams = [mock_stream]
+
+        mocks['generator_instance'].ftable_manager.get_all_tables.return_value = table_map
+        mocks['generator_instance'].streams = streams
+        return streams
+
+    # -------------------------------------------------------------------------
+    # TEST DEFAULT E PARSING
+    # -------------------------------------------------------------------------
+
+    def test_default_renderer_is_csound(self, mocks):
+        """Senza --renderer, il flusso csound rimane attivo."""
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_file.assert_called_once_with('out.sco')
+
+    def test_renderer_csound_explicit(self, mocks):
+        """--renderer csound esplicito attiva il flusso csound."""
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'csound']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_file.assert_called_once_with('out.sco')
+
+    def test_renderer_numpy_does_not_call_generate_score_file(self, mocks):
+        """Con --renderer numpy, generate_score_file NON viene chiamato."""
+        modules, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        mocks['generator_instance'].generate_score_file.assert_not_called()
+
+    def test_renderer_csound_does_not_call_renderer_factory(self, mocks):
+        """Con --renderer csound, RendererFactory.create NON viene chiamato."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'csound']):
+                mocks['main'].main()
+
+        factory_cls.create.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TEST RAMO NUMPY: COSTRUZIONE RENDERER
+    # -------------------------------------------------------------------------
+
+    def test_renderer_numpy_calls_renderer_factory_create(self, mocks):
+        """Con --renderer numpy, RendererFactory.create viene chiamato una volta."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        factory_cls.create.assert_called_once()
+
+    def test_renderer_numpy_factory_receives_numpy_type(self, mocks):
+        """RendererFactory.create riceve 'numpy' come primo argomento."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_args = factory_cls.create.call_args
+        assert call_args.args[0] == 'numpy'
+
+    def test_renderer_numpy_factory_receives_output_sr_48000(self, mocks):
+        """RendererFactory.create riceve output_sr=48000."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_kwargs = factory_cls.create.call_args.kwargs
+        assert call_kwargs.get('output_sr') == 48000
+
+    def test_renderer_numpy_factory_receives_table_map(self, mocks):
+        """RendererFactory.create riceve il table_map da ftable_manager."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+        table_map = {1: ('sample', 'piano.wav')}
+        self._setup_generator_for_numpy(mocks, table_map=table_map)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_kwargs = factory_cls.create.call_args.kwargs
+        assert call_kwargs.get('table_map') == table_map
+
+    # -------------------------------------------------------------------------
+    # TEST RAMO NUMPY: CARICAMENTO SAMPLE
+    # -------------------------------------------------------------------------
+
+    def test_renderer_numpy_loads_sample_entries(self, mocks):
+        """sample_reg.load viene chiamato per ogni entry 'sample' nel table_map."""
+        modules, _, _, sample_reg_cls, sample_reg_instance, *_ = self._make_numpy_modules()
+        table_map = {
+            1: ('sample', 'voice.wav'),
+            2: ('sample', 'piano.wav'),
+            3: ('window', 'hanning'),
+        }
+        self._setup_generator_for_numpy(mocks, table_map=table_map)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        assert sample_reg_instance.load.call_count == 2
+        loaded_args = [c.args[0] for c in sample_reg_instance.load.call_args_list]
+        assert 'voice.wav' in loaded_args
+        assert 'piano.wav' in loaded_args
+
+    def test_renderer_numpy_does_not_load_window_entries(self, mocks):
+        """sample_reg.load NON viene chiamato per entry 'window' nel table_map."""
+        modules, _, _, sample_reg_cls, sample_reg_instance, *_ = self._make_numpy_modules()
+        table_map = {
+            1: ('window', 'hanning'),
+            2: ('window', 'expodec'),
+        }
+        self._setup_generator_for_numpy(mocks, table_map=table_map)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        sample_reg_instance.load.assert_not_called()
+
+    def test_renderer_numpy_empty_table_map_no_load(self, mocks):
+        """table_map vuoto: sample_reg.load non viene mai chiamato."""
+        modules, _, _, sample_reg_cls, sample_reg_instance, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks, table_map={})
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        sample_reg_instance.load.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TEST RAMO NUMPY: RENDER PER STREAM
+    # -------------------------------------------------------------------------
+
+    def test_renderer_numpy_calls_render_stream_once_per_stream(self, mocks):
+        """render_stream viene chiamato una volta per ogni stream."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+
+        s1 = MagicMock(); s1.stream_id = 's1'
+        s2 = MagicMock(); s2.stream_id = 's2'
+        s3 = MagicMock(); s3.stream_id = 's3'
+        self._setup_generator_for_numpy(mocks, streams=[s1, s2, s3])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        assert renderer_instance.render_stream.call_count == 3
+
+    def test_renderer_numpy_aif_path_contains_stream_id(self, mocks):
+        """Il path .aif passato a render_stream contiene lo stream_id."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+
+        s1 = MagicMock(); s1.stream_id = 'melody'
+        self._setup_generator_for_numpy(mocks, streams=[s1])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_args = renderer_instance.render_stream.call_args
+        aif_path = call_args.args[1]
+        assert 'melody' in aif_path
+
+    def test_renderer_numpy_aif_path_has_aif_extension(self, mocks):
+        """Il path passato a render_stream ha estensione .aif."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+        s1 = MagicMock(); s1.stream_id = 's1'
+        self._setup_generator_for_numpy(mocks, streams=[s1])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_args = renderer_instance.render_stream.call_args
+        aif_path = call_args.args[1]
+        assert aif_path.endswith('.aif')
+
+    def test_renderer_numpy_render_stream_receives_stream_object(self, mocks):
+        """render_stream riceve il corretto oggetto stream come primo argomento."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+        s1 = MagicMock(); s1.stream_id = 's1'
+        self._setup_generator_for_numpy(mocks, streams=[s1])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        call_args = renderer_instance.render_stream.call_args
+        assert call_args.args[0] is s1
+
+    def test_renderer_numpy_no_streams_render_never_called(self, mocks):
+        """Nessuno stream: render_stream non viene mai chiamato."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+        self._setup_generator_for_numpy(mocks, streams=[])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                mocks['main'].main()
+
+        renderer_instance.render_stream.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TEST COMPATIBILITA' CON ALTRI FLAG
+    # -------------------------------------------------------------------------
+
+    def test_renderer_csound_with_per_stream_still_works(self, mocks):
+        """--renderer csound + --per-stream chiama generate_score_files_per_stream."""
+        mocks['generator_instance'].generate_score_files_per_stream = MagicMock(return_value=[])
+        with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'csound', '--per-stream']):
+            mocks['main'].main()
+        mocks['generator_instance'].generate_score_files_per_stream.assert_called_once()
+        mocks['generator_instance'].generate_score_file.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # TEST GESTIONE ERRORI
+    # -------------------------------------------------------------------------
+
+    def test_renderer_numpy_exception_exits_with_1(self, mocks):
+        """Un errore durante render_stream nel ramo numpy causa sys.exit(1)."""
+        modules, _, renderer_instance, *_ = self._make_numpy_modules()
+        renderer_instance.render_stream.side_effect = RuntimeError("render failed")
+        s1 = MagicMock(); s1.stream_id = 's1'
+        self._setup_generator_for_numpy(mocks, streams=[s1])
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                with pytest.raises(SystemExit) as exc_info:
+                    mocks['main'].main()
+
+        assert exc_info.value.code == 1
+
+    def test_renderer_numpy_factory_exception_exits_with_1(self, mocks):
+        """Un errore in RendererFactory.create causa sys.exit(1)."""
+        modules, factory_cls, *_ = self._make_numpy_modules()
+        factory_cls.create.side_effect = ValueError("unknown renderer")
+        self._setup_generator_for_numpy(mocks)
+
+        with patch.dict(sys.modules, modules):
+            with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.sco', '--renderer', 'numpy']):
+                with pytest.raises(SystemExit) as exc_info:
+                    mocks['main'].main()
+
         assert exc_info.value.code == 1
