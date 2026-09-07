@@ -512,3 +512,163 @@ def test_e2e_multistate_unsorted(tmp_path, cleanup_log):
     assert "[ERRORE]" in result.stdout
     assert "Traceback" not in result.stdout
     _assert_log_contains(yaml_abs, "InvalidStrategyConfigError", ["window_multistate"])
+
+
+# =============================================================================
+# #257: il file di configurazione che non si legge
+# =============================================================================
+#
+# Le tre classi della #257 sono le prime `EngineError` che nascono *prima* che
+# esista uno YAML, quindi non hanno una riga `Config:`: il file e' il soggetto
+# del head e ripeterlo sotto non aggiungerebbe niente. `_assert_clean_user_output`
+# quella riga la pretende, ed e' giusto che la pretenda per tutte le altre --
+# da qui l'helper gemello, che ne asserisce l'assenza invece di ignorarla.
+#
+# E2E e non unit perche' i test della #257 girano tutti sui mock di
+# `tests/main_mocks.py`, dove `_handle_engine_error`, il logger engine e
+# `__str__` non vengono esercitati. Sono proprio le tre cose che qui si
+# incontrano: gli `__str__` di queste classi esistono per non lasciare che
+# `OSError.__str__` (o quello di `MarkedYAMLError`, o di `UnicodeDecodeError`)
+# riscriva la riga che finisce nel log engine, e questa e' la sola suite che
+# quella riga la legge. Il nome di classe atteso e' quello *concreto*, che
+# solo il percorso reale produce: `config_read_error()` e `config_parse_error()`
+# scelgono la sottoclasse dal tipo della causa, che sotto mock non c'e'.
+
+
+def _assert_log_message_line(yaml_path: str, testo: str):
+    """La riga `[ERROR] <testo>` del log engine, cioe' il `%s` di
+    `logger.error("%s\\n%s", err, ...)`: e' `str(err)`, non `user_message()`.
+
+    E' l'asserzione per cui questi casi devono essere e2e. Gli `__str__` delle
+    classi della #257 esistono solo per difendere questa riga -- con `filename`
+    valorizzato `OSError.__str__` scriverebbe «[Errno 2] No such file or
+    directory», `MarkedYAMLError.__str__` il formato di PyYAML con contesto e
+    freccia, `UnicodeDecodeError.__str__` la riga del codec -- e la riga finale
+    del traceback, che pure porta `str(err)`, qui non discrimina: la scrive
+    `format_exc()` e c'e' comunque. Solo il prefisso `[ERROR]` distingue le due.
+    """
+    contents = open(_log_path_for(yaml_path)).read()
+    assert f"[ERROR] {testo}" in contents, (
+        f"la riga del log engine non e' il messaggio di dominio: {contents}")
+
+
+def _assert_clean_config_output(result):
+    """Come `_assert_clean_user_output`, ma senza la riga `Config:`."""
+    assert result.returncode != 0, f"Atteso exit != 0 (stdout={result.stdout})"
+    assert "[ERRORE]" in result.stdout
+    assert "Traceback" not in result.stdout, (
+        f"Stdout deve restare pulito: {result.stdout}"
+    )
+    assert "Dettagli:" in result.stdout
+    assert "Config:" not in result.stdout, (
+        "il file e' gia' il soggetto del head: `Config:` sarebbe la stessa "
+        f"riga due volte ({result.stdout})"
+    )
+
+
+YAML_MALFORMATO = """\
+composition:
+  title: "test yaml malformato"
+streams:
+  - stream_id: "s1"
+    onset: 0.0
+   duration: 5
+"""
+
+
+@pytest.mark.e2e
+def test_e2e_config_file_not_found(tmp_path, cleanup_log):
+    """Lo YAML che non c'e': prima « Errore: file 'x' non trovato», stampato
+    da un `except FileNotFoundError` vero solo finche' nessun'altra riga
+    dentro quel `try` apriva un secondo file."""
+    yaml_abs = str(tmp_path / '50_config_assente.yml')
+    cleanup_log.append(_log_path_for(yaml_abs))
+    result = _run(yaml_abs)
+    _assert_clean_config_output(result)
+    assert "File di configurazione non trovato" in result.stdout
+    assert '50_config_assente.yml' in result.stdout
+    # Il path e' gia' assoluto: `Path cercato:` sarebbe la stessa riga due volte.
+    assert "Path cercato:" not in result.stdout
+    _assert_log_contains(yaml_abs, "ConfigFileNotFoundError",
+                         ['50_config_assente.yml'])
+    _assert_log_message_line(yaml_abs, "File di configurazione non trovato")
+
+
+@pytest.mark.e2e
+def test_e2e_config_file_not_found_nomina_il_path_risolto(tmp_path, cleanup_log):
+    """Su un path relativo `Path cercato:` compare, ed e' l'informazione che il
+    messaggio pre-#257 non dava: «hai lanciato dalla directory sbagliata».
+
+    Il subprocess gira con `cwd=PROJECT_ROOT`, quindi il relativo si risolve
+    di la' -- ed e' esattamente il caso che il messaggio serve a chiarire.
+    """
+    relativo = os.path.join('configs', '50b_config_assente.yml')
+    assert not os.path.exists(os.path.join(PROJECT_ROOT, relativo))
+    cleanup_log.append(_log_path_for(relativo))
+    result = _run(relativo)
+    _assert_clean_config_output(result)
+    assert "File di configurazione non trovato" in result.stdout
+    assert f"Path cercato: {os.path.join(PROJECT_ROOT, relativo)}" in result.stdout
+
+
+@pytest.mark.e2e
+def test_e2e_config_parse_error(tmp_path, cleanup_log):
+    """Lo YAML malformato: prima nessuno traduceva `yaml.YAMLError` e usciva
+    dal ramo generico come messaggio piu' traceback."""
+    yaml_abs = _write_yaml(tmp_path, '51_config_malformato.yml', YAML_MALFORMATO)
+    cleanup_log.append(_log_path_for(yaml_abs))
+    result = _run(yaml_abs)
+    _assert_clean_config_output(result)
+    assert "File di configurazione malformato" in result.stdout
+    assert "Riga/colonna:" in result.stdout
+    assert "Dettaglio:" in result.stdout
+    # `problem_mark` di PyYAML e' 0-based: la riga stampata e' quella
+    # dell'editor, non una sopra.
+    assert "  Riga/colonna: 6:4" in result.stdout, result.stdout
+    # La sottoclasse che porta anche `yaml.MarkedYAMLError`: la sceglie
+    # `config_parse_error()` dal tipo della causa, quindi solo il percorso
+    # reale la produce.
+    _assert_log_contains(yaml_abs, "ConfigMarkedParseError",
+                         ['51_config_malformato.yml'])
+    _assert_log_message_line(yaml_abs, "File di configurazione malformato")
+
+
+@pytest.mark.e2e
+def test_e2e_config_non_decodificabile(tmp_path, cleanup_log):
+    """Un `.yml` salvato in latin-1: `open()` e' in modalita' testo e su UTF-8
+    dichiarato, quindi lo rifiuta prima che PyYAML veda un byte."""
+    yaml_abs = str(tmp_path / '52_config_latin1.yml')
+    with open(yaml_abs, 'wb') as f:
+        f.write('# perch\xe8 no\nstreams: []\n'.encode('latin-1'))
+    cleanup_log.append(_log_path_for(yaml_abs))
+    result = _run(yaml_abs)
+    _assert_clean_config_output(result)
+    assert "File di configurazione malformato" in result.stdout
+    # Il codec nominato e' sempre utf-8: non dipende dal locale della macchina.
+    assert "'utf-8' codec can't decode byte" in result.stdout
+    _assert_log_contains(yaml_abs, "ConfigUnicodeParseError",
+                         ['52_config_latin1.yml'])
+    _assert_log_message_line(yaml_abs, "File di configurazione malformato")
+
+
+@pytest.mark.e2e
+def test_e2e_config_e_una_directory(tmp_path, cleanup_log):
+    """`pge configs/ out.wav`, il typo che la tab-completion fabbrica da sola.
+
+    `IsADirectoryError` non e' un `FileNotFoundError` ne' un `yaml.YAMLError`:
+    era l'ultimo modo di sbagliare il path del proprio YAML a uscire dal ramo
+    generico come traceback, e il piu' probabile.
+    """
+    directory = tmp_path / '53_config_directory'
+    directory.mkdir()
+    cleanup_log.append(_log_path_for(str(directory)))
+    result = _run(str(directory))
+    _assert_clean_config_output(result)
+    assert "File di configurazione non leggibile" in result.stdout
+    # `strerror` della causa: e' l'unica cosa che distingue EISDIR da EACCES.
+    assert "Dettaglio:    Is a directory" in result.stdout
+    assert "Path cercato:" not in result.stdout
+    _assert_log_contains(str(directory), "ConfigIsADirectoryError",
+                         ['53_config_directory'])
+    _assert_log_message_line(str(directory),
+                             "File di configurazione non leggibile")
