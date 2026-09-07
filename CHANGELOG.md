@@ -495,10 +495,10 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   quello che l'utente ha scritto. Lo YAML malformato prima non lo traduceva
   nessuno: usciva dal ramo generico come messaggio piu' traceback.
 
-  **Nessun breaking per chi usa la libreria.** Le due classi ereditano ANCHE il
-  tipo che sostituiscono (`FileNotFoundError`, `yaml.YAMLError`), che
-  `Generator.load_yaml` e `api.load_generator` dichiarano nei `Raises` da
-  sempre: un `except FileNotFoundError` scritto contro le versioni precedenti
+  **Nessun breaking per chi usa la libreria.** Tutt'e tre le classi ereditano
+  ANCHE il tipo che sostituiscono (`FileNotFoundError`, `yaml.YAMLError`,
+  `OSError`), che `Generator.load_yaml` e `api.load_generator` dichiarano nei
+  `Raises` da sempre: un `except FileNotFoundError` scritto contro le versioni precedenti
   continua a catturare. E' lo stesso precedente della base
   `ConfigError(EngineError, ValueError)`. L'asimmetria rispetto a
   `SuperColliderNotFoundError` e `CsoundNotFoundError` (#228, #241), che il
@@ -548,6 +548,18 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `Dettaglio:` e' lo `strerror` della causa: e' l'unica cosa che distingue
   EISDIR da EACCES, e senza di essa il messaggio direbbe soltanto quello che
   l'utente gia' sa.
+
+  Nella stessa passata **l'encoding dello YAML smette di dipendere dal
+  locale**: `load_yaml` apre con `encoding='utf-8'` dichiarato. Lo YAML e'
+  UTF-8 per specifica, `open(path, 'r')` no -- decodifica nell'encoding
+  preferito del processo, cp1252 su Windows e ascii sotto un locale C senza
+  PEP 540 -- e tredici dei `configs/*.yml` di questo repository portano byte
+  non-ASCII. Senza quella parola un config valido usciva come
+  `ConfigParseError`, cioe' la peggiore delle due diagnosi possibili: non un
+  traceback ma una frase autorevole e falsa, «File di configurazione
+  malformato» su un file che non ha niente che non va. E dove il locale
+  decodifica ogni byte non c'era nemmeno l'errore: i valori stringa -- nomi di
+  sample, id di stream -- arrivavano storpiati e in silenzio.
 
 - **La sintassi Csound si scrive in un posto solo** (issue #203). Tre moduli
   la producevano, e due stavano sotto il livello che deve restare

@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: e19eddb
+last_synced_commit: ffb5a4d
 entry_for: [error-handling]
 ---
 
@@ -155,6 +155,20 @@ EngineError                                  (Exception)
   il modo più comune di sbagliare il path del proprio YAML.
   `ConfigReadError` **non** eredita `FileNotFoundError`: una directory non è
   un file mancante, e il tipo che mente è il difetto che la #257 chiude.
+- **«Non decodificabile» è una domanda su UTF-8, non sul locale.** Lo YAML è
+  UTF-8 per specifica, `open(path, 'r')` no: decodifica nell'encoding
+  preferito del processo — cp1252 su Windows, ascii sotto un locale C senza
+  PEP 540. `load_yaml` dichiara quindi `encoding='utf-8'` esplicitamente.
+  Senza, un config valido usciva come `ConfigParseError`, cioè la peggiore
+  delle due diagnosi possibili: non un traceback, ma una frase autorevole e
+  falsa — «File di configurazione malformato» su un file che non ha niente
+  che non va. Non è un caso di scuola: tredici dei `configs/*.yml` di questo
+  repository portano byte non-ASCII. E su un locale che ogni byte lo
+  decodifica non c'è nemmeno l'errore: i valori stringa — nomi di sample, id
+  di stream — arrivano storpiati e in silenzio. Due guardie in
+  `tests/engine/test_generator.py`: una strutturale sull'`encoding` dichiarato
+  (gira ovunque) e una che carica un config accentato in un interprete figlio
+  sotto locale C (salta dove CPython impone UTF-8, come su macOS).
 - **Ereditare il builtin non basta: chi lo cattura ne legge lo stato.** Quel
   codice non si ferma alla cattura — legge `e.filename`, confronta `e.errno`
   con `errno.ENOENT`, interroga `e.problem_mark`, che è *l'*idioma con cui si
@@ -302,8 +316,10 @@ streams:
 stampata sarebbe una sopra a quella che l'editor mostra. Senza marker (non
 tutti gli `yaml.YAMLError` ne portano uno) il messaggio degrada alle due
 righe `[ERRORE]` + `Dettaglio:`. Stesso tipo e stesso formato per un file
-che non si decodifica — un `.yml` salvato in latin-1 — che `open()` in
-modalità testo rifiuta prima che PyYAML veda un byte:
+che non si decodifica — un `.yml` salvato in latin-1 — che `open()`, in
+modalità testo e su UTF-8 dichiarato, rifiuta prima che PyYAML veda un byte
+(il codec nominato nel messaggio è sempre `utf-8`: non dipende dal locale
+della macchina):
 
 ```
 [ERRORE] File di configurazione malformato: 'configs/latin1.yml'
