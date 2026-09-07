@@ -8,8 +8,13 @@ __str__ per i log.
 """
 from __future__ import annotations
 
+import errno
 import os
 
+# Import non lazy: `ConfigParseError` eredita `yaml.YAMLError`, e una base
+# deve esistere quando la classe si crea. PyYAML e' dipendenza dura del
+# pacchetto (pyproject) e `pge.engine.generator` la importa gia' a livello di
+# modulo: questo import non ne aggiunge una, la dichiara dove serve.
 import yaml
 
 
@@ -89,6 +94,22 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
         # Il contesto strutturato di casa: chi legge l'eccezione a programma
         # trova il path dove lo trova in tutte le sorelle.
         self.config_file = path
+        # Ereditare il tipo non basta a mantenere la promessa. Chi cattura un
+        # FileNotFoundError raramente si ferma alla cattura: legge `filename`
+        # e confronta `errno` con `errno.ENOENT`. Su un wrapper nudo sono
+        # None -- cioe' la compatibilita' regge per `isinstance` e cade per
+        # tutto il resto, in silenzio. `open()` li avrebbe riempiti.
+        self.errno = errno.ENOENT
+        self.strerror = os.strerror(errno.ENOENT)
+        self.filename = path
+
+    def __str__(self) -> str:
+        # Il prezzo dei tre campi qui sopra: con `filename` valorizzato
+        # `OSError.__str__` smette di stampare `args[0]` e scrive «[Errno 2]
+        # No such file or directory: 'x.yml'». Ed e' `str(err)` che finisce
+        # nel log engine (`logger.error("%s", err)`) e nel ramo generico di
+        # chi ci chiama: il messaggio resta quello che la classe ha costruito.
+        return self.args[0]
 
     def user_message(self) -> str:
         lines = ["[ERRORE] File di configurazione non trovato"]

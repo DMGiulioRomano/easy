@@ -946,3 +946,28 @@ def test_config_parse_error_from_yaml_error_senza_marca():
     err = ConfigParseError.from_yaml_error('x.yml', yaml.YAMLError('rotto'))
     assert 'rotto' in err.reason
     assert err.line is None and err.column is None
+
+
+def test_config_file_not_found_compila_i_campi_di_oserror():
+    """Ereditare il tipo non basta: chi cattura FileNotFoundError legge
+    `filename` e confronta `errno` con ENOENT. Su un wrapper nudo sono None,
+    cioe' la compatibilita' regge per `isinstance` e cade per tutto il resto,
+    in silenzio -- la stessa forma di guasto che la #257 chiude un piano piu'
+    su."""
+    import errno
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert err.errno == errno.ENOENT
+    assert err.filename == 'configs/mancante.yml'
+    assert err.strerror
+
+
+def test_config_file_not_found_str_resta_il_messaggio_di_casa():
+    """Il prezzo dei campi qui sopra, pagato: con `filename` valorizzato
+    `OSError.__str__` scriverebbe «[Errno 2] No such file or directory» e
+    butterebbe via la prosa -- ed e' `str(err)` che finisce nel log engine e
+    nel ramo generico di chi cattura."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert str(err) == "File di configurazione non trovato: 'configs/mancante.yml'"
+    assert 'Errno' not in str(err)

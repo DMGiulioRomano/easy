@@ -52,6 +52,17 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   regge la deriva dalla gerarchia invece di trascriverla, così un terzo erede
   la farebbe parlare.
 
+  Ereditare il tipo, però, non basta a mantenere la promessa: chi cattura un
+  `FileNotFoundError` raramente si ferma alla cattura — legge `e.filename` e
+  confronta `e.errno` con `errno.ENOENT`, che su un wrapper nudo sono `None`.
+  La compatibilità reggerebbe per `isinstance` e cadrebbe per tutto il resto,
+  in silenzio: cioè la stessa forma di guasto che questa issue chiude un piano
+  più su. I tre campi sono quindi valorizzati come li avrebbe riempiti
+  `open()`, e `__str__` è sovrascritto per pagarne il prezzo — con `filename`
+  valorizzato `OSError.__str__` scriverebbe «[Errno 2] No such file or
+  directory» buttando via la prosa, ed è proprio `str(err)` che finisce nel
+  log engine.
+
   La conversione è stretta sulla sola `open()`, non sul blocco che la contiene:
   allargarla a tutto il caricamento rifarebbe un piano più giù lo stesso
   difetto che questa issue chiude — una garanzia per posizione invece che per

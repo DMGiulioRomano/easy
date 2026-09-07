@@ -116,6 +116,15 @@ EngineError                                  (Exception)
     `ValueError` di `ConfigError`. `ConfigParseError` fa lo stesso con
     `yaml.YAMLError`.
 
+  Dove si eredita, si eredita per intero: `ConfigFileNotFoundError` valorizza
+  `errno`, `strerror` e `filename` come li avrebbe riempiti `open()`, perché
+  chi cattura quel tipo raramente si ferma alla cattura — e una promessa che
+  regge per `isinstance` e cade per `e.filename` sarebbe muta, cioè la forma
+  di guasto che questa issue chiude. Il prezzo è che `OSError.__str__`, visto
+  `filename`, smetterebbe di stampare `args[0]`: `__str__` è sovrascritto, e
+  `str(err)` — quello che finisce nel log engine — resta la prosa della
+  classe.
+
   Il guadagno non è la compatibilità (che è il prezzo di ammissione): è che
   il tipo torna a *isolare*. Un `FileNotFoundError` che risale dall'engine
   ora colloca sé stesso, e la garanzia non dipende più da dove sta scritto
