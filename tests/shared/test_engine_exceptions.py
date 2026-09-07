@@ -1187,3 +1187,94 @@ def test_config_read_error_non_ripete_il_config_nel_messaggio():
 
     err = ConfigReadError('configs/', IsADirectoryError(21, 'Is a directory'))
     assert 'Config:' not in err.user_message()
+
+
+# -----------------------------------------------------------------------------
+# La base `yaml.YAMLError` non deve costare PyYAML a chi non parsa YAML
+# -----------------------------------------------------------------------------
+#
+# `ConfigParseError` eredita `yaml.YAMLError`, e una classe base deve esistere
+# nel momento in cui la classe *si crea*: l'import non puo' essere lazy. Ma un
+# import duro in questo modulo non e' gratis, e il prezzo non lo paga il
+# pyproject (PyYAML e' dipendenza dichiarata): lo paga chi importa il motore
+# da un checkout, senza installarlo.
+#
+# `pge/shared/exceptions.py` sta sotto quasi ogni altro modulo -- `pge/__init__`
+# compreso, che dichiara di ri-esportare «solo simboli leggeri» -- quindi un
+# import duro qui mette PyYAML fra le dipendenze di import di tutto il motore.
+# I quattro moduli qui sotto sono quelli che l'oracolo di parita' di PGE-ui
+# importa (`tests/parity/engine_oracle.py`, tabella `_OP_REQUIRES`) da un
+# checkout **senza venv**, con il solo python del runner: fino a ieri non
+# avevano una sola dipendenza di terze parti, e con l'import duro smettevano
+# tutti di importarsi. Il rosso sarebbe arrivato a valle, su ogni PR di un
+# altro repository, per una riga scritta qui.
+
+_MODULI_SENZA_TERZE_PARTI = (
+    'pge.shared.exceptions',
+    # I quattro dell'oracolo di parita' di PGE-ui (op fingerprint, constants,
+    # classify_deviation_probability, build_time_distribution,
+    # parameter_bounds). Se uno di questi acquista legittimamente una
+    # dipendenza pesante, il rosso qui e' la richiesta di aprire la issue su
+    # PGE-ui prevista da .claude/rules/cross-repo-impact.md, non di allentare
+    # la guardia.
+    'pge.rendering.stream_cache_manager',
+    'pge.parameters.gate_factory',
+    'pge.parameters.parameter_definitions',
+    'pge.envelopes.time_distribution',
+)
+
+
+def test_config_parse_error_eredita_lo_yaml_error_vero_quando_pyyaml_c_e():
+    """Il ripiego non deve entrare in funzione dove PyYAML e' installato.
+
+    E' la meta' forte della coppia: senza, il ripiego qui sotto potrebbe
+    diventare il ramo normale e la promessa di libreria
+    (`Raises: yaml.YAMLError`) cadrebbe in silenzio.
+    """
+    import yaml
+    from pge.shared import exceptions as mod
+
+    assert mod.ConfigParseError.__bases__[-1] is yaml.YAMLError
+    assert not mod.PYYAML_ASSENTE
+
+
+def test_il_motore_si_importa_senza_pyyaml():
+    """I moduli che non parsano YAML non devono dipendere da PyYAML.
+
+    Girato in un interprete figlio con `yaml` reso non importabile: e' l'unico
+    modo di misurare un import, che nel processo corrente e' gia' avvenuto.
+    """
+    import os
+    import subprocess
+    import sys
+
+    from pge.shared import exceptions as modulo
+
+    src_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(modulo.__file__))))
+
+    env = dict(os.environ)
+    env['PYTHONPATH'] = src_dir
+
+    figlio = subprocess.run(
+        [sys.executable, '-c',
+         'import sys\n'
+         'class Blocco:\n'
+         '    def find_spec(self, nome, percorso=None, target=None):\n'
+         '        if nome == "yaml" or nome.startswith("yaml."):\n'
+         '            raise ImportError("No module named \'yaml\'")\n'
+         '        return None\n'
+         'sys.meta_path.insert(0, Blocco())\n'
+         'import importlib\n'
+         'for nome in sys.argv[1:]:\n'
+         '    importlib.import_module(nome)\n'
+         'from pge.shared.exceptions import ConfigParseError, ConfigError\n'
+         'assert issubclass(ConfigParseError, ConfigError)\n'
+         'print("ok")\n',
+         *_MODULI_SENZA_TERZE_PARTI],
+        env=env, capture_output=True, text=True)
+
+    assert figlio.returncode == 0, (
+        "senza PyYAML il motore non si importa piu':\n"
+        f"{figlio.stdout}\n{figlio.stderr}")
+    assert 'ok' in figlio.stdout

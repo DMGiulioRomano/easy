@@ -183,6 +183,28 @@ EngineError                                  (Exception)
   scrive `[Errno 2] No such file or directory: '...'`, cioè butta via la prosa
   proprio nella riga che finisce nel log engine — `ConfigFileNotFoundError`
   override `__str__` per tenersela.
+- **La base `yaml.YAMLError` non deve costare PyYAML all'intero motore.** Una
+  classe base deve esistere nel momento in cui la classe *si crea*, quindi
+  l'import in `exceptions.py` non può essere lazy — ma nemmeno duro, e la
+  ragione non è il `pyproject` (PyYAML è dipendenza dichiarata): è che
+  `pge/shared/exceptions.py` sta sotto quasi ogni altro modulo, `pge/__init__`
+  compreso, che di sé dichiara di ri-esportare «solo simboli leggeri». Un
+  `import yaml` lì mette PyYAML fra le dipendenze di import anche delle parti
+  che YAML non lo parsano, e il conto lo paga chi importa il motore da un
+  checkout **senza installarlo**: l'oracolo di parità di PGE-ui importa
+  `stream_cache_manager`, `gate_factory`, `parameter_definitions` e
+  `time_distribution` con il solo python del runner, per contratto scritto, e
+  quei quattro moduli non avevano una sola dipendenza di terze parti. Il rosso
+  sarebbe arrivato a valle, su ogni PR di un altro repository, per una riga
+  scritta qui. L'import è quindi in un `try/except ImportError` con un
+  segnaposto, e il ripiego non è una degradazione silenziosa: dove PyYAML
+  manca, `yaml` non è nominabile — nessuno può scrivere l'`except
+  yaml.YAMLError` che la doppia ereditarietà tiene in piedi — e
+  `ConfigParseError` non è nemmeno sollevabile, perché a sollevarla è
+  `Generator.load_yaml`, in un modulo che PyYAML lo importa davvero. Due test
+  fissano le due direzioni: che con PyYAML installato la base sia
+  `yaml.YAMLError` e non il segnaposto, e che senza PyYAML quei moduli si
+  importino ancora.
 - **La riga `Comando:` di `_SubprocessRenderError` invita a rieseguire, quindi
   deve restare rieseguibile.** Lo score che vi compare è temporaneo e il
   renderer lo cancella in un `finally` — anche quando il binario esce con un

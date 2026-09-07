@@ -561,6 +561,23 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   decodifica ogni byte non c'era nemmeno l'errore: i valori stringa -- nomi di
   sample, id di stream -- arrivavano storpiati e in silenzio.
 
+  **La base `yaml.YAMLError` non costa PyYAML all'intero motore.** Una classe
+  base deve esistere nel momento in cui la classe si crea, quindi l'import in
+  `shared/exceptions.py` non puo' essere lazy -- ma nemmeno duro, e la ragione
+  non e' il `pyproject` (PyYAML e' dipendenza dichiarata): e' che quel modulo
+  sta sotto quasi ogni altro, `pge/__init__` compreso, che di se' dichiara di
+  ri-esportare «solo simboli leggeri». Un `import yaml` li' mette PyYAML fra le
+  dipendenze di import anche delle parti che YAML non lo parsano, e il conto lo
+  paga chi importa il motore da un checkout **senza installarlo**: l'oracolo di
+  parita' di PGE-ui importa `stream_cache_manager`, `gate_factory`,
+  `parameter_definitions` e `time_distribution` con il solo python del runner,
+  per contratto scritto, e quei quattro moduli non avevano una sola dipendenza
+  di terze parti. L'import sta quindi in un `try/except ImportError` con un
+  segnaposto; dove PyYAML manca `yaml` non e' nominabile, quindi non c'e' un
+  `except yaml.YAMLError` da tenere in piedi, e `ConfigParseError` non e'
+  nemmeno sollevabile -- a sollevarla e' `Generator.load_yaml`, in un modulo
+  che PyYAML lo importa davvero. Due test fissano le due direzioni.
+
 - **La sintassi Csound si scrive in un posto solo** (issue #203). Tre moduli
   la producevano, e due stavano sotto il livello che deve restare
   indipendente dal target: `Grain.to_score_line` in `core/` (nome dello

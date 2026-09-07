@@ -11,12 +11,36 @@ from __future__ import annotations
 import errno
 import os
 
-# Import non lazy: `ConfigParseError` eredita `yaml.YAMLError`, e una classe
-# base deve esistere al momento in cui la classe si crea. PyYAML e' una
-# dipendenza dura del pacchetto (pyproject) e `pge.engine.generator` lo importa
-# gia' a livello di modulo -- questo import non aggiunge una dipendenza, la
-# dichiara dove serve.
-import yaml
+# `ConfigParseError` eredita `yaml.YAMLError`, e una classe base deve esistere
+# nel momento in cui la classe *si crea*: l'import non puo' essere lazy. Ma
+# nemmeno duro, e la ragione non e' il pyproject -- PyYAML e' dipendenza
+# dichiarata del pacchetto. E' che questo modulo sta sotto quasi ogni altro,
+# `pge/__init__.py` compreso, che di se' dichiara di ri-esportare «solo simboli
+# leggeri»: un import duro qui mette PyYAML fra le dipendenze di import
+# dell'intero motore, comprese le parti che YAML non lo parsano.
+#
+# Il conto lo paga chi importa il motore da un checkout senza installarlo:
+# l'oracolo di parita' di PGE-ui (`tests/parity/engine_oracle.py`) importa
+# `stream_cache_manager`, `gate_factory`, `parameter_definitions` e
+# `time_distribution` con il solo python del runner, per contratto scritto
+# («No op may need the engine venv»). Quei quattro moduli non avevano una sola
+# dipendenza di terze parti; con `import yaml` qui smettevano tutti di
+# importarsi, e il rosso sarebbe arrivato su ogni PR di un altro repository.
+#
+# Il ripiego non e' una degradazione silenziosa: dove PyYAML manca, `yaml` non
+# e' nominabile, quindi nessuno puo' scrivere l'`except yaml.YAMLError` che la
+# doppia ereditarieta' tiene in piedi -- e `ConfigParseError` non e' nemmeno
+# sollevabile, perche' a sollevarla e' `Generator.load_yaml`, in un modulo che
+# PyYAML lo importa davvero. `PYYAML_ASSENTE` rende il ramo osservabile, e due
+# test lo fissano nelle due direzioni.
+try:
+    from yaml import YAMLError as _YamlError
+    PYYAML_ASSENTE = False
+except ImportError:  # PyYAML non installato: vedi sopra
+    class _YamlError(Exception):
+        """Segnaposto per `yaml.YAMLError` dove PyYAML non c'e'."""
+
+    PYYAML_ASSENTE = True
 
 
 class EngineError(Exception):
@@ -130,7 +154,7 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
         return "\n".join(lines)
 
 
-class ConfigParseError(ConfigError, yaml.YAMLError):
+class ConfigParseError(ConfigError, _YamlError):
     """File di configurazione YAML illeggibile (issue #257).
 
     Il gradino successivo a `ConfigFileNotFoundError`: il file c'e' ma non si
@@ -139,6 +163,9 @@ class ConfigParseError(ConfigError, yaml.YAMLError):
 
     Eredita anche `yaml.YAMLError` per la stessa ragione dell'altra classe: e'
     il tipo che `load_yaml` e `api.load_generator` promettono nei `Raises`.
+    La base e' `_YamlError`, che *e'* `yaml.YAMLError` ovunque PyYAML sia
+    installato -- e un segnaposto solo dove non lo e', per non far pagare
+    PyYAML all'import dell'intero motore: la ragione sta in testa al modulo.
     """
 
     #: Gli attributi che `yaml.MarkedYAMLError` espone e che il chiamante
