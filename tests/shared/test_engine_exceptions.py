@@ -834,25 +834,91 @@ def test_config_file_not_found_eredita_FileNotFoundError():
     assert isinstance(err, OSError)
 
 
+def _famiglia_engine_error():
+    """Ogni sottoclasse di EngineError che il pacchetto `pge` dichiara.
+
+    Derivata dall'albero delle classi, non dai membri di
+    `pge.shared.exceptions`. I due insiemi coincidono oggi perche' la
+    convenzione vuole le eccezioni li' (punto 1 di
+    docs/reference/errors.md), ma «dove la convenzione le vuole» non e'
+    «dove finiranno»: una sottoclasse dichiarata in un modulo di rendering
+    non comparirebbe fra i membri di quel file, e la regola qui sotto
+    tacerebbe proprio sul caso per cui esiste — un secondo erede di
+    `FileNotFoundError` nato lontano da dove qualcuno lo cerchera'.
+
+    I moduli si importano tutti prima di leggere `__subclasses__`, o la
+    risposta dipenderebbe da quali test hanno gia' girato; il filtro su
+    `__module__` tiene fuori le sottoclassi sintetiche dei test, per la
+    stessa ragione.
+    """
+    import importlib
+    import pkgutil
+
+    import pge
+    from pge.shared.exceptions import EngineError
+
+    for modulo in pkgutil.walk_packages(pge.__path__, 'pge.'):
+        importlib.import_module(modulo.name)
+
+    def discendenti(base):
+        for figlia in base.__subclasses__():
+            yield figlia
+            yield from discendenti(figlia)
+
+    return {cls for cls in discendenti(EngineError)
+            if cls.__module__.startswith('pge.')}
+
+
 def test_solo_la_configurazione_e_un_FileNotFoundError():
     """La regola che #228/#241 e #257 scrivono insieme, derivata dalla
     gerarchia invece che trascritta: dentro EngineError `FileNotFoundError`
     significa una cosa sola — il file di configurazione che hai nominato non
     esiste. Se un domani un binario assente, o un sample, tornasse a
     ereditarlo, il tipo smetterebbe di isolare e questo test lo direbbe."""
-    import inspect
-    from pge.shared import exceptions as exc
-
-    famiglia = [
-        cls for _, cls in inspect.getmembers(exc, inspect.isclass)
-        if issubclass(cls, exc.EngineError)
-    ]
+    famiglia = _famiglia_engine_error()
     # La famiglia e' popolata: senza questa riga il test passerebbe anche su
     # un modulo vuoto.
     assert len(famiglia) > 10
     eredi = {cls.__name__ for cls in famiglia
              if issubclass(cls, FileNotFoundError)}
     assert eredi == {'ConfigFileNotFoundError'}
+
+
+def test_la_regola_vede_anche_una_sottoclasse_dichiarata_altrove():
+    """La guardia misurata invece che riasserita.
+
+    Il caso che distingue le due letture: una sottoclasse di `EngineError`
+    che non sta in `pge/shared/exceptions.py`. Leggendo i membri di quel
+    modulo non esiste; leggendo l'albero delle classi si', ed e' la lettura
+    che la regola qui sopra richiede — altrimenti basterebbe dichiarare il
+    secondo erede di `FileNotFoundError` un file piu' in la' per farla
+    tacere. Non eredita `FileNotFoundError` di proposito: una classe
+    sintetica che sopravvivesse al test non deve poter arrossare la regola
+    vera.
+    """
+    import gc
+    import inspect
+
+    from pge.shared import exceptions as exc
+
+    class ErroreDichiaratoAltrove(exc.EngineError):
+        pass
+
+    # `__subclasses__` non guarda dove il file sta sul disco, guarda
+    # `__module__`: e' quello che va falsificato per simulare la classe
+    # dichiarata in un altro modulo di `pge`.
+    ErroreDichiaratoAltrove.__module__ = 'pge.engine.generator'
+    try:
+        assert ErroreDichiaratoAltrove in _famiglia_engine_error()
+
+        membri = {cls for _, cls in inspect.getmembers(exc, inspect.isclass)
+                  if issubclass(cls, exc.EngineError)}
+        assert ErroreDichiaratoAltrove not in membri, (
+            "la lettura per membri di modulo la vede: il caso scelto non "
+            "distingue le due letture, e la misura non misura niente")
+    finally:
+        del ErroreDichiaratoAltrove
+        gc.collect()
 
 
 def test_config_file_not_found_user_message_nomina_il_file_e_il_path():
@@ -991,6 +1057,14 @@ def test_config_file_not_found_sopravvive_a_pickle_e_copy():
     from pge.shared.exceptions import ConfigFileNotFoundError
 
     originale = ConfigFileNotFoundError('configs/mancante.yml')
+    # Arricchito come il punto 5 di docs/reference/errors.md prescrive per
+    # ogni sottoclasse di ConfigError. Senza questa riga il round trip si
+    # misura sui soli campi che `__init__` ricostruisce dal path, cioe' su
+    # tutto tranne l'unico stato che il path non contiene: il test
+    # resterebbe verde su un `__reduce__` che butta via il `__dict__`, e la
+    # riga `Stream:` sparirebbe dal messaggio senza sollevare niente --
+    # ancora la promessa che regge per `isinstance` e cade in silenzio.
+    originale.stream_id = 'stream1'
     for ricostruito in (pickle.loads(pickle.dumps(originale)),
                         copy.copy(originale),
                         copy.deepcopy(originale)):
@@ -1000,4 +1074,6 @@ def test_config_file_not_found_sopravvive_a_pickle_e_copy():
         assert ricostruito.filename == 'configs/mancante.yml'
         assert ricostruito.config_file == 'configs/mancante.yml'
         assert ricostruito.errno == errno.ENOENT
+        assert ricostruito.stream_id == 'stream1'
         assert ricostruito.user_message() == originale.user_message()
+        assert '  Stream:       stream1' in ricostruito.user_message()

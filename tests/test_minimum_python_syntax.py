@@ -73,6 +73,14 @@ def _annotazioni_valutate(albero):
     Firme di funzione ovunque; `AnnAssign` solo fuori dai corpi di funzione,
     dove non si valutano. La discesa e' esplicita proprio per poter smettere
     all'ingresso di una funzione: `ast.walk` non distingue i due casi.
+
+    Una `class` riapre la discesa, e non e' un dettaglio: il suo corpo si
+    esegue quando si esegue la `class`, quindi le sue annotazioni si valutano
+    anche quando la classe e' dichiarata dentro una funzione. Portandosi
+    dietro il flag della funzione ospite, la guardia le classificava come
+    locali -- cioe' taceva sull'unico caso in cui «dentro una funzione» e
+    «non valutata» non coincidono, che e' esattamente la distinzione che la
+    docstring del modulo tiene separata.
     """
     fuori = []
 
@@ -88,6 +96,8 @@ def _annotazioni_valutate(albero):
                 if figlio.returns is not None:
                     fuori.append((figlio.returns, figlio.lineno))
                 scendi(figlio, True)
+            elif isinstance(figlio, ast.ClassDef):
+                scendi(figlio, False)
             elif isinstance(figlio, ast.AnnAssign):
                 if not dentro_funzione and figlio.annotation is not None:
                     fuori.append((figlio.annotation, figlio.lineno))
@@ -173,12 +183,25 @@ def test_la_guardia_vede_le_due_forme_valutate_e_non_la_terza():
         "    return v\n"
         "def i(x: list[str]) -> dict[str, int]: ...\n"
     )
+    # Il corpo di una classe si esegue quando si esegue la `class`, anche se
+    # la `class` sta dentro una funzione: quell'annotazione si valuta come
+    # quella di una classe di modulo, e la riga che la ospita e' esattamente
+    # la stessa. Sta qui perche' e' l'unico caso in cui «dentro una funzione»
+    # e «non valutata» non coincidono, cioe' l'unico in cui la guardia puo'
+    # confondere le due regole che la sua docstring tiene separate.
+    classe_dentro_funzione = (
+        "def j():\n"
+        "    class C:\n"
+        "        y: int | None = None\n"
+        "    return C\n"
+    )
 
     with tempfile.TemporaryDirectory() as d:
         for nome, sorgente, atteso in (
                 ('valutate.py', valutate, 3),
                 ('future.py', non_valutate, 0),
-                ('locale.py', locale_soltanto, 0)):
+                ('locale.py', locale_soltanto, 0),
+                ('classe_annidata.py', classe_dentro_funzione, 1)):
             p = os.path.join(d, nome)
             with open(p, 'w', encoding='utf-8') as f:
                 f.write(sorgente)

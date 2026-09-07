@@ -121,9 +121,16 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
         # diventerebbero il messaggio. Senza sollevare niente: la promessa
         # reggerebbe per `isinstance` e cadrebbe in silenzio per tutto il
         # resto, cioe' la forma di guasto che la #257 chiude un piano piu'
-        # su. Tutto lo stato della classe e' il suo path: si ricostruisce
-        # da li'.
-        return (self.__class__, (self.path,))
+        # su. Il path ricostruisce tutto cio' che `__init__` deriva; il
+        # `__dict__` va accodato lo stesso, perche' non tutto lo stato viene
+        # da li'. `stream_id` lo scrive il chiamante piu' prossimo dopo il
+        # raise (punto 5 di docs/reference/errors.md, la regola di ogni
+        # sottoclasse di ConfigError), e senza il terzo elemento -- che il
+        # `__reduce__` di BaseException accoda proprio per questo -- il round
+        # trip lo perdeva, cioe' toglieva la riga `Stream:` dal messaggio
+        # senza sollevare niente: la stessa promessa muta che questi tre
+        # override esistono per non fare.
+        return (self.__class__, (self.path,), self.__dict__)
 
     def user_message(self) -> str:
         lines = ["[ERRORE] File di configurazione non trovato"]

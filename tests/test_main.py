@@ -644,9 +644,14 @@ class TestErrorHandling:
 
     def test_file_not_found_dal_render_non_incolpa_lo_yaml(self, mocks, capsys):
         """Issue #241: un FileNotFoundError che risale dal rendering non e'
-        il file YAML, che a quel punto e' stato letto e parsato. L'handler
-        della CLI resta attaccato al solo punto che puo' sollevarlo per il
-        motivo che annuncia."""
+        il file YAML, che a quel punto e' stato letto e parsato.
+
+        La #241 lo teneva vero attaccando l'handler al solo punto che poteva
+        sollevarlo per il motivo annunciato; dalla #257 quell'handler non
+        c'e' piu' e a tenerlo vero e' il tipo — lo YAML mancante e'
+        `ConfigFileNotFoundError` e passa da `except EngineError`, questo
+        resta un builtin e finisce nel ramo generico. Il test non cambia
+        perche' misura l'esito, non il meccanismo."""
         mocks['engine_instance'].render.side_effect = FileNotFoundError()
         with patch.object(sys, 'argv', ['main.py', 'test.yml', 'out.aif']):
             with pytest.raises(SystemExit) as exc_info:
