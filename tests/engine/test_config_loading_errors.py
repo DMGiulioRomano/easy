@@ -15,6 +15,7 @@ Qui si verifica il capo dell'pge.engine: i due guasti hanno un tipo, il tipo
 porta il messaggio, e la conversione e' stretta sul punto che puo' produrli
 davvero — non sul blocco che li contiene.
 """
+import errno
 import os
 
 import pytest
@@ -153,5 +154,8 @@ def test_directory_al_posto_del_file_non_e_un_file_mancante(tmp_path):
         gen.load_yaml()
     assert not isinstance(excinfo.value, ConfigFileNotFoundError)
     assert not isinstance(excinfo.value, FileNotFoundError)
-    assert excinfo.value.errno == 21  # EISDIR
+    # `errno.EISDIR`, non il 21 trascritto: il numero e' della
+    # piattaforma, e in questo repo nessuna costante di casa d'altri si
+    # copia a mano.
+    assert excinfo.value.errno == errno.EISDIR
     assert os.path.isdir(str(tmp_path))

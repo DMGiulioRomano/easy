@@ -33,6 +33,14 @@ Due guardie, di raggio diverso:
    attorno a `int()`/`float()` su `sys.argv` e non toccano la pipeline: la
    guardia li lascia stare di proposito, ed e' il motivo per cui e' scritta
    sul blocco e non sull'intera funzione.
+
+Entrambe passano da `_colpevole`, e la ragione e' un `except:` senza tipo:
+non nomina nessun builtin, quindi due guardie lette sui soli nomi
+resterebbero verdi proprio sull'handler piu' largo che esista — che cattura
+la famiglia OSError e per giunta `EngineError`, cioe' rimette in circolo il
+messaggio falso passando da tutte e due. Una guardia che dipende da come
+l'handler e' scritto ripete, un piano piu' su, il difetto che la #257
+corregge nel codice.
 """
 
 import ast
@@ -66,6 +74,29 @@ def _nomi_catturati(handler: ast.ExceptHandler) -> list[str]:
         elif isinstance(t, ast.Attribute):
             nomi.append(t.attr)
     return nomi
+
+
+def _colpevole(handler: ast.ExceptHandler, famiglia=None) -> str | None:
+    """Perche' questo `except` viola la regola, o None se non la viola.
+
+    `famiglia` restringe ai builtin che ereditano da quel tipo; None
+    significa «qualunque builtin».
+
+    Un `except:` senza tipo e' colpevole in entrambe le letture, e va detto
+    qui e non in ognuna delle due guardie: non nomina niente, quindi una
+    guardia scritta sui soli nomi lo lascerebbe passare — restando verde
+    proprio sull'handler piu' largo che esista, che cattura tutta la
+    famiglia OSError e anche `EngineError`. E' la stessa distinzione che
+    questa issue corregge nel codice: la garanzia non puo' dipendere da come
+    l'handler e' scritto.
+    """
+    if handler.type is None:
+        return 'except: nudo (cattura tutto, famiglia OSError compresa)'
+    for nome in _nomi_catturati(handler):
+        cls = _builtin_exception(nome)
+        if cls is not None and (famiglia is None or issubclass(cls, famiglia)):
+            return nome
+    return None
 
 
 def _builtin_exception(nome: str):
@@ -112,10 +143,9 @@ def test_cli_non_cattura_nessun_errore_della_famiglia_oserror(albero):
     for nodo in ast.walk(albero):
         if not isinstance(nodo, ast.ExceptHandler):
             continue
-        for nome in _nomi_catturati(nodo):
-            cls = _builtin_exception(nome)
-            if cls is not None and issubclass(cls, OSError):
-                colpevoli.append((nome, nodo.lineno))
+        motivo = _colpevole(nodo, famiglia=OSError)
+        if motivo is not None:
+            colpevoli.append((motivo, nodo.lineno))
     assert not colpevoli, (
         "pge/cli.py cattura di nuovo un errore della famiglia OSError: "
         f"{colpevoli}. Un guasto di I/O risale da qualunque profondita', "
@@ -133,9 +163,9 @@ def test_la_pipeline_non_contiene_handler_su_builtin(albero):
         for nodo in ast.walk(corpo):
             if not isinstance(nodo, ast.ExceptHandler):
                 continue
-            for nome in _nomi_catturati(nodo):
-                if _builtin_exception(nome) is not None:
-                    colpevoli.append((nome, nodo.lineno))
+            motivo = _colpevole(nodo)
+            if motivo is not None:
+                colpevoli.append((motivo, nodo.lineno))
     assert not colpevoli, (
         "un handler su un tipo builtin e' tornato dentro il try della "
         f"pipeline: {colpevoli}. Il messaggio che ne esce vale finche' "
@@ -154,3 +184,69 @@ def test_la_pipeline_ha_i_due_rami_dichiarati(albero):
     blocco = _try_della_pipeline(_funzione(albero, 'main'))
     catturati = [_nomi_catturati(h) for h in blocco.handlers]
     assert catturati == [['EngineError'], ['Exception']], catturati
+
+
+# La forma che le due guardie non vedrebbero, se leggessero i soli nomi. Sta
+# qui come sorgente e non come sabotaggio di `cli.py`: e' l'unico modo di
+# misurare una guardia senza rompere il file che sorveglia.
+SABOTAGGIO = """
+def main():
+    try:
+        generator.load_yaml()
+        try:
+            api.render(generator)
+        except:
+            print("Errore: file non trovato")
+            sys.exit(1)
+    except EngineError:
+        pass
+    except Exception:
+        pass
+"""
+
+
+def test_la_guardia_vede_un_except_nudo():
+    """La guardia misurata invece che riasserita.
+
+    `except:` non compare in nessun elenco di nomi builtin — e' proprio la
+    sua assenza di tipo a renderlo la falla: cattura tutto, `EngineError`
+    compreso, quindi il messaggio falso della #241 rientrerebbe da li' con i
+    tre test di questo file verdi. Il sabotaggio gira su un albero sintetico
+    con la stessa forma di `main()`.
+    """
+    albero = ast.parse(SABOTAGGIO)
+    blocco = _try_della_pipeline(_funzione(albero, 'main'))
+
+    nudi = [nodo.lineno for corpo in blocco.body for nodo in ast.walk(corpo)
+            if isinstance(nodo, ast.ExceptHandler) and _colpevole(nodo)]
+    assert nudi, "la guardia sulla pipeline non vede un `except:` nudo"
+
+    famiglia = [nodo.lineno for nodo in ast.walk(albero)
+                if isinstance(nodo, ast.ExceptHandler)
+                and _colpevole(nodo, famiglia=OSError)]
+    assert famiglia, "la guardia sulla famiglia OSError non vede un `except:` nudo"
+
+
+def test_la_guardia_lascia_stare_gli_handler_legittimi():
+    """L'altra meta': una guardia che dice sempre di si' e' muta quanto una
+    che dice sempre di no. `EngineError` e le sue sorelle di dominio non sono
+    builtin, e un `except ValueError` attorno a un `int()` di `sys.argv` non
+    e' nella pipeline — sono i due casi che devono restare verdi."""
+    albero = ast.parse(
+        "def main():\n"
+        "    try:\n"
+        "        n = int(sys.argv[1])\n"
+        "    except ValueError:\n"
+        "        sys.exit(1)\n"
+        "    try:\n"
+        "        generator.load_yaml()\n"
+        "    except EngineError:\n"
+        "        sys.exit(1)\n"
+    )
+    handlers = [n for n in ast.walk(albero) if isinstance(n, ast.ExceptHandler)]
+    assert [_colpevole(h, famiglia=OSError) for h in handlers] == [None, None]
+
+    blocco = _try_della_pipeline(_funzione(albero, 'main'))
+    dentro = [n for corpo in blocco.body for n in ast.walk(corpo)
+              if isinstance(n, ast.ExceptHandler)]
+    assert dentro == [], "il try della pipeline non contiene handler propri"
