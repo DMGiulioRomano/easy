@@ -82,7 +82,7 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   generico, messaggio più traceback. Il guasto era doppio, e la seconda metà
   peggiore della prima: quel layer decodifica con
   `locale.getpreferredencoding()`, quindi sotto `LC_ALL=C` — un container, un
-  cron, una Action senza locale — i dieci config accentati che questo repo
+  cron, una Action senza locale — i config con byte non-ASCII che questo repo
   distribuisce (`configs/PGE_12min.yml` fra loro) non si caricavano affatto.
   Letto in binario, la codifica torna un fatto del file (YAML 1.1: UTF-8 o
   UTF-16, riconosciute dal BOM) e un byte che non torna diventa un

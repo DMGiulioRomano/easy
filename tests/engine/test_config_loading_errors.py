@@ -166,8 +166,8 @@ def test_directory_al_posto_del_file_non_e_un_file_mancante(tmp_path):
 # =============================================================================
 
 # Accentata di proposito: e' la forma normale dei titoli in questo repo
-# (`configs/PGE_12min.yml` e altri nove hanno byte non-ASCII), quindi non e'
-# un caso di laboratorio.
+# (`configs/PGE_12min.yml` fra i molti che hanno byte non-ASCII), quindi non
+# e' un caso di laboratorio.
 CONFIG_ACCENTATA = 'composition:\n  title: "città perduta"\nstreams: []\n'
 
 
@@ -222,11 +222,12 @@ def test_la_codifica_del_config_non_dipende_dal_locale(tmp_path):
 
     `open(path, 'r')` decodifica con `locale.getpreferredencoding()`. Sotto
     `LC_ALL=C` -- un container, un cron, una GitHub Action senza locale --
-    quello e' ASCII, e i dieci config accentati che questo repo distribuisce
-    (`configs/PGE_12min.yml` fra loro) morivano con un `UnicodeDecodeError`
-    grezzo prima ancora che PyYAML fosse chiamato. YAML 1.1 prescrive UTF-8 o
-    UTF-16: la codifica del file e' un fatto del file, non dell'ambiente, e
-    lasciarla a PyYAML e' il modo di dirlo una volta sola.
+    quello e' ASCII, e i config con byte non-ASCII che questo repo
+    distribuisce (`configs/PGE_12min.yml` fra loro) morivano con un
+    `UnicodeDecodeError` grezzo prima ancora che PyYAML fosse chiamato.
+    YAML 1.1 prescrive UTF-8 o UTF-16: la codifica del file e' un fatto del
+    file, non dell'ambiente, e lasciarla a PyYAML e' il modo di dirlo una
+    volta sola.
 
     Il locale si degrada solo in un processo figlio, quindi la prova e' un
     subprocess -- e se il degrado non riesce (piattaforme che coercono

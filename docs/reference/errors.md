@@ -312,7 +312,7 @@ perimetro tradotto né in quello lasciato fuori di proposito (la directory, i
 permessi): finiva nel ramo generico, messaggio più traceback, cioè l'esito che
 il criterio della #257 vieta. E il guasto era doppio: quel layer decodifica con
 `locale.getpreferredencoding()`, quindi sotto `LC_ALL=C` — un container, un
-cron, una Action senza locale — i dieci config accentati che questo repo
+cron, una Action senza locale — i config con byte non-ASCII che questo repo
 distribuisce (`configs/PGE_12min.yml` fra loro) non si caricavano affatto. La
 codifica di un file è un fatto del file, non dell'ambiente che lo apre.
 
