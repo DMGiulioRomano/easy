@@ -586,10 +586,17 @@ def test_csound_not_found_error_inheritance_and_message():
 
 
 def test_csound_not_found_error_non_e_un_FileNotFoundError():
-    """La CLI intercetta FileNotFoundError per annunciare «file YAML non
-    trovato»: un binario mancante che passasse di li' verrebbe riportato
-    come una configurazione inesistente (stessa regola di
-    SuperColliderNotFoundError)."""
+    """Per un binario assente il builtin sarebbe falso: il file che manca non
+    e' quello che il tipo lascia intendere (stessa regola di
+    SuperColliderNotFoundError).
+
+    La ragione scritta qui prima -- «la CLI intercetta FileNotFoundError per
+    annunciare 'file YAML non trovato'» -- non vale piu' dalla #257:
+    `cli.main()` non cattura nessun builtin sul percorso di caricamento, e
+    una guardia strutturale lo verifica (`tests/test_cli_no_builtin_handlers`).
+    Quella che regge e' il valore di verita' del tipo, ed e' anche cio' che
+    spiega l'asimmetria con `ConfigFileNotFoundError`, che il builtin lo
+    eredita proprio perche' li' il file mancante e' davvero quello."""
     from pge.shared.exceptions import CsoundNotFoundError
     err = CsoundNotFoundError(what="binario 'csound'")
     assert not isinstance(err, FileNotFoundError)
