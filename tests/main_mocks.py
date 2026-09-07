@@ -58,20 +58,33 @@ def make_mock_logger_module():
 
 
 def _make_mock_yaml_module():
-    """Stub di `yaml` che porta pero' `YAMLError`, quello vero.
+    """Stub di `yaml` che porta pero' le classi d'errore, quelle vere.
 
     Dalla #257 `pge.shared.exceptions.ConfigParseError` eredita da
-    `yaml.YAMLError`, e una classe base serve nel momento in cui la classe si
-    crea -- non quando la si usa. Uno stub nudo qui non farebbe fallire un
-    assert: farebbe fallire l'import di `pge.shared.exceptions`, cioe' di
-    mezzo motore, con un `AttributeError` che non nomina la causa.
+    `yaml.YAMLError` e `ConfigMarkedParseError` da `yaml.MarkedYAMLError`, e
+    una classe base serve nel momento in cui la classe si crea -- non quando
+    la si usa. Uno stub nudo qui non farebbe fallire un assert: manderebbe
+    l'import di `pge.shared.exceptions` nel suo ramo di ripiego, quello
+    scritto per il checkout senza PyYAML, dove `ConfigParseError` non e' piu'
+    un `yaml.YAMLError` vero -- cioe' la promessa di libreria della #257
+    cadrebbe dentro i test che dovrebbero difenderla.
 
-    La classe e' quella vera di proposito: cosi' `isinstance` e
+    **Il modulo li chiede in un solo `from yaml import ...`, e un `from` che
+    non trova un nome alza `ImportError`**: e' tutto il gruppo a mancare
+    quando ne manca uno. Perche' lo stub non resti indietro sul prossimo nome,
+    `test_lo_stub_yaml_dei_test_non_manda_exceptions_nel_ripiego`
+    (`tests/shared/test_engine_exceptions.py`) misura quell'import in un
+    interprete figlio, con questo stub installato: e' l'unico posto dove si
+    vede, perche' nel processo dei test `pge.shared.exceptions` e' gia'
+    importato col `yaml` vero molto prima che questa fixture entri in scena.
+
+    Le classi sono quelle vere di proposito: cosi' `isinstance` e
     `pytest.raises(yaml.YAMLError)` dicono la stessa cosa dentro e fuori dai
     mock. Lo stub resta uno stub per tutto il resto (parser, dumper).
     """
     mod = types.ModuleType('yaml')
     mod.YAMLError = yaml.YAMLError
+    mod.MarkedYAMLError = yaml.MarkedYAMLError
     return mod
 
 

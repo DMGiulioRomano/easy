@@ -1328,6 +1328,60 @@ def test_il_motore_si_importa_senza_pyyaml():
     assert 'ok' in figlio.stdout
 
 
+def test_lo_stub_yaml_dei_test_non_manda_exceptions_nel_ripiego():
+    """Lo stub di `tests/main_mocks.py` deve portare *tutti* i nomi che
+    `exceptions.py` prende da `yaml`, non il primo.
+
+    Il modulo li chiede in un solo `from yaml import ...`, e un `from` che non
+    trova un nome alza `ImportError`: uno stub rimasto indietro di un nome
+    manda quell'import nel ramo di ripiego, dove `PYYAML_ASSENTE` diventa vero
+    con PyYAML installato e `ConfigParseError` smette di essere un
+    `yaml.YAMLError` vero -- cioe' la promessa di libreria della #257 cade, in
+    un processo in cui PyYAML c'e'.
+
+    Nel processo corrente non si vede, ed e' il motivo per cui serve questo
+    test: `pge.shared.exceptions` e' importato alla raccolta col `yaml` vero,
+    quindi la guardia di `test_cli_no_builtin_handlers.py` legge una classe
+    gia' creata e direbbe di si' comunque. L'import va misurato dove avviene,
+    in un interprete figlio, come per il test qui sopra.
+    """
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    from pge.shared import exceptions as modulo
+
+    src_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(modulo.__file__))))
+    radice = os.path.dirname(src_dir)
+
+    env = dict(os.environ)
+    env['PYTHONPATH'] = os.pathsep.join([radice, src_dir])
+
+    figlio = subprocess.run(
+        [sys.executable, '-c', textwrap.dedent("""
+            import sys
+            import yaml as yaml_vero
+            from tests.main_mocks import _make_mock_yaml_module
+
+            sys.modules['yaml'] = _make_mock_yaml_module()
+            from pge.shared.exceptions import ConfigParseError, PYYAML_ASSENTE
+
+            assert not PYYAML_ASSENTE, (
+                "sotto lo stub exceptions crede che PyYAML non ci sia")
+            assert issubclass(ConfigParseError, yaml_vero.YAMLError), (
+                "sotto lo stub ConfigParseError non e' un yaml.YAMLError vero")
+            print("ok")
+        """)],
+        env=env, capture_output=True, text=True)
+
+    assert figlio.returncode == 0, (
+        "lo stub yaml dei test non regge l'import di pge.shared.exceptions:\n"
+        f"{figlio.stdout}\n{figlio.stderr}")
+    assert 'ok' in figlio.stdout
+
+
 # -----------------------------------------------------------------------------
 # Il tipo concreto della causa: `except IsADirectoryError` deve sopravvivere
 # -----------------------------------------------------------------------------
