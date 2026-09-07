@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: ecdd16e
+last_synced_commit: f8f9fdf
 entry_for: [error-handling]
 ---
 
@@ -72,6 +72,9 @@ EngineError                                  (Exception)
 │   │   │                                    (anche yaml.YAMLError)
 │   │   ├── ConfigMarkedParseError           #257 — con posizione
 │   │   │                                    (anche yaml.MarkedYAMLError)
+│   │   ├── ConfigReaderParseError           #257 — carattere rifiutato dal
+│   │   │                                    reader (anche
+│   │   │                                    yaml.reader.ReaderError)
 │   │   └── ConfigUnicodeParseError          #257 — non decodificabile
 │   │                                        (anche UnicodeDecodeError)
 │   ├── ConfigReadError                      #257 — file YAML che il sistema
@@ -210,7 +213,16 @@ EngineError                                  (Exception)
   Perciò le tre classi hanno sottoclassi che mescolano anche il builtin
   concreto, scelte da `config_read_error()` / `config_parse_error()`: il
   guasto è lo stesso, quindi messaggio e `user_message()` sono gli stessi e la
-  sottoclasse aggiunge il tipo e nient'altro. `LETTURA_PER_BUILTIN` è corta di
+  sottoclasse aggiunge il tipo e nient'altro. Sul ramo del parser sono **tre**,
+  e la terza è quella che si dimentica: `yaml.reader.ReaderError` è l'unico
+  `yaml.YAMLError` che il *load* possa sollevare senza essere un
+  `MarkedYAMLError` — gli altri quattro non marcati (Emitter, Representer,
+  Serializer, Resolver) stanno sul lato dump — e non è ri-esportato nel
+  namespace `yaml`, il che è anche l'unica ragione per cui gli import da PyYAML
+  in `exceptions.py` sono due invece di uno. Porta una posizione sua, in
+  caratteri anziché in riga/colonna (`e.position`, `e.character`): senza
+  `ConfigReaderParseError` era l'unico caso rimasto in cui impacchettare
+  *toglieva*. `LETTURA_PER_BUILTIN` è corta di
   proposito — i tre builtin che descrivono il **path**, non i quindici che
   descrivono la macchina — e il ripiego non è un buco: `ConfigReadError` resta
   un `OSError` e porta `errno`, che è ciò che distingue un builtin dall'altro.
@@ -304,6 +316,16 @@ Esempio (`InvalidWindowError`):
   Stream:       drone_low
   Config:       configs/PGE_test.yml
 ```
+
+**Una riga, un campo.** Un valore che debba andare a capo si incolonna sotto
+il valore (16 colonne: i due spazi di rientro più il nome del campo
+giustificato), mai a sinistra: una riga senza nome di campo, nel mezzo del
+blocco, si legge come un campo rotto. Dove il valore è lungo per natura la
+regola si paga scegliendo — `_SubprocessRenderError.diagnostic_line()` pesca
+*una* riga da uno stderr intero — e dove è di due righe per costruzione si
+paga incolonnando: `ConfigParseError` lo fa per `yaml.reader.ReaderError`, il
+cui `__str__` è sempre due righe e la cui seconda porta la posizione del
+carattere, cioè la sola cosa che dica dove.
 
 Il chiamante (`main._handle_engine_error`) appende anche:
 
@@ -403,6 +425,18 @@ della macchina):
 [ERRORE] File di configurazione malformato: 'configs/latin1.yml'
   Dettaglio:    'utf-8' codec can't decode byte 0xe8 in position 7: invalid continuation byte
   Dettagli:     logs/latin1_engine.log
+```
+
+Un carattere di controllo dentro il file è rifiutato dal *reader* di PyYAML
+prima che esista un token, quindi non porta riga/colonna ma una posizione in
+caratteri. È l'unico caso in cui il testo del dettaglio è di due righe per
+costruzione, e la seconda si incolonna sotto il valore (Sez. 2):
+
+```
+[ERRORE] File di configurazione malformato: 'configs/ctrl.yml'
+  Dettaglio:    unacceptable character #x0007: special characters are not allowed
+                in "configs/ctrl.yml", position 22
+  Dettagli:     logs/ctrl_engine.log
 ```
 
 ### File di configurazione che il sistema operativo non apre
@@ -555,9 +589,23 @@ Fino alla issue #241 lo stesso guasto usciva come `Errore: file
    - errore di config YAML → `ConfigError`
    - errore runtime engine non-config → `EngineRuntimeError`
 2. Override `user_message()` con formato `[ERRORE] head` + righe indentate +
-   `self._context_lines()` finale (`stream_id` + `config_file`).
-3. Se serve backward-compat con built-in (`KeyError`, `RuntimeError`, ...)
-   aggiungere come secondo base class — vedere `CsoundRenderError`.
+   `self._context_lines()` finale (`stream_id` + `config_file`). Il
+   `_context_lines()` finale si omette quando ripeterebbe il head — le tre
+   classi della #257 hanno il file di configurazione come soggetto, quindi
+   niente riga `Config:`. Una riga, un campo: vedi Sez. 2.
+3. Se serve backward-compat con un built-in, ereditarlo come seconda base —
+   ma solo dove **dice il vero**: per un binario assente `FileNotFoundError`
+   sarebbe una bugia (`_BinaryNotFoundError`, #228/#241), per uno YAML che non
+   c'è è esatto (`ConfigFileNotFoundError`, #257). E ereditarlo non basta:
+   chi lo cattura ne legge lo stato, quindi (a) riporta dalla causa i campi
+   che l'idioma legge (`errno`/`filename`, `problem_mark`, `start`/`end`),
+   senza mai fabbricarli; (b) riprenditi `__str__`, perché quello del built-in
+   riscrive la riga che finisce nel log engine; (c) dai alla classe un
+   `__reduce__` se il costruttore non prende `self.args` — i built-in che
+   sostituisci erano picklabili; (d) conserva anche il tipo **concreto** della
+   causa con una sottoclasse per builtin, come `config_read_error()` /
+   `config_parse_error()`, o `except IsADirectoryError` smette di funzionare
+   in silenzio. Il dettaglio completo è nei bullet della Sez. 1.
 4. Sostituire i raise esistenti nel modulo target.
 5. Arricchire `stream_id` al chiamante più prossimo (parser/controller).
 6. Test:

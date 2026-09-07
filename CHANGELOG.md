@@ -580,13 +580,37 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `FileNotFoundError`. Le tre classi hanno quindi sottoclassi che mescolano
   anche il builtin concreto (`ConfigIsADirectoryError`,
   `ConfigNotADirectoryError`, `ConfigPermissionError`,
-  `ConfigMarkedParseError`, `ConfigUnicodeParseError`), scelte da
+  `ConfigMarkedParseError`, `ConfigReaderParseError`,
+  `ConfigUnicodeParseError`), scelte da
   `config_read_error()` / `config_parse_error()`. Il guasto e' lo stesso,
   quindi messaggio e `user_message()` non cambiano: la sottoclasse aggiunge il
   tipo e nient'altro. `LETTURA_PER_BUILTIN` e' corta di proposito -- i tre
   builtin che descrivono il *path*, non i quindici che descrivono la macchina
   -- e il ripiego non e' un buco, perche' `ConfigReadError` resta un `OSError`
   e porta `errno`.
+
+  Sul ramo del parser sono tre, e la terza e' quella che si dimentica:
+  `yaml.reader.ReaderError` e' l'unico `yaml.YAMLError` che il *load* possa
+  sollevare senza essere un `MarkedYAMLError` -- gli altri quattro non marcati
+  (Emitter, Representer, Serializer, Resolver) stanno sul lato dump -- e lo
+  solleva per il caso banale del carattere di controllo incollato dentro il
+  file. Non porta riga/colonna ma una posizione sua, in caratteri
+  (`e.position`, `e.character`): senza `ConfigReaderParseError` era l'unico
+  caso rimasto in cui impacchettare *toglieva*, e portava via proprio le sole
+  due cose che dicano quale carattere e dove. Non e' ri-esportato nel namespace
+  `yaml`, il che e' anche l'unica ragione per cui gli import da PyYAML in
+  `exceptions.py` sono due invece di uno.
+
+  **Una riga, un campo, anche quando la causa parla su due.**
+  `ReaderError.__str__` e' due righe sempre, ed e' l'unica causa del percorso
+  di caricamento a cadere sul ripiego `str(self.cause)` di `user_message()`:
+  la seconda usciva dal blocco senza nome di campo, fra `Dettaglio:` e il
+  `Dettagli:` che `_handle_engine_error` appende subito sotto -- una riga che
+  si legge come un campo rotto. Ora il seguito si incolonna sotto il valore
+  invece di essere buttato via. La regola e' scritta nella Sez. 2 di
+  `docs/reference/errors.md`, dove non era mai stata detta benche' ogni altra
+  classe la rispettasse (`_SubprocessRenderError` arriva a pescare *una* riga
+  da uno stderr intero pur di non violarla).
 
   **Le tre classi sono picklabili**, come i builtin che sostituiscono: e' cosi'
   che un'eccezione attraversa un confine di processo (il meccanismo con cui
