@@ -541,7 +541,7 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   ```
   [ERRORE] File di configurazione non leggibile: 'configs/'
     Dettaglio:    Is a directory
-    Dettagli:     logs/configs_engine.log
+    Dettagli:     logs/20260907_194114_engine.log
   ```
 
   Quest'ultimo non e' il caso esotico ma il piu' probabile dei cinque:
@@ -552,7 +552,11 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   proprio YAML -- accanto a `PermissionError` e al resto di `OSError`. La riga
   `Dettaglio:` e' lo `strerror` della causa: e' l'unica cosa che distingue
   EISDIR da EACCES, e senza di essa il messaggio direbbe soltanto quello che
-  l'utente gia' sa.
+  l'utente gia' sa. E il log non porta il basename come in ogni altro
+  messaggio: la barra finale che la tab-completion aggiunge -- lo stesso gesto
+  che fabbrica l'errore -- svuota `os.path.basename()`, quindi
+  `configure_engine_logger` ripiega sul timestamp. Senza la barra
+  (`pge configs out.wav`) il log torna `logs/configs_engine.log`.
 
   Nella stessa passata **l'encoding dello YAML smette di dipendere dal
   locale**: `load_yaml` apre con `encoding='utf-8'` dichiarato. Lo YAML e'

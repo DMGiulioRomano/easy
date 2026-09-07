@@ -410,7 +410,7 @@ CLI: `pge configs/ out.wav` (la tab-completion si è fermata sulla directory)
 ```
 [ERRORE] File di configurazione non leggibile: 'configs/'
   Dettaglio:    Is a directory
-  Dettagli:     logs/configs_engine.log
+  Dettagli:     logs/20260907_194114_engine.log
 ```
 
 Stesso formato per i permessi negati (`Dettaglio: Permission denied`). La riga
@@ -419,6 +419,15 @@ da EACCES, e senza di essa il messaggio direbbe solo che il file non si legge,
 che è ciò che l'utente già sa. Nessuna riga `Path cercato:`, al contrario del
 file inesistente: lì il path assoluto rispondeva a «sei nella directory
 sbagliata», qui il file è stato trovato e la domanda è un'altra.
+
+E il log **non** si chiama `configs_engine.log`, benché ogni altro esempio di
+questa sezione porti il basename del proprio YAML. È la barra finale: quella
+che la tab-completion aggiunge da sé — cioè proprio il gesto che produce questo
+errore — rende vuoto `os.path.basename()`, quindi `yaml_basename` è la stringa
+vuota e `configure_engine_logger` ripiega sul timestamp. Senza la barra
+(`pge configs out.wav`) il log torna a essere `logs/configs_engine.log`. Detto
+qui perché è l'unico messaggio del censimento che nomina un file dove l'utente
+poi non lo trova, e un caso e2e lo tiene fermo.
 
 ### Renderer sconosciuto
 CLI: `--renderer foo`

@@ -672,3 +672,48 @@ def test_e2e_config_e_una_directory(tmp_path, cleanup_log):
                          ['53_config_directory'])
     _assert_log_message_line(str(directory),
                              "File di configurazione non leggibile")
+
+
+@pytest.mark.e2e
+def test_e2e_config_directory_con_la_barra_finale_non_nomina_il_log_col_basename(
+        tmp_path, cleanup_log):
+    """La forma che la tab-completion produce davvero: `pge configs/ out.wav`.
+
+    Il gemello qui sopra passa il path *senza* barra, e la barra non e' un
+    dettaglio cosmetico: `os.path.basename('configs/')` e' la stringa vuota,
+    quindi `yaml_basename` esce vuoto da `cli.main()` e
+    `configure_engine_logger` ripiega sul timestamp. Il messaggio resta lo
+    stesso, il nome del log no -- e la Sez. 4 di `docs/reference/errors.md`,
+    che e' un censimento di output reali, mostrava proprio il comando con la
+    barra accanto a un `logs/configs_engine.log` che quel comando non produce:
+    l'unico messaggio del censimento che nominasse un file dove l'utente poi
+    non lo trova.
+
+    Nessun `_log_path_for` qui: quella funzione ricalcola il basename come fa
+    la CLI e su una barra finale risponderebbe `logs/_engine.log`, cioe' la
+    stessa deduzione sbagliata. Il path si legge dalla riga «Dettagli:», che e'
+    l'unico posto dove l'utente lo trova.
+    """
+    import re
+
+    directory = tmp_path / '54_config_directory_slash'
+    directory.mkdir()
+
+    result = _run(str(directory) + os.sep)
+
+    riga = re.search(r'^  Dettagli:\s+(\S+)$', result.stdout, re.M)
+    assert riga, f"nessuna riga «Dettagli:» in stdout: {result.stdout}"
+    log = riga.group(1)
+    cleanup_log.append(log if os.path.isabs(log)
+                       else os.path.join(PROJECT_ROOT, log))
+
+    _assert_clean_config_output(result)
+    assert "File di configurazione non leggibile" in result.stdout
+    assert "Dettaglio:    Is a directory" in result.stdout
+
+    nome = os.path.basename(log)
+    assert nome != f'{directory.name}_engine.log', (
+        "il log porterebbe il basename della directory: se questo diventa "
+        "vero, l'esempio della Sez. 4 va rimesso su `logs/<dir>_engine.log`")
+    assert re.fullmatch(r'\d{8}_\d{6}_engine\.log', nome), (
+        f"ripiego di configure_engine_logger atteso sul timestamp: {nome}")
