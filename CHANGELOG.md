@@ -49,8 +49,10 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   insieme, le due decisioni opposte fanno una regola sola, e la regola è il
   guadagno: dentro `EngineError`, `FileNotFoundError` significa una cosa e una
   sola, «il file di configurazione che hai nominato non esiste». Il test che la
-  regge la deriva dalla gerarchia invece di trascriverla, così un terzo erede
-  la farebbe parlare.
+  regge la deriva dall'albero delle classi invece di trascriverla — e
+  dall'albero, non dai membri di `pge/shared/exceptions.py`: la convenzione
+  vuole le eccezioni lì, ma un secondo erede dichiarato altrove la farebbe
+  tacere proprio sul caso per cui esiste.
 
   Ereditare il tipo, però, non basta a mantenere la promessa: chi cattura un
   `FileNotFoundError` raramente si ferma alla cattura — legge `e.filename` e
@@ -65,7 +67,11 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `(errno, strerror, filename)` e accoda quindi `filename` agli `args`, che
   qui sono la sola prosa — un round trip (`pickle`, `copy`) tornava indietro
   con il messaggio annidato dentro sé stesso e `path`/`filename` uguali al
-  messaggio, in silenzio.
+  messaggio, in silenzio. La ricostruzione parte dal path e si porta dietro
+  il `__dict__`: il path basta per tutto ciò che `__init__` deriva, non per
+  `stream_id`, che il chiamante più prossimo scrive dopo il raise — e senza
+  quel terzo elemento il round trip perdeva la riga `Stream:` del messaggio,
+  in silenzio come le altre due volte.
 
   **La lettura è in binario, e la decodifica è di PyYAML.** Chi decodifica
   decide anche chi solleva: con `open(path, 'r')` la decodifica avviene nel
@@ -304,7 +310,11 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   che legge la soglia da `requires-python` invece di trascriverla (quando il
   minimo passerà a 3.10 la guardia si spegne da sola) e distingue le
   annotazioni che l'interprete valuta davvero — firme, modulo, classe — da
-  quelle locali, che non valuta e che sarebbe ingiusto accusare.
+  quelle locali, che non valuta e che sarebbe ingiusto accusare. La
+  distinzione passa per il corpo di ogni `class`, anche quando la `class` sta
+  dentro una funzione: lì «dentro una funzione» e «non valutata» smettono di
+  coincidere — il corpo si esegue quando si esegue la `class` — ed è l'unico
+  punto in cui la guardia poteva confondere le due regole che dichiara.
 
 - **`api.py` prometteva un silenzio che non ha mai avuto** (issue #189).
   L'intestazione dichiarava «nessun print» come primo punto del contratto

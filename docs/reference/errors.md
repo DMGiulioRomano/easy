@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: c607958
+last_synced_commit: d16c5e5
 entry_for: [error-handling]
 ---
 
@@ -129,7 +129,13 @@ EngineError                                  (Exception)
   trip (`pickle`, `copy`) tornava indietro con il messaggio annidato dentro
   sé stesso e `path`/`filename` uguali al messaggio — senza sollevare
   niente, cioè la stessa promessa muta un piano più in là. Anche `__reduce__`
-  è sovrascritto: tutto lo stato della classe è il suo path.
+  è sovrascritto, e ricostruisce dal path **accodando il `__dict__`**: il
+  path basta per tutto ciò che `__init__` deriva, ma non per ciò che il
+  chiamante scrive dopo il raise — `stream_id`, il punto 5 della lista qui
+  sotto. Il `__reduce__` di `BaseException` quel terzo elemento lo accoda
+  proprio per questo, e ometterlo toglieva la riga `Stream:` dal messaggio
+  ricostruito senza sollevare niente: ancora la stessa promessa muta, alla
+  terza occorrenza.
 
   Il guadagno non è la compatibilità (che è il prezzo di ammissione): è che
   il tipo torna a *isolare*. Un `FileNotFoundError` che risale dall'engine
