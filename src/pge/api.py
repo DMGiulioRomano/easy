@@ -236,9 +236,14 @@ def load_generator(yaml_path: str, *, samples_dir: Optional[str] = None):
         sostituiscono i builtin nudi che questa docstring dichiarava. Tutte e
         tre ereditano il tipo che sostituiscono (FileNotFoundError,
         yaml.YAMLError, OSError): un `except FileNotFoundError` scritto contro
-        le versioni precedenti continua a funzionare. Restano anche
-        SampleNotFoundError, ConfigError, ... Nessun print proprio (quelli
-        interni di Generator restano).
+        le versioni precedenti continua a funzionare. E anche il tipo
+        *concreto* della causa, quando ne ha uno: una directory al posto del
+        file resta un IsADirectoryError, uno YAML con posizione resta un
+        yaml.MarkedYAMLError, un file non decodificabile resta un
+        UnicodeDecodeError -- e' cio' che saliva prima, e chi lo cattura per
+        nome non deve cambiare niente. Restano anche SampleNotFoundError,
+        ConfigError, ... Nessun print proprio (quelli interni di Generator
+        restano).
     """
     from pge.engine.generator import Generator
 

@@ -68,11 +68,18 @@ EngineError                                  (Exception)
 │   ├── ConfigFileNotFoundError              #257 — file YAML inesistente
 │   │                                        (anche FileNotFoundError)
 │   ├── ConfigParseError                     #257 — file YAML malformato o
-│   │                                        non decodificabile
-│   │                                        (anche yaml.YAMLError)
+│   │   │                                    non decodificabile
+│   │   │                                    (anche yaml.YAMLError)
+│   │   ├── ConfigMarkedParseError           #257 — con posizione
+│   │   │                                    (anche yaml.MarkedYAMLError)
+│   │   └── ConfigUnicodeParseError          #257 — non decodificabile
+│   │                                        (anche UnicodeDecodeError)
 │   ├── ConfigReadError                      #257 — file YAML che il sistema
-│   │                                        operativo non apre
-│   │                                        (anche OSError)
+│   │   │                                    operativo non apre
+│   │   │                                    (anche OSError)
+│   │   ├── ConfigIsADirectoryError          #257 (anche IsADirectoryError)
+│   │   ├── ConfigNotADirectoryError         #257 (anche NotADirectoryError)
+│   │   └── ConfigPermissionError            #257 (anche PermissionError)
 │   ├── MissingFieldError                    PR1 — campo YAML mancante/null
 │   ├── InvalidFieldValueError               PR1 — campo presente, valore invalido
 │   ├── InvalidParameterError                PR2 — formato/tipo parametro non supportato
@@ -183,6 +190,39 @@ EngineError                                  (Exception)
   scrive `[Errno 2] No such file or directory: '...'`, cioè butta via la prosa
   proprio nella riga che finisce nel log engine — `ConfigFileNotFoundError`
   override `__str__` per tenersela.
+- **Impacchettare non deve togliere: il tipo *concreto* della causa
+  sopravvive.** Prima della #257 `load_yaml` lasciava salire l'eccezione
+  concreta di `open()` e del parser, quindi a valle funzionavano
+  `except IsADirectoryError` e `isinstance(e, yaml.MarkedYAMLError)`. Una
+  classe che eredita il solo tipo *generico* (`OSError`, `yaml.YAMLError`) li
+  fa smettere di funzionare in silenzio — cioè mantiene a metà la stessa
+  promessa che `ConfigFileNotFoundError` mantiene verso `FileNotFoundError`.
+  Perciò le tre classi hanno sottoclassi che mescolano anche il builtin
+  concreto, scelte da `config_read_error()` / `config_parse_error()`: il
+  guasto è lo stesso, quindi messaggio e `user_message()` sono gli stessi e la
+  sottoclasse aggiunge il tipo e nient'altro. `LETTURA_PER_BUILTIN` è corta di
+  proposito — i tre builtin che descrivono il **path**, non i quindici che
+  descrivono la macchina — e il ripiego non è un buco: `ConfigReadError` resta
+  un `OSError` e porta `errno`, che è ciò che distingue un builtin dall'altro.
+  Un test verifica che ogni voce della tabella erediti la propria chiave, così
+  non può mentire. Il prezzo è quello già pagato per `OSError.__str__`: il
+  builtin mescolato porta spesso un `__str__` suo (`MarkedYAMLError` scrive
+  contesto e snippet, `UnicodeDecodeError` scrive la riga del codec) che
+  riscriverebbe proprio ciò che finisce nel log engine, quindi ogni
+  sottoclasse se lo riprende. Per la stessa ragione `ConfigError.__init__`
+  chiama `Exception.__init__` esplicitamente invece di `super()`: un builtin
+  mescolato può avere un `__init__` proprio che sta *dopo* nell'MRO e
+  intercetta il messaggio — `UnicodeDecodeError` alza `TypeError` (vuole
+  cinque argomenti), `MarkedYAMLError` lo scrive in `context` e lascia `args`
+  vuoto, cioè fallisce in silenzio.
+- **Le tre classi sono picklabili, come i builtin che sostituiscono.** È così
+  che un'eccezione attraversa un confine di processo — il meccanismo con cui
+  `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent —
+  quindi impacchettare senza `__reduce__` sarebbe stata una regressione. Il
+  default ripassa `self.args` al costruttore, e questi costruttori vogliono il
+  *path*: chi ha due argomenti alzava `TypeError` in unpickling, chi ne ha uno
+  rientrava col messaggio già costruito al posto del path e ne usciva
+  impacchettato due volte — e quest'ultimo è il modo muto di sbagliare.
 - **La base `yaml.YAMLError` non deve costare PyYAML all'intero motore.** Una
   classe base deve esistere nel momento in cui la classe *si crea*, quindi
   l'import in `exceptions.py` non può essere lazy — ma nemmeno duro, e la

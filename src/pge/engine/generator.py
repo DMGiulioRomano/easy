@@ -21,8 +21,8 @@ from pge.rendering.ftable_manager import FtableManager
 from pge.rendering.score_writer import ScoreWriter
 from pge.controllers.window_controller import WindowController
 from pge.shared.exceptions import (
-    ConfigError, ConfigFileNotFoundError, ConfigParseError,
-    ConfigReadError, SampleNotFoundError,
+    ConfigError, ConfigFileNotFoundError, SampleNotFoundError,
+    config_parse_error, config_read_error,
 )
 from pge.shared.seeding import session_seed
 
@@ -123,7 +123,12 @@ class Generator:
         except FileNotFoundError as err:
             raise ConfigFileNotFoundError(self.yaml_path) from err
         except yaml.YAMLError as err:
-            raise ConfigParseError(self.yaml_path, err) from err
+            # Le factory, non il costruttore: la sottoclasse restituita eredita
+            # anche il tipo *concreto* della causa, cosi' un
+            # `isinstance(e, yaml.MarkedYAMLError)` o un
+            # `except IsADirectoryError` scritti a valle continuano a
+            # funzionare come quando `load_yaml` lasciava salire il builtin.
+            raise config_parse_error(self.yaml_path, err) from err
         except UnicodeDecodeError as err:
             # Il terzo modo in cui un file di config non si legge. `open()` e'
             # in modalita' testo e su UTF-8, quindi la decodifica la fa Python
@@ -132,7 +137,7 @@ class Generator:
             # aperto in binario sarebbe stato PyYAML a rifiutarlo, con un
             # `yaml.reader.ReaderError` -- cioe' un `yaml.YAMLError`. Stesso
             # guasto, stesso tipo.
-            raise ConfigParseError(self.yaml_path, err) from err
+            raise config_parse_error(self.yaml_path, err) from err
         except OSError as err:
             # E tutti gli altri: `IsADirectoryError` (`pge configs/ out.wav`,
             # il typo che la tab-completion fabbrica da sola),
@@ -142,7 +147,7 @@ class Generator:
             # dal ramo generico della CLI, cioe' l'enumerazione dei modi in
             # cui un file di config non si legge era incompleta proprio sul
             # caso piu' probabile.
-            raise ConfigReadError(self.yaml_path, err) from err
+            raise config_read_error(self.yaml_path, err) from err
 
         self.data = self._eval_math_expressions(raw_data)
         # Seed top-level opzionale (issue #81): None se assente (il session

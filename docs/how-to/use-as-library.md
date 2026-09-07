@@ -101,7 +101,10 @@ passare dalla CLI né monkey-patchare i globali.
    `ConfigReadError` (#257): tutti e tre sono `EngineError`, quindi un
    solo `except` li copre insieme a tutto il resto, e tutti e tre ereditano
    anche il builtin che sostituiscono (`FileNotFoundError`, `yaml.YAMLError`,
-   `OSError`) — chi li catturava per nome non deve cambiare niente.
+   `OSError`) e, quando la causa ne ha uno, il suo tipo **concreto**
+   (`IsADirectoryError`, `yaml.MarkedYAMLError`, `UnicodeDecodeError`) — chi
+   li catturava per nome non deve cambiare niente. Sono anche picklabili, come
+   i builtin che sostituiscono: attraversano un confine di processo.
 
 7. Csound: `renderer='csound'` con knob raggruppati in
    `api.CsoundOptions(orc_path=..., ssdir=..., sco_dir=...)`;

@@ -1278,3 +1278,230 @@ def test_il_motore_si_importa_senza_pyyaml():
         "senza PyYAML il motore non si importa piu':\n"
         f"{figlio.stdout}\n{figlio.stderr}")
     assert 'ok' in figlio.stdout
+
+
+# -----------------------------------------------------------------------------
+# Il tipo concreto della causa: `except IsADirectoryError` deve sopravvivere
+# -----------------------------------------------------------------------------
+#
+# Impacchettare e' un guadagno finche' non toglie. Prima della #257 `load_yaml`
+# lasciava salire l'eccezione *concreta* di `open()`, quindi un
+# `except IsADirectoryError` scritto a valle funzionava; un `ConfigReadError`
+# che eredita il solo `OSError` lo fa smettere di funzionare. E' la stessa
+# promessa che le altre due classi mantengono verso `FileNotFoundError` e
+# `yaml.YAMLError`: mantenerla a meta' era una scelta che nessuno aveva preso.
+#
+# La regola non cambia -- il tipo deve dire il vero -- e qui il builtin dice il
+# vero, perche' e' quello che il sistema operativo ha sollevato.
+
+
+def test_la_tabella_dei_builtin_di_lettura_non_puo_mentire():
+    """Ogni voce eredita la propria chiave, ed e' un `ConfigReadError`.
+
+    La tabella e' corta di proposito (i builtin che descrivono il *path*, non
+    la macchina) e il ripiego non e' un buco: `ConfigReadError` resta un
+    `OSError` e porta `errno`. Ma corta o lunga, non deve poter mentire.
+    """
+    from pge.shared.exceptions import ConfigReadError, LETTURA_PER_BUILTIN
+
+    assert LETTURA_PER_BUILTIN, "tabella vuota: la guardia non misura niente"
+    for builtin, classe in LETTURA_PER_BUILTIN.items():
+        assert issubclass(classe, builtin), (
+            f"{classe.__name__} non eredita {builtin.__name__}: chi cattura "
+            f"il builtin per nome smette di catturarlo")
+        assert issubclass(classe, ConfigReadError)
+        assert not issubclass(classe, FileNotFoundError), (
+            f"{classe.__name__} eredita FileNotFoundError: il tipo mente")
+
+
+def test_config_read_error_di_una_directory_resta_un_IsADirectoryError():
+    """`pge configs/ out.wav`, il typo che la tab-completion fabbrica da sola."""
+    from pge.shared.exceptions import (
+        ConfigReadError, EngineError, config_read_error)
+
+    err = config_read_error(
+        'configs/', IsADirectoryError(21, 'Is a directory', 'configs/'))
+
+    assert isinstance(err, IsADirectoryError)
+    assert isinstance(err, ConfigReadError)
+    assert isinstance(err, EngineError)
+    # Il messaggio non cambia: la sottoclasse aggiunge solo il tipo.
+    assert str(err) == "File di configurazione non leggibile: 'configs/'"
+    assert '  Dettaglio:    Is a directory' in err.user_message()
+
+
+def test_config_read_error_dei_permessi_resta_un_PermissionError():
+    """L'altro caso che i doc nominano: EACCES."""
+    from pge.shared.exceptions import ConfigReadError, config_read_error
+
+    err = config_read_error(
+        'configs/x.yml', PermissionError(13, 'Permission denied', 'configs/x.yml'))
+
+    assert isinstance(err, PermissionError)
+    assert isinstance(err, ConfigReadError)
+    assert not isinstance(err, IsADirectoryError)
+
+
+def test_config_read_error_generico_quando_il_builtin_non_ha_un_tipo_suo():
+    """Il ripiego: resta `ConfigReadError`, che e' un `OSError` con `errno`."""
+    from pge.shared.exceptions import ConfigReadError, config_read_error
+
+    causa = OSError(36, 'File name too long', 'x' * 300)
+    err = config_read_error('x' * 300, causa)
+
+    assert type(err) is ConfigReadError
+    assert isinstance(err, OSError)
+    assert err.errno == 36
+
+
+# -----------------------------------------------------------------------------
+# Lo stesso, dall'altra parte: `except yaml.MarkedYAMLError`
+# -----------------------------------------------------------------------------
+#
+# `problem_mark` e' riportato sull'eccezione, ma l'idioma completo con cui si
+# legge un errore PyYAML e' `isinstance(e, MarkedYAMLError)` *poi* `e.problem_mark`
+# -- il tipo e' la domanda «questa eccezione porta una posizione?». Ereditare il
+# solo `YAMLError` risponde no a un errore che la posizione ce l'ha.
+
+
+def test_config_parse_error_marcato_resta_un_MarkedYAMLError():
+    """Un errore con posizione resta riconoscibile come tale."""
+    import yaml
+    from pge.shared.exceptions import ConfigParseError, config_parse_error
+
+    cause = None
+    try:
+        yaml.safe_load("a: 1\nb: [2, 3\nc: 4\n")
+    except yaml.YAMLError as e:
+        cause = e
+    assert cause is not None and isinstance(cause, yaml.MarkedYAMLError)
+
+    err = config_parse_error('configs/rotto.yml', cause)
+
+    assert isinstance(err, yaml.MarkedYAMLError)
+    assert isinstance(err, ConfigParseError)
+    assert err.problem_mark is cause.problem_mark
+
+
+def test_config_parse_error_marcato_tiene_lo_str_di_dominio():
+    """Il prezzo, gia' pagato due volte per `OSError.__str__`.
+
+    `MarkedYAMLError.__str__` riscrive il messaggio nel formato di PyYAML
+    (contesto, snippet, freccia), ed e' quella la riga che finisce nel log
+    engine e nel ramo generico della CLI. La coppia col test sopra e' il punto:
+    l'uno senza l'altro e' una regressione.
+    """
+    import yaml
+    from pge.shared.exceptions import config_parse_error
+
+    cause = None
+    try:
+        yaml.safe_load("a: 1\nb: [2, 3\nc: 4\n")
+    except yaml.YAMLError as e:
+        cause = e
+
+    err = config_parse_error('configs/rotto.yml', cause)
+
+    assert str(err) == "File di configurazione malformato: 'configs/rotto.yml'"
+    assert 'in "<unicode string>"' not in str(err)
+
+
+def test_config_parse_error_non_marcato_non_finge_di_esserlo():
+    """Un `yaml.YAMLError` nudo non porta una posizione: il tipo non deve
+    dire il contrario, come gli attributi non vanno fabbricati."""
+    import yaml
+    from pge.shared.exceptions import config_parse_error
+
+    err = config_parse_error('configs/rotto.yml', yaml.YAMLError('boom'))
+
+    assert isinstance(err, yaml.YAMLError)
+    assert not isinstance(err, yaml.MarkedYAMLError)
+
+
+def test_config_parse_error_di_una_decodifica_resta_un_UnicodeDecodeError():
+    """Il `.yml` in latin-1: prima `load_yaml` lasciava salire il builtin."""
+    from pge.shared.exceptions import ConfigParseError, config_parse_error
+
+    causa = None
+    try:
+        'perch\xe8'.encode('latin-1').decode('utf-8')
+    except UnicodeDecodeError as e:
+        causa = e
+
+    err = config_parse_error('configs/latin1.yml', causa)
+
+    assert isinstance(err, UnicodeDecodeError)
+    assert isinstance(err, ConfigParseError)
+    assert str(err) == "File di configurazione malformato: 'configs/latin1.yml'"
+
+
+# -----------------------------------------------------------------------------
+# Le tre classi devono sopravvivere al pickle
+# -----------------------------------------------------------------------------
+#
+# I builtin che la #257 sostituisce erano tutti picklabili -- e' cosi' che una
+# eccezione attraversa un confine di processo: `ProcessPoolExecutor` la ripaga
+# nel parent proprio spicchiandola, ed e' il meccanismo su cui gira
+# `numpy_parallel`. Un wrapper con `__init__` a due argomenti e `args` di uno
+# solo rompe il `__reduce__` di default, in due modi diversi: `TypeError` in
+# unpickling per chi ha due argomenti, e messaggio annidato due volte per chi
+# ne ha uno (`OSError.__reduce__` ripassa `args`, non `path`).
+
+
+def _classi_di_configurazione():
+    import yaml
+    from pge.shared import exceptions as mod
+
+    causa_yaml = None
+    try:
+        yaml.safe_load("a: 1\nb: [2, 3\nc: 4\n")
+    except yaml.YAMLError as e:
+        causa_yaml = e
+    causa_unicode = None
+    try:
+        'perch\xe8'.encode('latin-1').decode('utf-8')
+    except UnicodeDecodeError as e:
+        causa_unicode = e
+
+    return [
+        mod.ConfigFileNotFoundError('configs/missing.yml'),
+        mod.config_parse_error('configs/rotto.yml', yaml.YAMLError('boom')),
+        mod.config_parse_error('configs/rotto.yml', causa_yaml),
+        mod.config_parse_error('configs/latin1.yml', causa_unicode),
+        mod.config_read_error(
+            'configs/', IsADirectoryError(21, 'Is a directory', 'configs/')),
+        mod.config_read_error('configs/x.yml', OSError(36, 'File name too long')),
+    ]
+
+
+def test_le_eccezioni_di_configurazione_sopravvivono_al_pickle():
+    """Tipo, messaggio e stato del builtin, dall'altra parte del confine."""
+    import pickle
+
+    for err in _classi_di_configurazione():
+        rifatto = pickle.loads(pickle.dumps(err))
+
+        assert type(rifatto) is type(err), f"{type(err).__name__}: tipo perso"
+        assert str(rifatto) == str(err), (
+            f"{type(err).__name__}: messaggio {str(rifatto)!r} invece di "
+            f"{str(err)!r}")
+        assert rifatto.path == err.path
+        assert rifatto.config_file == err.config_file
+        assert rifatto.user_message() == err.user_message()
+
+
+def test_il_pickle_non_annida_il_messaggio():
+    """Il modo silenzioso di sbagliare: nessun errore, `str()` doppio.
+
+    `OSError.__reduce__` ripassa `self.args` al costruttore, e il costruttore
+    di queste classi vuole il *path*: senza `__reduce__` proprio, il messaggio
+    gia' costruito rientrava come path e usciva impacchettato due volte.
+    """
+    import pickle
+    from pge.shared.exceptions import ConfigFileNotFoundError
+
+    err = ConfigFileNotFoundError('configs/missing.yml')
+    rifatto = pickle.loads(pickle.dumps(err))
+
+    assert rifatto.args == err.args
+    assert str(rifatto).count('File di configurazione non trovato') == 1

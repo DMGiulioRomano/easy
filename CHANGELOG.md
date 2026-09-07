@@ -561,6 +561,32 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   decodifica ogni byte non c'era nemmeno l'errore: i valori stringa -- nomi di
   sample, id di stream -- arrivavano storpiati e in silenzio.
 
+  **Il tipo concreto della causa sopravvive all'impacchettamento.**
+  Impacchettare e' un guadagno finche' non toglie: prima della #257
+  `load_yaml` lasciava salire l'eccezione concreta di `open()` e del parser,
+  quindi a valle funzionavano `except IsADirectoryError` e
+  `isinstance(e, yaml.MarkedYAMLError)`, e una classe che eredita il solo tipo
+  generico li faceva smettere di funzionare in silenzio -- cioe' manteneva a
+  meta' la stessa promessa che `ConfigFileNotFoundError` mantiene verso
+  `FileNotFoundError`. Le tre classi hanno quindi sottoclassi che mescolano
+  anche il builtin concreto (`ConfigIsADirectoryError`,
+  `ConfigNotADirectoryError`, `ConfigPermissionError`,
+  `ConfigMarkedParseError`, `ConfigUnicodeParseError`), scelte da
+  `config_read_error()` / `config_parse_error()`. Il guasto e' lo stesso,
+  quindi messaggio e `user_message()` non cambiano: la sottoclasse aggiunge il
+  tipo e nient'altro. `LETTURA_PER_BUILTIN` e' corta di proposito -- i tre
+  builtin che descrivono il *path*, non i quindici che descrivono la macchina
+  -- e il ripiego non e' un buco, perche' `ConfigReadError` resta un `OSError`
+  e porta `errno`.
+
+  **Le tre classi sono picklabili**, come i builtin che sostituiscono: e' cosi'
+  che un'eccezione attraversa un confine di processo (il meccanismo con cui
+  `ProcessPoolExecutor`, quello di `numpy_parallel`, la ripaga nel parent).
+  Il `__reduce__` di default ripassa `args` al costruttore, che qui vuole il
+  *path*: chi ha due argomenti alzava `TypeError` in unpickling, chi ne ha uno
+  rientrava col messaggio gia' costruito al posto del path e ne usciva
+  impacchettato due volte -- il modo muto di sbagliare.
+
   **La base `yaml.YAMLError` non costa PyYAML all'intero motore.** Una classe
   base deve esistere nel momento in cui la classe si crea, quindi l'import in
   `shared/exceptions.py` non puo' essere lazy -- ma nemmeno duro, e la ragione

@@ -34,11 +34,15 @@ import os
 # PyYAML lo importa davvero. `PYYAML_ASSENTE` rende il ramo osservabile, e due
 # test lo fissano nelle due direzioni.
 try:
-    from yaml import YAMLError as _YamlError
+    from yaml import YAMLError as _YamlError, MarkedYAMLError as _MarkedYamlError
     PYYAML_ASSENTE = False
 except ImportError:  # PyYAML non installato: vedi sopra
     class _YamlError(Exception):
         """Segnaposto per `yaml.YAMLError` dove PyYAML non c'e'."""
+
+    class _MarkedYamlError(_YamlError):
+        """Segnaposto per `yaml.MarkedYAMLError`; eredita l'altro come
+        l'originale, cosi' l'MRO delle sottoclassi non cambia forma."""
 
     PYYAML_ASSENTE = True
 
@@ -81,7 +85,17 @@ class ConfigError(EngineError, ValueError):
     def __init__(self, message: str):
         self.stream_id: str | None = None
         self.config_file: str | None = None
-        super().__init__(message)
+        # `Exception.__init__` esplicito, non `super()`: le sottoclassi della
+        # #257 mescolano un builtin, e alcuni builtin hanno un `__init__`
+        # proprio che sta *dopo* ConfigError nell'MRO e intercetterebbe il
+        # messaggio. `UnicodeDecodeError.__init__` vuole cinque argomenti e
+        # alza `TypeError` su uno; `MarkedYAMLError.__init__` ne accetta uno e
+        # lo scrive in `context`, lasciando `args` vuoto -- cioe' fallisce in
+        # silenzio, che e' peggio. Qui serve solo che `args` porti il
+        # messaggio: e' quello che `__str__` e `user_message()` leggono, e per
+        # i campi del builtin provvede ciascuna sottoclasse. Stessa forma del
+        # prezzo gia' pagato con gli `__str__` piu' sotto.
+        Exception.__init__(self, message)
 
     def _context_lines(self) -> list[str]:
         lines = []
@@ -131,6 +145,19 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
         self.errno = errno.ENOENT
         self.strerror = os.strerror(errno.ENOENT)
         self.filename = path
+
+    # `__reduce__` proprio: il default ripassa `self.args` al costruttore, e il
+    # costruttore di queste classi vuole il *path*. I builtin che la #257
+    # sostituisce erano tutti picklabili -- e' cosi' che un'eccezione
+    # attraversa un confine di processo, il meccanismo con cui
+    # `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent
+    # -- quindi impacchettarli senza questo metodo e' una regressione. I due
+    # modi di rompersi sono diversi e uno dei due e' muto: chi ha due
+    # argomenti alza `TypeError` in unpickling, chi ne ha uno rientra col
+    # messaggio gia' costruito al posto del path e ne esce impacchettato due
+    # volte.
+    def __reduce__(self):
+        return (self.__class__, (self.path,), self.__dict__)
 
     def __str__(self) -> str:
         # Il prezzo dei tre campi qui sopra: con `filename` valorizzato
@@ -187,6 +214,20 @@ class ConfigParseError(ConfigError, _YamlError):
             if hasattr(cause, attributo):
                 setattr(self, attributo, getattr(cause, attributo))
 
+    # `__reduce__` proprio, per la ragione scritta su
+    # `ConfigFileNotFoundError`: il default ripassa `self.args` al costruttore, e il
+    # costruttore di queste classi vuole il *path*. I builtin che la #257
+    # sostituisce erano tutti picklabili -- e' cosi' che un'eccezione
+    # attraversa un confine di processo, il meccanismo con cui
+    # `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent
+    # -- quindi impacchettarli senza questo metodo e' una regressione. I due
+    # modi di rompersi sono diversi e uno dei due e' muto: chi ha due
+    # argomenti alza `TypeError` in unpickling, chi ne ha uno rientra col
+    # messaggio gia' costruito al posto del path e ne esce impacchettato due
+    # volte.
+    def __reduce__(self):
+        return (self.__class__, (self.path, self.cause), self.__dict__)
+
     def user_message(self) -> str:
         lines = [f"[ERRORE] File di configurazione malformato: '{self.path}'"]
         # `problem_mark` c'e' solo sui MarkedYAMLError, ed e' 0-based: renderlo
@@ -240,6 +281,20 @@ class ConfigReadError(ConfigError, OSError):
         self.strerror = getattr(cause, 'strerror', None)
         self.filename = getattr(cause, 'filename', None) or path
 
+    # `__reduce__` proprio, per la ragione scritta su
+    # `ConfigFileNotFoundError`: il default ripassa `self.args` al costruttore, e il
+    # costruttore di queste classi vuole il *path*. I builtin che la #257
+    # sostituisce erano tutti picklabili -- e' cosi' che un'eccezione
+    # attraversa un confine di processo, il meccanismo con cui
+    # `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent
+    # -- quindi impacchettarli senza questo metodo e' una regressione. I due
+    # modi di rompersi sono diversi e uno dei due e' muto: chi ha due
+    # argomenti alza `TypeError` in unpickling, chi ne ha uno rientra col
+    # messaggio gia' costruito al posto del path e ne esce impacchettato due
+    # volte.
+    def __reduce__(self):
+        return (self.__class__, (self.path, self.cause), self.__dict__)
+
     def __str__(self) -> str:
         # Stesso prezzo gia' pagato da `ConfigFileNotFoundError`: con
         # `filename` valorizzato `OSError.__str__` smette di stampare
@@ -255,6 +310,117 @@ class ConfigReadError(ConfigError, OSError):
         dettaglio = self.strerror or str(self.cause)
         lines.append(f"  Dettaglio:    {dettaglio}")
         return "\n".join(lines)
+
+
+# =============================================================================
+# Il tipo *concreto* della causa (issue #257)
+# =============================================================================
+#
+# Impacchettare e' un guadagno finche' non toglie. Prima della #257 `load_yaml`
+# lasciava salire l'eccezione concreta di `open()` e del parser, quindi un
+# `except IsADirectoryError` o un `isinstance(e, yaml.MarkedYAMLError)` scritti
+# a valle funzionavano; una classe che eredita il solo tipo *generico*
+# (`OSError`, `yaml.YAMLError`) li fa smettere di funzionare, e in silenzio.
+# E' la stessa promessa che `ConfigFileNotFoundError` mantiene verso
+# `FileNotFoundError`: mantenerla a meta' era una scelta che nessuno aveva
+# preso.
+#
+# La regola non cambia -- il tipo deve dire il vero -- e qui il builtin dice il
+# vero: e' quello che il sistema operativo, o il parser, hanno sollevato. Il
+# guasto e' sempre lo stesso, quindi la base di dominio (e il messaggio, e
+# `user_message()`) e' sempre la stessa: la sottoclasse aggiunge il tipo e
+# nient'altro.
+#
+# Il prezzo e' quello gia' pagato due volte per `OSError.__str__`: il builtin
+# mescolato porta spesso un `__str__` suo, che riscriverebbe proprio la riga
+# che finisce nel log engine. Ogni sottoclasse che ne mescola uno se lo
+# riprende.
+
+
+class ConfigIsADirectoryError(ConfigReadError, IsADirectoryError):
+    """`pge configs/ out.wav`: la tab-completion si e' fermata sulla directory."""
+
+
+class ConfigNotADirectoryError(ConfigReadError, NotADirectoryError):
+    """Il typo gemello: un segmento del path e' un file, non una directory."""
+
+
+class ConfigPermissionError(ConfigReadError, PermissionError):
+    """Il file c'e' e si legge, ma non da questo utente."""
+
+
+#: Il tipo di dominio per ciascun builtin di `OSError` che qualcuno cattura per
+#: nome. Corta di proposito: ci sono i tre che descrivono il *path* -- cioe' i
+#: modi in cui l'utente sbaglia a nominare il proprio YAML -- e non i quindici
+#: che descrivono la macchina (`ConnectionResetError` su un file di
+#: configurazione sarebbe una classe che non vuol dire niente). Il ripiego non
+#: e' un buco: `ConfigReadError` resta un `OSError` e porta `errno`, che e'
+#: esattamente cio' che distingue un builtin dall'altro. Un test verifica che
+#: ogni voce erediti la propria chiave, cosi' la tabella non puo' mentire.
+LETTURA_PER_BUILTIN = {
+    IsADirectoryError: ConfigIsADirectoryError,
+    NotADirectoryError: ConfigNotADirectoryError,
+    PermissionError: ConfigPermissionError,
+}
+
+
+def config_read_error(path: str, cause: OSError) -> ConfigReadError:
+    """`ConfigReadError`, nella sottoclasse che eredita anche il tipo concreto
+    della causa quando ce n'e' una.
+
+    Le chiavi della tabella sono sorelle disgiunte, quindi l'ordine della
+    scansione non decide niente.
+    """
+    for builtin, classe in LETTURA_PER_BUILTIN.items():
+        if isinstance(cause, builtin):
+            return classe(path, cause)
+    return ConfigReadError(path, cause)
+
+
+class ConfigMarkedParseError(ConfigParseError, _MarkedYamlError):
+    """Uno YAML malformato che porta con se' la posizione dell'errore.
+
+    `problem_mark` e' gia' riportato sull'eccezione, ma l'idioma completo con
+    cui si legge un errore PyYAML e' `isinstance(e, MarkedYAMLError)` *poi*
+    `e.problem_mark`: il tipo e' la domanda «questa eccezione porta una
+    posizione?», e il solo `YAMLError` rispondeva no a un errore che la
+    posizione ce l'ha.
+    """
+
+    def __str__(self) -> str:
+        # `MarkedYAMLError.__str__` riscriverebbe il messaggio nel formato di
+        # PyYAML -- contesto, snippet, freccia -- proprio nella riga che
+        # finisce nel log engine. Stesso prezzo di `OSError.__str__`.
+        return self.args[0]
+
+
+class ConfigUnicodeParseError(ConfigParseError, UnicodeDecodeError):
+    """Il `.yml` che non si decodifica: prima saliva come builtin nudo.
+
+    `UnicodeDecodeError` e' un `ValueError`, quindi `except ValueError`
+    reggeva comunque per via della base `ConfigError`; a cadere era il nome
+    esatto, che e' quello che si scrive quando si sa cosa si sta cercando.
+    """
+
+    def __str__(self) -> str:
+        # Come sopra: `UnicodeDecodeError.__str__` scrive «'utf-8' codec can't
+        # decode byte ...», che e' la riga di `Dettaglio:`, non il messaggio.
+        return self.args[0]
+
+
+def config_parse_error(path: str, cause: Exception) -> ConfigParseError:
+    """`ConfigParseError`, nella sottoclasse che eredita anche il tipo
+    concreto della causa quando ce n'e' una.
+
+    Un `yaml.YAMLError` nudo resta la base: non porta una posizione, e il tipo
+    non deve dire il contrario -- la stessa ragione per cui gli attributi di
+    `MarkedYAMLError` sono riportati e mai fabbricati.
+    """
+    if isinstance(cause, _MarkedYamlError):
+        return ConfigMarkedParseError(path, cause)
+    if isinstance(cause, UnicodeDecodeError):
+        return ConfigUnicodeParseError(path, cause)
+    return ConfigParseError(path, cause)
 
 
 class MissingFieldError(ConfigError):
@@ -443,7 +609,17 @@ class EngineRuntimeError(EngineError):
     def __init__(self, message: str):
         self.stream_id: str | None = None
         self.config_file: str | None = None
-        super().__init__(message)
+        # `Exception.__init__` esplicito, non `super()`: le sottoclassi della
+        # #257 mescolano un builtin, e alcuni builtin hanno un `__init__`
+        # proprio che sta *dopo* ConfigError nell'MRO e intercetterebbe il
+        # messaggio. `UnicodeDecodeError.__init__` vuole cinque argomenti e
+        # alza `TypeError` su uno; `MarkedYAMLError.__init__` ne accetta uno e
+        # lo scrive in `context`, lasciando `args` vuoto -- cioe' fallisce in
+        # silenzio, che e' peggio. Qui serve solo che `args` porti il
+        # messaggio: e' quello che `__str__` e `user_message()` leggono, e per
+        # i campi del builtin provvede ciascuna sottoclasse. Stessa forma del
+        # prezzo gia' pagato con gli `__str__` piu' sotto.
+        Exception.__init__(self, message)
 
     def _context_lines(self) -> list[str]:
         lines = []

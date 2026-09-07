@@ -376,6 +376,55 @@ class TestLoadYaml:
 
         assert not isinstance(exc.value, ConfigReadError)
 
+    def test_load_yaml_conserva_il_tipo_concreto_della_causa(self, tmp_path):
+        """Il builtin *esatto* resta catturabile, non solo la sua base (#257).
+
+        Prima della #257 `load_yaml` lasciava salire l'eccezione concreta,
+        quindi un `except IsADirectoryError` scritto a valle funzionava. Una
+        classe di dominio che eredita il solo `OSError` lo fa smettere di
+        funzionare in silenzio: la promessa che le altre due classi mantengono
+        verso `FileNotFoundError` e `yaml.YAMLError` sarebbe stata mantenuta a
+        meta'.
+        """
+        from pge.shared.exceptions import ConfigReadError
+
+        directory = tmp_path / 'configs'
+        directory.mkdir()
+
+        gen = _get_generator_class()(str(directory))
+        with pytest.raises(IsADirectoryError) as exc:
+            gen.load_yaml()
+
+        assert isinstance(exc.value, ConfigReadError)
+
+    def test_load_yaml_malformato_conserva_la_posizione_nel_tipo(self, gen):
+        """Idem per il parser: `isinstance(e, MarkedYAMLError)` *poi*
+        `e.problem_mark` e' l'idioma completo, e il tipo e' la prima meta'."""
+        from pge.shared.exceptions import ConfigParseError
+
+        m = mock_open(read_data="a: 1\nb: [2, 3\nc: 4\n")
+
+        with patch('builtins.open', m):
+            with pytest.raises(yaml.MarkedYAMLError) as exc:
+                gen.load_yaml()
+
+        assert isinstance(exc.value, ConfigParseError)
+        assert exc.value.problem_mark is not None
+
+    def test_load_yaml_non_decodificabile_conserva_il_tipo_concreto(
+            self, tmp_path):
+        """E il terzo: `except UnicodeDecodeError` reggeva, deve reggere."""
+        from pge.shared.exceptions import ConfigParseError
+
+        config = tmp_path / 'latin1.yml'
+        config.write_bytes('# perch\xe8 no\nstreams: []\n'.encode('latin-1'))
+
+        gen = _get_generator_class()(str(config))
+        with pytest.raises(UnicodeDecodeError) as exc:
+            gen.load_yaml()
+
+        assert isinstance(exc.value, ConfigParseError)
+
     def test_load_yaml_dichiara_l_encoding_dello_yaml(self):
         """`open()` deve nominare utf-8: senza, a decidere e' il locale.
 
