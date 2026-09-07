@@ -1257,26 +1257,43 @@ def test_config_read_error_non_ripete_il_config_nel_messaggio():
 # `pge/shared/exceptions.py` sta sotto quasi ogni altro modulo -- `pge/__init__`
 # compreso, che dichiara di ri-esportare «solo simboli leggeri» -- quindi un
 # import duro qui mette PyYAML fra le dipendenze di import di tutto il motore.
-# I quattro moduli qui sotto sono quelli che l'oracolo di parita' di PGE-ui
-# importa (`tests/parity/engine_oracle.py`, tabella `_OP_REQUIRES`) da un
-# checkout **senza venv**, con il solo python del runner: fino a ieri non
-# avevano una sola dipendenza di terze parti, e con l'import duro smettevano
-# tutti di importarsi. Il rosso sarebbe arrivato a valle, su ogni PR di un
-# altro repository, per una riga scritta qui.
+# I moduli qui sotto sono quelli che l'oracolo di parita' di PGE-ui importa
+# (`tests/parity/engine_oracle.py`) da un checkout **senza venv**, con il solo
+# python del runner: nessuno di loro ha una dipendenza di terze parti, e con
+# l'import duro smettevano tutti di importarsi. Il rosso sarebbe arrivato a
+# valle, su ogni PR di un altro repository, per una riga scritta qui.
+#
+# L'elenco e' quello *intero*, e la distinzione conta: quattro di questi moduli
+# l'oracolo li chiede dentro un `try/except OracleError` che scrive `None` nel
+# payload invece di morire, quindi il loro guasto non e' un import che esplode
+# ma un caso di parita' che confronta un `None` -- rosso comunque, e piu' muto.
+# Fermarsi ai quattro che fanno morire l'oracolo avrebbe lasciato scoperta
+# meta' della superficie che questa guardia dichiara di sorvegliare.
 
 _MODULI_SENZA_TERZE_PARTI = (
     'pge.shared.exceptions',
-    # I quattro dell'oracolo di parita' di PGE-ui (op fingerprint, constants,
-    # classify_deviation_probability, build_time_distribution,
-    # parameter_bounds). Se uno di questi acquista legittimamente una
-    # dipendenza pesante, il rosso qui e' la richiesta di aprire la issue su
-    # PGE-ui prevista da .claude/rules/cross-repo-impact.md, non di allentare
-    # la guardia.
+    # Quelli che l'oracolo importa senza rete: il loro ImportError lo fa
+    # morire (op fingerprint, constants, classify_deviation_probability,
+    # build_time_distribution, parameter_bounds).
     'pge.rendering.stream_cache_manager',
     'pge.parameters.gate_factory',
     'pge.parameters.parameter_definitions',
     'pge.envelopes.time_distribution',
+    # E quelli che chiede dentro un `try/except OracleError`: li' l'ImportError
+    # non uccide l'oracolo, gli fa scrivere `None` nel payload -- e a valle il
+    # `None` fallisce lo stesso, contro il letterale statico di `yaml-bridge.js`
+    # (`output_sr`) o contro le liste di nomi che le mirror copiano intere.
+    # Stessa superficie, stesso contratto, diagnosi peggiore: qui dentro
+    # valgono quanto gli altri quattro.
+    'pge.shared.constants',
+    'pge.parameters.pitch_unit',
+    'pge.parameters.parameter_schema',
+    'pge.rendering.envelope_extractor',
 )
+
+# Se uno di questi acquista legittimamente una dipendenza pesante, il rosso qui
+# e' la richiesta di aprire la issue su PGE-ui prevista da
+# .claude/rules/cross-repo-impact.md, non di allentare la guardia.
 
 
 def test_config_parse_error_eredita_lo_yaml_error_vero_quando_pyyaml_c_e():
@@ -1293,15 +1310,79 @@ def test_config_parse_error_eredita_lo_yaml_error_vero_quando_pyyaml_c_e():
     assert not mod.PYYAML_ASSENTE
 
 
-def test_il_motore_si_importa_senza_pyyaml():
-    """I moduli che non parsano YAML non devono dipendere da PyYAML.
+#: Il nome con cui si importa una dipendenza, dove non e' quello con cui il
+#: pyproject la dichiara. Una sola voce oggi, ed e' l'unico dato che il
+#: pyproject non ha: la mappa distribuzione -> modulo non e' derivabile dal
+#: nome. Una dipendenza nuova che non si importi col proprio nome fa fallire
+#: `_dipendenze_di_terze_parti` chiedendo di essere nominata qui, invece di
+#: entrare nella guardia con un nome che non blocca niente.
+_NOME_DI_IMPORT = {'pyyaml': 'yaml'}
 
-    Girato in un interprete figlio con `yaml` reso non importabile: e' l'unico
-    modo di misurare un import, che nel processo corrente e' gia' avvenuto.
+#: Quelle che si importano col proprio nome, dichiarate perche' il silenzio
+#: non distingua «si importa cosi'» da «nessuno ci ha pensato».
+_SI_IMPORTANO_COL_PROPRIO_NOME = frozenset({'numpy', 'soundfile', 'matplotlib'})
+
+
+def _dipendenze_di_terze_parti():
+    """I package di terze parti del motore, coi nomi con cui si importano.
+
+    Letti da `pyproject.toml`, non trascritti qui: una dipendenza aggiunta la'
+    entra in questa guardia da sola. Se non si importa col proprio nome e non
+    e' in `_NOME_DI_IMPORT`, questa funzione fallisce chiedendo il nome --
+    perche' bloccare un modulo che non esiste e' una guardia verde che non
+    misura niente.
+    """
+    import os
+    import re
+
+    from pge.shared import exceptions as modulo
+
+    radice = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(modulo.__file__)))))
+    testo = open(os.path.join(radice, 'pyproject.toml'), encoding='utf-8').read()
+
+    blocco = re.search(r'^dependencies\s*=\s*\[(.*?)\]', testo, re.M | re.S)
+    assert blocco, ("pyproject.toml non dichiara piu' `dependencies` in questa "
+                    "forma: la guardia non sa piu' cosa bloccare")
+
+    nomi = []
+    for voce in re.findall(r"""["']([^"']+)["']""", blocco.group(1)):
+        distribuzione = re.split(r'[<>=!~\[; ]', voce, maxsplit=1)[0].strip().lower()
+        if not distribuzione:
+            continue
+        if distribuzione in _NOME_DI_IMPORT:
+            nomi.append(_NOME_DI_IMPORT[distribuzione])
+            continue
+        assert distribuzione in _SI_IMPORTANO_COL_PROPRIO_NOME, (
+            f"dipendenza '{distribuzione}' nuova nel pyproject: dichiara come "
+            f"si importa in _NOME_DI_IMPORT o in _SI_IMPORTANO_COL_PROPRIO_NOME, "
+            f"altrimenti la guardia blocca un modulo che non esiste e resta verde")
+        nomi.append(distribuzione)
+
+    assert 'yaml' in nomi, ("PyYAML non e' piu' fra le dipendenze dichiarate: "
+                            "la meta' #257 di questa guardia non misura niente")
+    return tuple(sorted(set(nomi)))
+
+
+def test_il_motore_si_importa_senza_le_dipendenze_di_terze_parti():
+    """I moduli che l'oracolo di PGE-ui importa non devono averne una.
+
+    Girato in un interprete figlio con le dipendenze rese non importabili:
+    e' l'unico modo di misurare un import, che nel processo corrente e' gia'
+    avvenuto.
+
+    Blocca **tutte** le dipendenze dichiarate, non il solo PyYAML che la #257
+    ha portato qui. Il contratto di PGE-ui e' «No op may need the engine venv»,
+    e il runner del suo job node quel venv non lo costruisce: un `import numpy`
+    che scendesse in uno di questi moduli farebbe esattamente il danno che
+    questa guardia dichiara di prevenire, e con la sola `yaml` bloccata sarebbe
+    passato in silenzio -- l'interprete figlio numpy ce l'ha, il runner di
+    PGE-ui no.
     """
     import os
     import subprocess
     import sys
+    import textwrap
 
     from pge.shared import exceptions as modulo
 
@@ -1311,26 +1392,32 @@ def test_il_motore_si_importa_senza_pyyaml():
     env = dict(os.environ)
     env['PYTHONPATH'] = src_dir
 
+    bloccati = _dipendenze_di_terze_parti()
     figlio = subprocess.run(
-        [sys.executable, '-c',
-         'import sys\n'
-         'class Blocco:\n'
-         '    def find_spec(self, nome, percorso=None, target=None):\n'
-         '        if nome == "yaml" or nome.startswith("yaml."):\n'
-         '            raise ImportError("No module named \'yaml\'")\n'
-         '        return None\n'
-         'sys.meta_path.insert(0, Blocco())\n'
-         'import importlib\n'
-         'for nome in sys.argv[1:]:\n'
-         '    importlib.import_module(nome)\n'
-         'from pge.shared.exceptions import ConfigParseError, ConfigError\n'
-         'assert issubclass(ConfigParseError, ConfigError)\n'
-         'print("ok")\n',
-         *_MODULI_SENZA_TERZE_PARTI],
+        [sys.executable, '-c', textwrap.dedent("""
+            import importlib
+            import sys
+
+            bloccati = set(sys.argv[1].split(','))
+
+            class Blocco:
+                def find_spec(self, nome, percorso=None, target=None):
+                    radice = nome.split('.')[0]
+                    if radice in bloccati:
+                        raise ImportError("No module named %r" % radice)
+                    return None
+
+            sys.meta_path.insert(0, Blocco())
+            for nome in sys.argv[2:]:
+                importlib.import_module(nome)
+            from pge.shared.exceptions import ConfigParseError, ConfigError
+            assert issubclass(ConfigParseError, ConfigError)
+            print("ok")
+        """), ','.join(bloccati), *_MODULI_SENZA_TERZE_PARTI],
         env=env, capture_output=True, text=True)
 
     assert figlio.returncode == 0, (
-        "senza PyYAML il motore non si importa piu':\n"
+        f"senza {', '.join(bloccati)} il motore non si importa piu':\n"
         f"{figlio.stdout}\n{figlio.stderr}")
     assert 'ok' in figlio.stdout
 

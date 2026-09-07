@@ -253,8 +253,14 @@ EngineError                                  (Exception)
   `ConfigParseError` non è nemmeno sollevabile, perché a sollevarla è
   `Generator.load_yaml`, in un modulo che PyYAML lo importa davvero. Due test
   fissano le due direzioni: che con PyYAML installato la base sia
-  `yaml.YAMLError` e non il segnaposto, e che senza PyYAML quei moduli si
-  importino ancora.
+  `yaml.YAMLError` e non il segnaposto, e che senza le dipendenze di terze
+  parti quei moduli si importino ancora. Il secondo le blocca **tutte**, non
+  il solo PyYAML che ha portato qui la questione, e le legge dal `pyproject`
+  invece di trascriverle: il contratto a valle è che nessuna op dell'oracolo
+  richieda il venv del motore, quindi un `import numpy` sceso in uno di quei
+  moduli farebbe lo stesso danno — e con la sola `yaml` bloccata sarebbe
+  passato in silenzio, perché numpy l'interprete del test ce l'ha e il runner
+  di PGE-ui no.
 - **La riga `Comando:` di `_SubprocessRenderError` invita a rieseguire, quindi
   deve restare rieseguibile.** Lo score che vi compare è temporaneo e il
   renderer lo cancella in un `finally` — anche quando il binario esce con un
