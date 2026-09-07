@@ -322,6 +322,60 @@ class TestLoadYaml:
         assert isinstance(exc.value.cause, UnicodeDecodeError)
         assert 'latin1.yml' in exc.value.user_message()
 
+    def test_load_yaml_config_e_una_directory_e_un_errore_di_dominio(
+            self, tmp_path):
+        """Il quarto modo in cui un file di config non si apre (issue #257).
+
+        `pge configs/ out.wav` e' il typo che la tab-completion della shell
+        fabbrica da sola -- si ferma sulla directory -- e `open()` risponde
+        `IsADirectoryError`, che non e' un `FileNotFoundError` ne' un
+        `yaml.YAMLError`: usciva dal ramo generico della CLI come traceback.
+        Il guasto e' lo stesso degli altri tre (il file di configurazione non
+        si legge), quindi lo e' anche il tipo.
+        """
+        from pge.shared.exceptions import ConfigReadError
+
+        directory = tmp_path / 'configs'
+        directory.mkdir()
+
+        gen = _get_generator_class()(str(directory))
+        with pytest.raises(ConfigReadError) as exc:
+            gen.load_yaml()
+
+        assert exc.value.path == str(directory)
+        assert isinstance(exc.value.cause, IsADirectoryError)
+        assert 'configs' in exc.value.user_message()
+
+    def test_load_yaml_config_non_leggibile_e_un_errore_di_dominio(self, gen):
+        """E il quinto: i permessi. Stesso guasto, stesso tipo."""
+        from pge.shared.exceptions import ConfigReadError
+
+        negato = PermissionError(13, 'Permission denied', gen.yaml_path)
+        with patch('builtins.open', side_effect=negato):
+            with pytest.raises(ConfigReadError) as exc:
+                gen.load_yaml()
+
+        assert exc.value.cause is negato
+        assert 'Permission denied' in exc.value.user_message()
+
+    def test_load_yaml_non_impacchetta_gli_OSError_altrui(self, gen):
+        """Stessa guardia del gemello sul `FileNotFoundError`.
+
+        Solo l'`open()` dello YAML diventa `ConfigReadError`: un `OSError`
+        sollevato da una riga *successiva* dentro `load_yaml` non deve uscire
+        travestito da configurazione illeggibile.
+        """
+        from pge.shared.exceptions import ConfigReadError
+
+        m = mock_open(read_data=yaml.dump({'streams': []}))
+        with patch('builtins.open', m), \
+                patch.object(gen, '_eval_math_expressions',
+                             side_effect=OSError('un altro file')):
+            with pytest.raises(OSError) as exc:
+                gen.load_yaml()
+
+        assert not isinstance(exc.value, ConfigReadError)
+
     def test_load_yaml_preserves_non_math_strings(self, gen):
         """load_yaml preserva stringhe senza espressioni matematiche."""
         yaml_data = {'name': 'my_stream', 'sample': 'audio.wav'}

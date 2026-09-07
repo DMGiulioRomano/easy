@@ -175,6 +175,61 @@ class ConfigParseError(ConfigError, yaml.YAMLError):
         return "\n".join(lines)
 
 
+class ConfigReadError(ConfigError, OSError):
+    """Il file di configurazione c'e' ma il sistema operativo non lo apre
+    (issue #257).
+
+    Gli altri due chiudono ENOENT e il contenuto illeggibile; `open()` pero'
+    fallisce anche per ragioni che non sono ne' l'una ne' l'altro, e la piu'
+    probabile e' la piu' banale: `pge configs/ out.wav`, il typo che la
+    tab-completion della shell fabbrica da sola fermandosi sulla directory.
+    `IsADirectoryError` non e' un `FileNotFoundError` e non e' un
+    `yaml.YAMLError`, quindi restava l'unico modo di sbagliare il path del
+    proprio YAML a uscire come traceback dal ramo generico della CLI --
+    accanto a `PermissionError` e al resto di `OSError`. Il guasto e' lo
+    stesso degli altri tre (il file di configurazione non si legge), quindi
+    lo e' anche il tipo.
+
+    Eredita `OSError` per la ragione delle altre due: e' cio' che `load_yaml`
+    lasciava salire, e chi lo cattura per nome deve continuare a catturarlo.
+    E per la ragione dell'asimmetria con `_BinaryNotFoundError`: qui il
+    builtin dice il vero.
+
+    Deliberatamente NON eredita `FileNotFoundError`: una directory non e' un
+    file mancante, e il tipo che mente e' il difetto che questa issue chiude.
+    """
+
+    def __init__(self, path: str, cause: OSError):
+        super().__init__(f"File di configurazione non leggibile: '{path}'")
+        self.path = path
+        self.cause = cause
+        self.config_file = path
+        # Riportati dalla causa, non fabbricati: `errno` e `strerror` sono
+        # cio' che distingue EISDIR da EACCES, ed e' l'unica cosa che il
+        # messaggio puo' dire in piu' di quanto l'utente gia' sappia. Stessa
+        # ragione dei tre campi di `ConfigFileNotFoundError`: chi cattura
+        # l'`OSError` non si ferma alla cattura, ne legge lo stato.
+        self.errno = getattr(cause, 'errno', None)
+        self.strerror = getattr(cause, 'strerror', None)
+        self.filename = getattr(cause, 'filename', None) or path
+
+    def __str__(self) -> str:
+        # Stesso prezzo gia' pagato da `ConfigFileNotFoundError`: con
+        # `filename` valorizzato `OSError.__str__` smette di stampare
+        # `args[0]` e riscrive la riga che finisce nel log engine.
+        return self.args[0]
+
+    def user_message(self) -> str:
+        # Nessuna riga `Config:`, come per l'altra: il file e' il soggetto del
+        # head. Nessuna riga `Path cercato:` invece, e questa e' una
+        # differenza: li' il path assoluto rispondeva a «sei nella directory
+        # sbagliata», qui il file e' stato trovato e la domanda e' un'altra.
+        lines = [f"[ERRORE] File di configurazione non leggibile: '{self.path}'"]
+        dettaglio = self.strerror or str(self.cause)
+        lines.append(f"  Dettaglio:    {dettaglio}")
+        return "\n".join(lines)
+
+
 class MissingFieldError(ConfigError):
     """Campo YAML obbligatorio mancante o null."""
 

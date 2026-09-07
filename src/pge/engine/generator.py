@@ -22,7 +22,7 @@ from pge.rendering.score_writer import ScoreWriter
 from pge.controllers.window_controller import WindowController
 from pge.shared.exceptions import (
     ConfigError, ConfigFileNotFoundError, ConfigParseError,
-    SampleNotFoundError,
+    ConfigReadError, SampleNotFoundError,
 )
 from pge.shared.seeding import session_seed
 
@@ -93,10 +93,16 @@ class Generator:
             ConfigParseError: se il file YAML è malformato o non
                 decodificabile nell'encoding di sistema. Eredita anche
                 yaml.YAMLError, per la stessa ragione.
+            ConfigReadError: se il file c'è ma il sistema operativo non lo
+                apre — una directory al posto del file, permessi negati.
+                Eredita anche OSError, per la stessa ragione.
         """
         # Il try avvolge il solo caricamento dello YAML, e questo e' un
         # vincolo, non una comodita': ogni altro `open()` che finisse qui
-        # dentro uscirebbe travestito da configurazione mancante. E' la forma
+        # dentro uscirebbe travestito da configurazione mancante o
+        # illeggibile -- e da qui esce ogni `OSError`, non piu' il solo
+        # `FileNotFoundError`, quindi il vincolo e' piu' stretto di prima.
+        # E' la forma
         # esatta del difetto che la #257 chiude un livello piu' su, dove
         # `cli.main()` catturava il builtin per estensione del blocco.
         try:
@@ -112,9 +118,18 @@ class Generator:
             # salvato in latin-1 esce di qui prima che PyYAML veda un byte;
             # aperto in binario sarebbe stato PyYAML a rifiutarlo, con un
             # `yaml.reader.ReaderError` -- cioe' un `yaml.YAMLError`. Stesso
-            # guasto, stesso tipo: era l'unico dei tre a uscire come traceback
-            # dal ramo generico della CLI.
+            # guasto, stesso tipo.
             raise ConfigParseError(self.yaml_path, err) from err
+        except OSError as err:
+            # E tutti gli altri: `IsADirectoryError` (`pge configs/ out.wav`,
+            # il typo che la tab-completion fabbrica da sola),
+            # `PermissionError`, il resto di `OSError`. Sta dopo il ramo
+            # `FileNotFoundError`, che di `OSError` e' una sottoclasse: erano
+            # gli ultimi del percorso di caricamento a uscire come traceback
+            # dal ramo generico della CLI, cioe' l'enumerazione dei modi in
+            # cui un file di config non si legge era incompleta proprio sul
+            # caso piu' probabile.
+            raise ConfigReadError(self.yaml_path, err) from err
 
         self.data = self._eval_math_expressions(raw_data)
         # Seed top-level opzionale (issue #81): None se assente (il session

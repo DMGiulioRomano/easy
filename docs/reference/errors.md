@@ -67,8 +67,12 @@ EngineError                                  (Exception)
 ├── ConfigError                              (anche ValueError, backward-compat)
 │   ├── ConfigFileNotFoundError              #257 — file YAML inesistente
 │   │                                        (anche FileNotFoundError)
-│   ├── ConfigParseError                     #257 — file YAML illeggibile
+│   ├── ConfigParseError                     #257 — file YAML malformato o
+│   │                                        non decodificabile
 │   │                                        (anche yaml.YAMLError)
+│   ├── ConfigReadError                      #257 — file YAML che il sistema
+│   │                                        operativo non apre
+│   │                                        (anche OSError)
 │   ├── MissingFieldError                    PR1 — campo YAML mancante/null
 │   ├── InvalidFieldValueError               PR1 — campo presente, valore invalido
 │   ├── InvalidParameterError                PR2 — formato/tipo parametro non supportato
@@ -126,14 +130,31 @@ EngineError                                  (Exception)
   dentro il blocco. Un `FileNotFoundError` nudo che risalga da altrove finisce
   nel ramo generico (messaggio + traceback), non in un messaggio falso.
 
-- **`ConfigFileNotFoundError` e `ConfigParseError` ereditano anche il tipo che
-  sostituiscono** (`FileNotFoundError`, `yaml.YAMLError`), con lo stesso
+- **`ConfigFileNotFoundError`, `ConfigParseError` e `ConfigReadError`
+  ereditano anche il tipo che sostituiscono** (`FileNotFoundError`,
+  `yaml.YAMLError`, `OSError`), con lo stesso
   precedente di `ConfigError`/`ValueError`: `Generator.load_yaml` e
-  `api.load_generator` dichiarano quei due nei `Raises` da sempre, e chi li
+  `api.load_generator` dichiarano quei tipi nei `Raises` da sempre, e chi li
   cattura per nome continua a catturarli. Il costo dichiarato è che il tipo
   non isola: un `FileNotFoundError` di altra origine impacchettato lì per
   errore tornerebbe a confondersi — ed è per questo che `load_yaml` avvolge il
-  solo `open()` dello YAML e niente altro.
+  solo `open()` dello YAML e niente altro. Il vincolo è più stretto di quanto
+  sembri: da quel `try` esce **ogni** `OSError`, non il solo
+  `FileNotFoundError`.
+- **`load_yaml` traduce tutti i modi in cui il file di configurazione non si
+  legge, non alcuni.** Sono cinque e si distribuiscono su tre tipi: ENOENT
+  (`ConfigFileNotFoundError`); il contenuto — YAML malformato e file non
+  decodificabile, che è lo stesso guasto perché `open()` è in modalità testo e
+  in binario sarebbe stato PyYAML a rifiutarlo con un `yaml.reader.ReaderError`
+  (`ConfigParseError`); e il rifiuto del sistema operativo — EISDIR, EACCES e
+  il resto di `OSError` (`ConfigReadError`). L'ultimo gruppo è il più
+  probabile dei cinque e non il più esotico: `pge configs/ out.wav` è il typo
+  che la tab-completion della shell fabbrica da sola fermandosi sulla
+  directory, e `IsADirectoryError` non è né un `FileNotFoundError` né un
+  `yaml.YAMLError`. Lasciarlo al ramo generico voleva dire un traceback per
+  il modo più comune di sbagliare il path del proprio YAML.
+  `ConfigReadError` **non** eredita `FileNotFoundError`: una directory non è
+  un file mancante, e il tipo che mente è il difetto che la #257 chiude.
 - **Ereditare il builtin non basta: chi lo cattura ne legge lo stato.** Quel
   codice non si ferma alla cattura — legge `e.filename`, confronta `e.errno`
   con `errno.ENOENT`, interroga `e.problem_mark`, che è *l'*idioma con cui si
@@ -289,6 +310,21 @@ modalità testo rifiuta prima che PyYAML veda un byte:
   Dettaglio:    'utf-8' codec can't decode byte 0xe8 in position 7: invalid continuation byte
   Dettagli:     logs/latin1_engine.log
 ```
+
+### File di configurazione che il sistema operativo non apre
+CLI: `pge configs/ out.wav` (la tab-completion si è fermata sulla directory)
+```
+[ERRORE] File di configurazione non leggibile: 'configs/'
+  Dettaglio:    Is a directory
+  Dettagli:     logs/configs_engine.log
+```
+
+Stesso formato per i permessi negati (`Dettaglio: Permission denied`). La riga
+`Dettaglio:` è lo `strerror` della causa — è l'unica cosa che distingue EISDIR
+da EACCES, e senza di essa il messaggio direbbe solo che il file non si legge,
+che è ciò che l'utente già sa. Nessuna riga `Path cercato:`, al contrario del
+file inesistente: lì il path assoluto rispondeva a «sei nella directory
+sbagliata», qui il file è stato trovato e la domanda è un'altra.
 
 ### Renderer sconosciuto
 CLI: `--renderer foo`

@@ -95,11 +95,13 @@ passare dalla CLI né monkey-patchare i globali.
 
 6. Errori: catturare `pge.EngineError` (gerarchia con `user_message()`);
    argomenti API invalidi sollevano `ValueError` (es. `audio_format`
-   stringa ignota). Il file YAML mancante è `ConfigFileNotFoundError` e quello
-   malformato `ConfigParseError` (#257): entrambi sono `EngineError`, quindi un
-   solo `except` li copre insieme a tutto il resto, ed entrambi ereditano
-   anche il builtin che sostituiscono (`FileNotFoundError`, `yaml.YAMLError`) —
-   chi li catturava per nome non deve cambiare niente.
+   stringa ignota). Il file YAML mancante è `ConfigFileNotFoundError`, quello
+   malformato o non decodificabile `ConfigParseError`, e quello che il sistema
+   operativo non apre — una directory al posto del file, permessi negati —
+   `ConfigReadError` (#257): tutti e tre sono `EngineError`, quindi un
+   solo `except` li copre insieme a tutto il resto, e tutti e tre ereditano
+   anche il builtin che sostituiscono (`FileNotFoundError`, `yaml.YAMLError`,
+   `OSError`) — chi li catturava per nome non deve cambiare niente.
 
 7. Csound: `renderer='csound'` con knob raggruppati in
    `api.CsoundOptions(orc_path=..., ssdir=..., sco_dir=...)`;

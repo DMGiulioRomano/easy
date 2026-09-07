@@ -1068,3 +1068,122 @@ def test_config_parse_error_senza_marker_non_inventa_gli_attributi():
 
     assert not hasattr(err, 'problem_mark')
     assert not hasattr(err, 'problem')
+
+
+# -----------------------------------------------------------------------------
+# ConfigReadError: il file c'e', il sistema operativo non lo apre
+# -----------------------------------------------------------------------------
+#
+# `open()` sul file di configurazione fallisce in piu' modi di quanti la
+# passata precedente ne avesse tradotti: oltre a ENOENT e alla decodifica ci
+# sono EISDIR (`pge configs/ out.wav`, il typo che la tab-completion della
+# shell fabbrica da sola) ed EACCES. Restavano gli unici a uscire dal ramo
+# generico della CLI come traceback, cioe' l'enumerazione «i tre modi» era
+# incompleta proprio sul caso piu' probabile.
+
+
+def test_config_read_error_is_a_config_error():
+    """Il file di configurazione che non si apre e' un errore di config."""
+    from pge.shared.exceptions import (
+        ConfigError, ConfigReadError, EngineError)
+
+    err = ConfigReadError('configs/', IsADirectoryError(21, 'Is a directory'))
+    assert isinstance(err, ConfigError)
+    assert isinstance(err, EngineError)
+
+
+def test_config_read_error_resta_un_OSError():
+    """La promessa di libreria, come per gli altri due (issue #257).
+
+    Prima `load_yaml` lasciava salire l'`OSError` di `open()`: chi lo cattura
+    per nome deve continuare a catturarlo.
+    """
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError('configs/', IsADirectoryError(21, 'Is a directory'))
+    assert isinstance(err, OSError)
+
+
+def test_config_read_error_non_e_un_file_not_found():
+    """Una directory non e' un file mancante, e i due non vanno confusi.
+
+    E' la stessa ragione per cui `ConfigParseError` non e' un
+    `FileNotFoundError`: il tipo deve dire il vero, altrimenti chi cattura
+    diagnostica il guasto sbagliato.
+    """
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError('configs/', IsADirectoryError(21, 'Is a directory'))
+    assert not isinstance(err, FileNotFoundError)
+
+
+def test_config_read_error_user_message_riporta_la_ragione_del_sistema():
+    """`strerror` e' cio' che distingue EISDIR da EACCES: senza, il messaggio
+    direbbe solo che il file non si legge, che l'utente gia' sa."""
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError(
+        'configs/', IsADirectoryError(21, 'Is a directory', 'configs/'))
+
+    msg = err.user_message()
+    assert msg.startswith(
+        "[ERRORE] File di configurazione non leggibile: 'configs/'")
+    assert '  Dettaglio:    Is a directory' in msg
+
+
+def test_config_read_error_senza_strerror_degrada_alla_causa():
+    """Non tutti gli `OSError` portano uno `strerror`."""
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError('configs/x.yml', OSError('boom senza strerror'))
+
+    msg = err.user_message()
+    assert 'boom senza strerror' in msg
+
+
+def test_config_read_error_e_un_OSError_completo():
+    """Come per `ConfigFileNotFoundError`: chi cattura il builtin ne legge lo
+    stato, e qui lo stato c'e' gia' -- va riportato dalla causa, non
+    fabbricato."""
+    import errno as errno_mod
+    from pge.shared.exceptions import ConfigReadError
+
+    causa = IsADirectoryError(errno_mod.EISDIR, 'Is a directory', 'configs/')
+    err = ConfigReadError('configs/', causa)
+
+    assert err.errno == errno_mod.EISDIR
+    assert err.strerror == 'Is a directory'
+    assert err.filename == 'configs/'
+
+
+def test_config_read_error_str_resta_il_messaggio_di_dominio():
+    """Stesso prezzo dei campi `OSError` gia' pagato dall'altra classe:
+    con `filename` valorizzato `OSError.__str__` riscriverebbe la riga che
+    finisce nel log engine."""
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError(
+        'configs/', IsADirectoryError(21, 'Is a directory', 'configs/'))
+
+    assert str(err) == "File di configurazione non leggibile: 'configs/'"
+    assert '[Errno' not in str(err)
+
+
+def test_config_read_error_espone_la_causa():
+    """L'`OSError` originale resta raggiungibile."""
+    from pge.shared.exceptions import ConfigReadError
+
+    causa = PermissionError(13, 'Permission denied', 'configs/x.yml')
+    err = ConfigReadError('configs/x.yml', causa)
+
+    assert err.cause is causa
+    assert err.path == 'configs/x.yml'
+    assert err.config_file == 'configs/x.yml'
+
+
+def test_config_read_error_non_ripete_il_config_nel_messaggio():
+    """`Config:` sarebbe la ripetizione del head, come per l'altra classe."""
+    from pge.shared.exceptions import ConfigReadError
+
+    err = ConfigReadError('configs/', IsADirectoryError(21, 'Is a directory'))
+    assert 'Config:' not in err.user_message()

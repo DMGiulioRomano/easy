@@ -468,9 +468,9 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `api.load_generator`, che impacchetta anche `create_elements`, dove i sample
   si aprono davvero.
 
-  Ora sono `ConfigFileNotFoundError` e `ConfigParseError`, sotto `ConfigError`:
-  un file di configurazione che non esiste, o che non si legge, e' un errore di
-  configurazione. `cli.main()` non cattura piu' nessun tipo builtin sul
+  Ora sono `ConfigFileNotFoundError`, `ConfigParseError` e `ConfigReadError`,
+  sotto `ConfigError`: un file di configurazione che non esiste, o che non si
+  legge, e' un errore di configurazione. `cli.main()` non cattura piu' nessun tipo builtin sul
   percorso di caricamento — restano `EngineError` e il ramo generico, in
   quest'ordine — e un `FileNotFoundError` che risalga da altrove finisce nel
   ramo generico invece che in un messaggio falso.
@@ -523,13 +523,31 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   log engine); `ConfigParseError` riporta dalla causa gli attributi di
   `MarkedYAMLError` quando ci sono, senza mai fabbricarli.
 
-  Nella stessa passata il terzo modo in cui un file di configurazione non si
-  legge: **non decodificabile**. `open()` e' in modalita' testo, quindi un
+  Nella stessa passata gli altri modi in cui un file di configurazione non si
+  legge, perche' erano piu' di uno e nessuno di loro aveva un tipo. Il
+  **non decodificabile**: `open()` e' in modalita' testo, quindi un
   `.yml` salvato in latin-1 esce come `UnicodeDecodeError` prima che PyYAML
   veda un byte -- aperto in binario sarebbe stato PyYAML a rifiutarlo, con un
   `yaml.reader.ReaderError`, cioe' un `yaml.YAMLError`. Stesso guasto, stesso
-  tipo: ora e' `ConfigParseError` e non l'unico dei tre a uscire come traceback
-  dal ramo generico.
+  tipo: e' `ConfigParseError`. E il **rifiuto del sistema operativo**, che e'
+  `ConfigReadError` (anche `OSError`, mai `FileNotFoundError` -- una directory
+  non e' un file mancante):
+
+  ```
+  [ERRORE] File di configurazione non leggibile: 'configs/'
+    Dettaglio:    Is a directory
+    Dettagli:     logs/configs_engine.log
+  ```
+
+  Quest'ultimo non e' il caso esotico ma il piu' probabile dei cinque:
+  `pge configs/ out.wav` e' il typo che la tab-completion della shell fabbrica
+  da sola fermandosi sulla directory, e `IsADirectoryError` non e' un
+  `FileNotFoundError` ne' un `yaml.YAMLError`. Lasciarlo al ramo generico
+  voleva dire un traceback per il modo piu' comune di sbagliare il path del
+  proprio YAML -- accanto a `PermissionError` e al resto di `OSError`. La riga
+  `Dettaglio:` e' lo `strerror` della causa: e' l'unica cosa che distingue
+  EISDIR da EACCES, e senza di essa il messaggio direbbe soltanto quello che
+  l'utente gia' sa.
 
 - **`bench_cost.py` parla con l'API pubblica** — `api.load_generator` e
   `api.build_renderer` invece di `cli._build_renderer`. E' la classe di bug

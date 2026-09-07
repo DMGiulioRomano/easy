@@ -208,6 +208,27 @@ class TestMessaggiDiDominio:
         assert "  Dettagli:     /tmp/engine.log\n" in capsys.readouterr().out
 
 
+    def test_yaml_illeggibile_non_e_piu_un_traceback(self, mocks, capsys):
+        """Il quarto e il quinto modo, chiusi con gli altri tre.
+
+        Una directory al posto del file (`pge configs/ out.wav`) e un file
+        senza permessi di lettura sono `OSError` che non sono
+        `FileNotFoundError`: erano gli ultimi del percorso di caricamento a
+        uscire dal ramo generico come messaggio piu' traceback.
+        """
+        from pge.shared.exceptions import ConfigReadError
+
+        mocks['generator_instance'].load_yaml.side_effect = ConfigReadError(
+            'configs/', IsADirectoryError(21, 'Is a directory', 'configs/'))
+
+        assert _esegui(mocks, ['main.py', 'configs/', 'out.aif']) == 1
+        captured = capsys.readouterr()
+        assert ("[ERRORE] File di configurazione non leggibile: 'configs/'"
+                in captured.out)
+        assert '  Dettaglio:    Is a directory' in captured.out
+        assert 'Traceback' not in captured.err
+
+
 def test_lo_stub_yaml_dei_mock_conosce_YAMLError(mocks):
     """`ConfigParseError` eredita `yaml.YAMLError` al momento della creazione.
 
