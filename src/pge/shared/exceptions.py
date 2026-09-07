@@ -111,6 +111,20 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
         # chi ci chiama: il messaggio resta quello che la classe ha costruito.
         return self.args[0]
 
+    def __reduce__(self):
+        # Secondo prezzo degli stessi tre campi, e va pagato anche questo.
+        # `OSError.__reduce__` accoda `filename` agli `args`, perche' un
+        # OSError si ricostruisce da `(errno, strerror, filename)`. Qui
+        # `args` e' uno solo -- la prosa della classe -- e la ricostruzione
+        # chiamerebbe `ConfigFileNotFoundError(<la prosa>)`: il messaggio si
+        # anniderebbe dentro se' stesso e `path`, `filename` e `config_file`
+        # diventerebbero il messaggio. Senza sollevare niente: la promessa
+        # reggerebbe per `isinstance` e cadrebbe in silenzio per tutto il
+        # resto, cioe' la forma di guasto che la #257 chiude un piano piu'
+        # su. Tutto lo stato della classe e' il suo path: si ricostruisce
+        # da li'.
+        return (self.__class__, (self.path,))
+
     def user_message(self) -> str:
         lines = ["[ERRORE] File di configurazione non trovato"]
         risolto = os.path.abspath(self.path)

@@ -971,3 +971,33 @@ def test_config_file_not_found_str_resta_il_messaggio_di_casa():
     err = ConfigFileNotFoundError('configs/mancante.yml')
     assert str(err) == "File di configurazione non trovato: 'configs/mancante.yml'"
     assert 'Errno' not in str(err)
+
+
+def test_config_file_not_found_sopravvive_a_pickle_e_copy():
+    """Terzo modo di rompere la stessa promessa, e il piu' silenzioso.
+
+    `OSError.__reduce__` accoda `filename` agli `args` — un OSError si
+    ricostruisce da `(errno, strerror, filename)`. Valorizzare `filename`
+    (il test qui sopra) mette quindi questa classe nel caso in cui `args` e'
+    la sola prosa: senza `__reduce__`, il round trip chiamava
+    `ConfigFileNotFoundError(<la prosa>)` e tornava indietro un'eccezione con
+    il messaggio annidato dentro se' stesso e `path`/`filename` uguali al
+    messaggio. Nessuna eccezione sollevata: esattamente la compatibilita' che
+    regge per `isinstance` e cade in silenzio per tutto il resto.
+    """
+    import copy
+    import errno
+    import pickle
+    from pge.shared.exceptions import ConfigFileNotFoundError
+
+    originale = ConfigFileNotFoundError('configs/mancante.yml')
+    for ricostruito in (pickle.loads(pickle.dumps(originale)),
+                        copy.copy(originale),
+                        copy.deepcopy(originale)):
+        assert isinstance(ricostruito, ConfigFileNotFoundError)
+        assert str(ricostruito) == str(originale)
+        assert ricostruito.path == 'configs/mancante.yml'
+        assert ricostruito.filename == 'configs/mancante.yml'
+        assert ricostruito.config_file == 'configs/mancante.yml'
+        assert ricostruito.errno == errno.ENOENT
+        assert ricostruito.user_message() == originale.user_message()
