@@ -166,7 +166,7 @@ class TestLoadYaml:
         with patch('builtins.open', m):
             gen.load_yaml()
 
-        m.assert_called_once_with('test_config.yml', 'r')
+        m.assert_called_once_with('test_config.yml', 'r', encoding='utf-8')
 
     def test_load_yaml_returns_dict(self, gen):
         """load_yaml ritorna un dizionario."""
@@ -375,6 +375,101 @@ class TestLoadYaml:
                 gen.load_yaml()
 
         assert not isinstance(exc.value, ConfigReadError)
+
+    def test_load_yaml_dichiara_l_encoding_dello_yaml(self):
+        """`open()` deve nominare utf-8: senza, a decidere e' il locale.
+
+        Lo YAML e' UTF-8 per specifica (YAML 1.1 §5.1, 1.2 §5.2), ma
+        `open(path, 'r')` decodifica nell'encoding preferito del processo.
+        Sono due cose diverse, e la differenza non e' teorica: tredici dei
+        `configs/*.yml` di questo repository portano byte non-ASCII.
+
+        La guardia e' strutturale perche' quella comportamentale non puo'
+        girare ovunque: su macOS CPython impone UTF-8 al locale C, quindi il
+        gemello qui sotto salta proprio sulla macchina di sviluppo. Questa
+        parla su ogni piattaforma.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        from pge.engine import generator as modulo
+
+        albero = ast.parse(textwrap.dedent(
+            inspect.getsource(modulo.Generator.load_yaml)))
+        aperture = [n for n in ast.walk(albero)
+                    if isinstance(n, ast.Call)
+                    and isinstance(n.func, ast.Name) and n.func.id == 'open']
+
+        assert aperture, ("load_yaml non chiama piu' open(): la guardia sotto "
+                          "non misura piu' niente")
+        for chiamata in aperture:
+            argomenti = {k.arg: k.value for k in chiamata.keywords}
+            assert 'encoding' in argomenti, (
+                "l'open() dello YAML non dichiara encoding: a decidere resta "
+                "il locale del processo, e un config UTF-8 valido diventa "
+                "'File di configurazione malformato' su una macchina che "
+                "non e' in UTF-8")
+            dichiarato = ast.literal_eval(argomenti['encoding'])
+            assert dichiarato.lower().replace('-', '') in ('utf8', 'utf8sig'), (
+                f"encoding dichiarato: {dichiarato!r}, atteso utf-8")
+
+    def test_load_yaml_legge_utf8_a_prescindere_dal_locale(self, tmp_path):
+        """Il gemello comportamentale della guardia qui sopra.
+
+        Un config UTF-8 valido si carica anche sotto un locale che UTF-8 non
+        e'. Prima era `ConfigParseError`, cioe' la diagnosi peggiore delle
+        due possibili: non un traceback ma una frase autorevole e falsa —
+        «File di configurazione malformato» su un file che non ha niente che
+        non va. Su un locale che decodifica ogni byte (cp1252, il default di
+        Windows) non c'e' nemmeno l'errore: i valori stringa — nomi di
+        sample, id di stream — arrivano storpiati e in silenzio.
+
+        Il locale si impone al figlio, non a questo processo: `open()` legge
+        l'encoding preferito dal C, non dal modulo `locale`, quindi non c'e'
+        niente da monkey-patchare qui dentro.
+        """
+        import os
+        import subprocess
+        import sys
+
+        from pge.engine import generator as modulo
+
+        src_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(modulo.__file__))))
+
+        env = dict(os.environ)
+        env.update(LC_ALL='C', LANG='C',
+                   PYTHONUTF8='0', PYTHONCOERCECLOCALE='0',
+                   PYTHONPATH=src_dir)
+        env.pop('PYTHONIOENCODING', None)
+
+        sonda = subprocess.run(
+            [sys.executable, '-c',
+             'import locale; print(locale.getpreferredencoding(False))'],
+            env=env, capture_output=True, text=True)
+        if sonda.stdout.strip().lower().replace('-', '') == 'utf8':
+            pytest.skip("questo interprete impone UTF-8 al locale C "
+                        "(macOS, o un build con PEP 540 forzato): "
+                        "la guardia strutturale copre il caso")
+
+        config = tmp_path / 'accenti.yml'
+        config.write_text('# perche\u0301 no: commento accentato\n'
+                          'streams: {}\n', encoding='utf-8')
+
+        figlio = subprocess.run(
+            [sys.executable, '-c',
+             'import sys\n'
+             'from pge.engine.generator import Generator\n'
+             'Generator(sys.argv[1]).load_yaml()\n'
+             'print("ok")\n',
+             str(config)],
+            env=env, capture_output=True, text=True)
+
+        assert figlio.returncode == 0, (
+            "un config UTF-8 valido non si carica sotto locale "
+            f"{sonda.stdout.strip()}:\n{figlio.stdout}\n{figlio.stderr}")
+        assert 'ok' in figlio.stdout
 
     def test_load_yaml_preserves_non_math_strings(self, gen):
         """load_yaml preserva stringhe senza espressioni matematiche."""

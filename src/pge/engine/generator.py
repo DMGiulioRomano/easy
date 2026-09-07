@@ -91,7 +91,8 @@ class Generator:
                 anche FileNotFoundError (issue #257), quindi chi catturava
                 il builtin continua a catturarlo.
             ConfigParseError: se il file YAML è malformato o non
-                decodificabile nell'encoding di sistema. Eredita anche
+                decodificabile in UTF-8 (l'encoding della specifica YAML,
+                dichiarato esplicitamente nell'open). Eredita anche
                 yaml.YAMLError, per la stessa ragione.
             ConfigReadError: se il file c'è ma il sistema operativo non lo
                 apre — una directory al posto del file, permessi negati.
@@ -106,7 +107,18 @@ class Generator:
         # esatta del difetto che la #257 chiude un livello piu' su, dove
         # `cli.main()` catturava il builtin per estensione del blocco.
         try:
-            with open(self.yaml_path, 'r') as f:
+            # `encoding` esplicito, non il preferito del processo: lo YAML e'
+            # UTF-8 per specifica, `open(path, 'r')` no -- decodifica nel
+            # locale, che su Windows e' cp1252 e sotto un locale C senza PEP
+            # 540 e' ascii. La differenza non e' teorica: tredici dei
+            # `configs/*.yml` di questo repository portano byte non-ASCII, e
+            # senza questa parola un file valido usciva di qui come
+            # `ConfigParseError` -- «File di configurazione malformato» su un
+            # file che non ha niente che non va, cioe' la peggiore delle due
+            # diagnosi possibili. Su cp1252, che ogni byte lo decodifica, non
+            # c'e' nemmeno l'errore: i valori stringa arrivano storpiati in
+            # silenzio.
+            with open(self.yaml_path, 'r', encoding='utf-8') as f:
                 raw_data = yaml.safe_load(f)
         except FileNotFoundError as err:
             raise ConfigFileNotFoundError(self.yaml_path) from err
@@ -114,8 +126,9 @@ class Generator:
             raise ConfigParseError(self.yaml_path, err) from err
         except UnicodeDecodeError as err:
             # Il terzo modo in cui un file di config non si legge. `open()` e'
-            # in modalita' testo, quindi la decodifica la fa Python e un file
-            # salvato in latin-1 esce di qui prima che PyYAML veda un byte;
+            # in modalita' testo e su UTF-8, quindi la decodifica la fa Python
+            # e un file salvato in latin-1 esce di qui prima che PyYAML veda
+            # un byte;
             # aperto in binario sarebbe stato PyYAML a rifiutarlo, con un
             # `yaml.reader.ReaderError` -- cioe' un `yaml.YAMLError`. Stesso
             # guasto, stesso tipo.
