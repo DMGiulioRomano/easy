@@ -2,8 +2,9 @@
 # tests/test_minimum_python_syntax.py
 # =============================================================================
 """
-Le annotazioni valutate a runtime restano leggibili dal Python piu' vecchio
-che `pyproject.toml` dichiara di supportare.
+Il sorgente resta leggibile dal Python piu' vecchio che `pyproject.toml`
+dichiara di supportare: la grammatica, e le annotazioni che si valutano a
+runtime.
 
 Il repo dichiara `requires-python = ">=3.9"` e la matrice CI ci gira sopra,
 ma **nessuno sviluppa su 3.9**: in locale si lavora sull'interprete corrente,
@@ -28,8 +29,20 @@ Che cosa si valuta e quando, perche' la guardia non e' piu' larga del vero:
 Solo PEP 604 (`X | Y`) e' un problema: PEP 585 (`list[str]`, `dict[str, int]`)
 funziona gia' dalla 3.9.
 
+Quella meta' pero' non basta, perche' il sintomo che questo file commemora ha
+due cause e non una. Un'annotazione PEP 604 muore alla `def`; una `match`, un
+`except*`, un `type X = int`, una f-string annidata muoiono un momento prima,
+alla compilazione -- e l'esito e' lo stesso identico: il file non viene
+importato, il test che conteneva sparisce invece di fallire, e il rosso arriva
+solo dal job piu' vecchio della matrice. Cercare la sola PEP 604 avrebbe
+lasciato fuori la classe piu' numerosa (tutta la sintassi nuova dalla 3.10 in
+poi) proprio mentre dichiarava di sorvegliare il minimo. La seconda meta' non
+si scrive a mano: `ast.parse(..., feature_version=minimo)` chiede al parser di
+casa, ed e' il parser a dire di no.
+
 La soglia non e' trascritta qui: si legge da `requires-python`. Il giorno in
-cui il minimo passa a 3.10 questo file si spegne da solo.
+cui il minimo passa a 3.10 la meta' su PEP 604 si spegne da sola; la meta'
+sulla grammatica no -- si limita ad alzare l'asticella con lui.
 """
 
 import ast
@@ -128,6 +141,31 @@ def _pep604(percorso):
     return sorted(set(righe))
 
 
+def _grammatica_troppo_nuova(percorso, minimo):
+    """Il messaggio del parser se il file usa grammatica piu' recente di
+    `minimo`, altrimenti None.
+
+    Non c'e' un elenco di costrutti da tenere aggiornato: `feature_version`
+    fa porre la domanda al parser di casa, che la sintassi delle versioni la
+    conosce per mestiere. Il criterio e' la compilazione, cioe' esattamente
+    il momento in cui il job piu' vecchio della matrice si accorgerebbe del
+    problema -- perdendo il file intero, non un test.
+
+    Un limite dichiarato: `feature_version` non puo' superare l'interprete
+    che gira. Se un domani `requires-python` salisse sopra la versione usata
+    in locale, qui la guardia direbbe soltanto «compila su questo
+    interprete». E' meno di quel che promette, mai piu': non produce rossi
+    falsi, e in CI il job del minimo la riporta al valore pieno.
+    """
+    with open(percorso, encoding='utf-8') as f:
+        sorgente = f.read()
+    try:
+        ast.parse(sorgente, filename=percorso, feature_version=minimo)
+    except SyntaxError as err:
+        return err.msg
+    return None
+
+
 def test_requires_python_e_leggibile():
     """Senza la soglia la guardia non saprebbe quando tacere: e se
     `requires-python` sparisse, tacerebbe per sempre senza dirlo."""
@@ -206,3 +244,67 @@ def test_la_guardia_vede_le_due_forme_valutate_e_non_la_terza():
             with open(p, 'w', encoding='utf-8') as f:
                 f.write(sorgente)
             assert len(_pep604(p)) == atteso, (nome, _pep604(p))
+
+
+def test_nessuna_grammatica_oltre_il_minimo_dichiarato():
+    """L'altra meta' del sintomo, e la piu' numerosa.
+
+    Una PEP 604 in una firma muore alla `def`; `match`, `except*`,
+    `type X = int` muoiono alla compilazione. Il file non viene importato in
+    entrambi i casi, quindi la guardia che conteneva sparisce invece di
+    fallire: e' la stessa forma di guasto, un momento prima.
+    """
+    minimo = _minimo_dichiarato()
+    colpevoli = []
+    for percorso in sorted(_sorgenti()):
+        motivo = _grammatica_troppo_nuova(percorso, minimo)
+        if motivo is not None:
+            colpevoli.append(f"{os.path.relpath(percorso, RADICE)}: {motivo}")
+
+    assert not colpevoli, (
+        f"sintassi non compilabile su Python {minimo[0]}.{minimo[1]}, che "
+        "pyproject.toml dichiara di supportare e la matrice CI esegue: "
+        f"{colpevoli}. Sull'interprete corrente non si vede, e il job piu' "
+        "vecchio muore in compilazione: il file non viene importato affatto, "
+        "quindi i suoi test spariscono invece di fallire. Rimedio: la stessa "
+        "cosa scritta in una forma che la versione minima conosce, oppure "
+        "alzare `requires-python`."
+    )
+
+
+def test_la_guardia_sulla_grammatica_vede_il_costrutto_nuovo():
+    """La guardia misurata, non riasserita: due sorgenti sintetici e una
+    soglia fissa.
+
+    La soglia qui e' `(3, 9)` scritta a mano, e non `_minimo_dichiarato()`:
+    questo test misura il meccanismo, non il minimo del repo -- servono un
+    costrutto che quella soglia non conosce e uno che conosce, e la coppia
+    resta significativa anche il giorno in cui `requires-python` sale.
+    `match` e' il caso piu' probabile, il gradino subito sopra. La coppia
+    dice le due cose che servono: che il costrutto nuovo viene visto, e che
+    uno gia' valido non viene accusato -- una guardia che dicesse sempre di
+    si' costringerebbe a riscrivere codice che non e' rotto.
+    """
+    import tempfile
+
+    troppo_nuovo = (
+        "def f(x):\n"
+        "    match x:\n"
+        "        case 1:\n"
+        "            return 'uno'\n"
+        "    return None\n"
+    )
+    gia_valido = (
+        "from typing import Optional\n"
+        "def g(x: Optional[int]) -> Optional[str]:\n"
+        "    return None if x is None else str(x)\n"
+    )
+
+    with tempfile.TemporaryDirectory() as d:
+        for nome, sorgente, atteso in (('nuovo.py', troppo_nuovo, True),
+                                       ('vecchio.py', gia_valido, False)):
+            p = os.path.join(d, nome)
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write(sorgente)
+            visto = _grammatica_troppo_nuova(p, (3, 9)) is not None
+            assert visto is atteso, (nome, _grammatica_troppo_nuova(p, (3, 9)))

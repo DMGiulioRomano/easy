@@ -307,14 +307,31 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   sull'interprete più vecchio della matrice.
 
   Il rimedio è il future import; a tenerlo è `tests/test_minimum_python_syntax.py`,
-  che legge la soglia da `requires-python` invece di trascriverla (quando il
-  minimo passerà a 3.10 la guardia si spegne da sola) e distingue le
-  annotazioni che l'interprete valuta davvero — firme, modulo, classe — da
+  che legge la soglia da `requires-python` invece di trascriverla e distingue
+  le annotazioni che l'interprete valuta davvero — firme, modulo, classe — da
   quelle locali, che non valuta e che sarebbe ingiusto accusare. La
   distinzione passa per il corpo di ogni `class`, anche quando la `class` sta
   dentro una funzione: lì «dentro una funzione» e «non valutata» smettono di
   coincidere — il corpo si esegue quando si esegue la `class` — ed è l'unico
   punto in cui la guardia poteva confondere le due regole che dichiara.
+
+  Quella metà però non copriva il sintomo, solo una delle sue due cause.
+  Un'annotazione PEP 604 muore alla `def`; una `match`, un `except*`, un
+  `type X = int`, una f-string annidata muoiono un momento prima, alla
+  compilazione — e l'esito è identico: il file non viene importato, i test che
+  conteneva spariscono invece di fallire, e il rosso arriva solo dal job più
+  vecchio della matrice. Cercare la sola PEP 604 lasciava fuori la classe più
+  numerosa (tutta la sintassi introdotta dalla 3.10 in poi) proprio mentre il
+  file dichiarava di sorvegliare il minimo. La seconda metà non è un elenco di
+  costrutti da tenere aggiornato: `ast.parse(..., feature_version=<minimo>)`
+  pone la domanda al parser di casa, che le versioni le conosce per mestiere.
+  Quando il minimo salirà, la metà su PEP 604 si spegnerà da sola e questa si
+  limiterà ad alzare l'asticella con lui.
+
+  Prima conseguenza di leggere davvero tutti i sorgenti: `utils/check_envelope_grafie.py`
+  aveva `\#234` nella docstring, cioè una sequenza di escape non valida —
+  `DeprecationWarning` fino alla 3.11, `SyntaxWarning` dalla 3.12 — che da qui
+  in avanti sarebbe comparsa a ogni `make tests`. Corretta.
 
 - **`api.py` prometteva un silenzio che non ha mai avuto** (issue #189).
   L'intestazione dichiarava «nessun print» come primo punto del contratto
