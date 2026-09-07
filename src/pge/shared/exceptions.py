@@ -39,6 +39,12 @@ import os
 # test lo fissano nelle due direzioni.
 try:
     from yaml import YAMLError as _YamlError, MarkedYAMLError as _MarkedYamlError
+    # `ReaderError` non sta nel namespace `yaml` (`yaml/__init__.py` non lo
+    # ri-esporta), quindi va chiesto al sottomodulo: e' l'unica ragione per cui
+    # qui gli import da PyYAML sono due e non uno. Stesso `try`, cosi' resta una
+    # cosa sola che riesce o fallisce -- un ripiego a meta' darebbe una
+    # `ConfigParseError` senza la sua sottoclasse, senza che niente lo dica.
+    from yaml.reader import ReaderError as _ReaderError
     PYYAML_ASSENTE = False
 except ImportError:  # PyYAML non installato: vedi sopra
     class _YamlError(Exception):
@@ -48,7 +54,19 @@ except ImportError:  # PyYAML non installato: vedi sopra
         """Segnaposto per `yaml.MarkedYAMLError`; eredita l'altro come
         l'originale, cosi' l'MRO delle sottoclassi non cambia forma."""
 
+    class _ReaderError(_YamlError):
+        """Segnaposto per `yaml.reader.ReaderError`; come l'originale eredita
+        `YAMLError` e non `MarkedYAMLError`."""
+
     PYYAML_ASSENTE = True
+
+
+#: Larghezza del cappello di una riga di `user_message()` -- i due spazi di
+#: rientro piu' il nome del campo giustificato (`  Dettaglio:    `,
+#: `  Riga/colonna: `). Un valore che debba andare a capo si incolonna qui
+#: sotto, cosi' il seguito resta dentro il blocco invece di leggersi come un
+#: campo senza nome.
+_INDENTO_VALORE = ' ' * 16
 
 
 class EngineError(Exception):
@@ -237,7 +255,23 @@ class ConfigParseError(ConfigError, _YamlError):
         if mark is not None:
             lines.append(f"  Riga/colonna: {mark.line + 1}:{mark.column + 1}")
         dettaglio = getattr(self, 'problem', None) or str(self.cause)
-        lines.append(f"  Dettaglio:    {dettaglio}")
+        # Il ripiego `str(self.cause)` puo' parlare su piu' righe, e allora
+        # quelle dopo la prima uscivano dal blocco senza nome di campo: una
+        # riga che si legge come un campo rotto, fra `Dettaglio:` e il
+        # `Dettagli:` che `_handle_engine_error` appende subito sotto. Non e'
+        # un caso di scuola -- `yaml.reader.ReaderError` e' l'unico
+        # `yaml.YAMLError` del percorso di caricamento che non sia un
+        # `MarkedYAMLError` (gli altri quattro non marcati stanno sul lato
+        # dump), quindi e' l'unico a cadere qui, e il suo `__str__` e' due
+        # righe *sempre*. Il seguito si incolonna sotto il valore invece di
+        # essere buttato via: la seconda riga porta `position N`, la sola cosa
+        # che dica *dove* sta il carattere rifiutato. Il contratto della Sez. 2
+        # di `docs/reference/errors.md` e' righe `  <Campo>: <valore>`, e ogni
+        # altra classe lo rispetta -- `_SubprocessRenderError` arriva a pescare
+        # *una* riga da uno stderr intero pur di non violarlo.
+        prima, *seguito = [r.strip() for r in dettaglio.splitlines()] or ['']
+        lines.append(f"  Dettaglio:    {prima}")
+        lines.extend(f"{_INDENTO_VALORE}{riga}" for riga in seguito if riga)
         return "\n".join(lines)
 
 
@@ -421,16 +455,53 @@ class ConfigUnicodeParseError(ConfigParseError, UnicodeDecodeError):
         return self.args[0]
 
 
+class ConfigReaderParseError(ConfigParseError, _ReaderError):
+    """Il carattere che il parser rifiuta prima ancora di leggere un token.
+
+    `yaml.reader.ReaderError` e' l'unico `yaml.YAMLError` che il *load* possa
+    sollevare senza essere un `MarkedYAMLError` -- gli altri quattro non
+    marcati (Emitter, Representer, Serializer, Resolver) stanno sul lato dump
+    -- quindi era l'ultimo caso in cui impacchettare *toglieva*: la base sola
+    faceva sparire `e.position` ed `e.character`, che dicono quale carattere e
+    dove, e sono l'unico posto in cui quell'informazione esista.
+
+    Non porta un `problem_mark` (non e' marcato) ma porta una posizione sua,
+    in caratteri invece che in riga/colonna: il tipo e' quindi
+    `ConfigParseError` e non `ConfigMarkedParseError`, come nell'originale.
+    """
+
+    #: Lo stato che `ReaderError` espone: `character` e `position` sono il
+    #: carattere rifiutato e il suo offset, `reason` il perche'. Riportati
+    #: dalla causa con la regola degli altri due, mai fabbricati.
+    _ATTRIBUTI_READER = ('name', 'character', 'position', 'encoding', 'reason')
+
+    def __init__(self, path: str, cause: Exception):
+        super().__init__(path, cause)
+        for attributo in self._ATTRIBUTI_READER:
+            if hasattr(cause, attributo):
+                setattr(self, attributo, getattr(cause, attributo))
+
+    def __str__(self) -> str:
+        # Come per gli altri: `ReaderError.__str__` scrive due righe col nome
+        # del file e la posizione, cioe' il testo di `Dettaglio:`, non il
+        # messaggio -- e quella e' la riga che finisce nel log engine.
+        return self.args[0]
+
+
 def config_parse_error(path: str, cause: Exception) -> ConfigParseError:
     """`ConfigParseError`, nella sottoclasse che eredita anche il tipo
     concreto della causa quando ce n'e' una.
 
-    Un `yaml.YAMLError` nudo resta la base: non porta una posizione, e il tipo
-    non deve dire il contrario -- la stessa ragione per cui gli attributi di
-    `MarkedYAMLError` sono riportati e mai fabbricati.
+    Un `yaml.YAMLError` davvero nudo resta la base: non porta ne' posizione ne'
+    stato, e il tipo non deve dire il contrario -- la stessa ragione per cui gli
+    attributi di `MarkedYAMLError` sono riportati e mai fabbricati. Sul percorso
+    di caricamento sono nudi solo quelli costruiti a mano: PyYAML, quando
+    rifiuta un file, solleva o un `MarkedYAMLError` o un `ReaderError`.
     """
     if isinstance(cause, _MarkedYamlError):
         return ConfigMarkedParseError(path, cause)
+    if isinstance(cause, _ReaderError):
+        return ConfigReaderParseError(path, cause)
     if isinstance(cause, UnicodeDecodeError):
         return ConfigUnicodeParseError(path, cause)
     return ConfigParseError(path, cause)

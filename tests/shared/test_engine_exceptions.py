@@ -974,6 +974,52 @@ def test_config_parse_error_senza_marker_degrada_alle_due_righe():
     assert 'boom senza mark' in msg
 
 
+def test_config_parse_error_dettaglio_resta_una_riga_sola():
+    """Il blocco `user_message()` e' righe `  <Campo>:      <valore>`, e una
+    causa che parla su due righe non deve romperlo.
+
+    `yaml.reader.ReaderError` e' l'unico `yaml.YAMLError` del percorso di
+    caricamento che non sia un `MarkedYAMLError` (gli altri quattro non marcati
+    -- Emitter, Representer, Serializer, Resolver -- stanno sul lato dump),
+    quindi e' l'unico a cadere sul ripiego `str(self.cause)`. Il suo `__str__`
+    e' due righe *sempre*, e la seconda usciva dal blocco senza nome di campo:
+    una riga che si legge come un campo rotto, fra `Dettaglio:` e il
+    `Dettagli:` che `_handle_engine_error` appende subito dopo. E' il contratto
+    della Sez. 2 di `docs/reference/errors.md`, che ogni altra classe rispetta
+    -- `_SubprocessRenderError` arriva a pescare *una* riga da uno stderr
+    intero pur di non violarlo.
+
+    Qui non si butta via niente: il seguito e' incolonnato sotto il valore, che
+    e' l'unico modo di tenere la posizione del carattere (`position N`, la sola
+    cosa che dica *dove*) senza inventare un campo nuovo.
+    """
+    import yaml.reader
+    from pge.shared.exceptions import config_parse_error
+
+    cause = yaml.reader.ReaderError(
+        'configs/rotto.yml', 22, 0x07, 'unicode',
+        'special characters are not allowed')
+    err = config_parse_error('configs/rotto.yml', cause)
+
+    import re
+
+    righe = err.user_message().split('\n')
+    assert righe[0] == (
+        "[ERRORE] File di configurazione malformato: 'configs/rotto.yml'")
+
+    # Ogni riga sotto il head e' o un campo (`  Nome:` + valore) o un seguito
+    # incolonnato sotto il valore. Niente altro: e' quello il contratto.
+    for riga in righe[1:]:
+        assert re.match(r'^  \S[^:]*: +\S', riga) or riga.startswith(' ' * 16), (
+            f"riga senza nome di campo e non incolonnata: {riga!r}")
+
+    # E il seguito c'e' ancora: incolonnato, non buttato via. `position 22` e'
+    # la sola cosa che dica *dove* sta il carattere che il parser rifiuta.
+    seguito = [r for r in righe[1:] if r.startswith(' ' * 16)]
+    assert seguito, f"la seconda riga del ReaderError e' sparita: {righe}"
+    assert 'position 22' in '\n'.join(seguito)
+
+
 def test_config_parse_error_espone_la_causa():
     """L'errore di PyYAML resta raggiungibile per chi lo vuole leggere."""
     import yaml
@@ -1426,8 +1472,10 @@ def test_lo_stub_yaml_dei_test_non_manda_exceptions_nel_ripiego():
     """Lo stub di `tests/main_mocks.py` deve portare *tutti* i nomi che
     `exceptions.py` prende da `yaml`, non il primo.
 
-    Il modulo li chiede in un solo `from yaml import ...`, e un `from` che non
-    trova un nome alza `ImportError`: uno stub rimasto indietro di un nome
+    Il modulo li chiede in due `from ... import` dentro lo stesso `try`, e un
+    `from` che non trova un nome alza `ImportError`: uno stub rimasto indietro
+    di un nome -- o del sottomodulo `yaml.reader`, che non e' un attributo dello
+    stub ma una voce di `sys.modules` --
     manda quell'import nel ramo di ripiego, dove `PYYAML_ASSENTE` diventa vero
     con PyYAML installato e `ConfigParseError` smette di essere un
     `yaml.YAMLError` vero -- cioe' la promessa di libreria della #257 cade, in
@@ -1457,15 +1505,26 @@ def test_lo_stub_yaml_dei_test_non_manda_exceptions_nel_ripiego():
         [sys.executable, '-c', textwrap.dedent("""
             import sys
             import yaml as yaml_vero
+            import yaml.reader as reader_vero
             from tests.main_mocks import _make_mock_yaml_module
 
-            sys.modules['yaml'] = _make_mock_yaml_module()
-            from pge.shared.exceptions import ConfigParseError, PYYAML_ASSENTE
+            # Entrambi, e non solo `yaml`: `from yaml.reader import ...` si
+            # risolve su `sys.modules['yaml.reader']`, quindi lasciare li' il
+            # modulo vero misurerebbe PyYAML invece dello stub -- verde
+            # qualunque cosa lo stub porti.
+            stub, stub_reader = _make_mock_yaml_module()
+            sys.modules['yaml'] = stub
+            sys.modules['yaml.reader'] = stub_reader
+            from pge.shared.exceptions import (
+                ConfigParseError, ConfigReaderParseError, PYYAML_ASSENTE)
 
             assert not PYYAML_ASSENTE, (
                 "sotto lo stub exceptions crede che PyYAML non ci sia")
             assert issubclass(ConfigParseError, yaml_vero.YAMLError), (
                 "sotto lo stub ConfigParseError non e' un yaml.YAMLError vero")
+            assert issubclass(ConfigReaderParseError, reader_vero.ReaderError), (
+                "sotto lo stub ConfigReaderParseError non e' un "
+                "yaml.reader.ReaderError vero")
             print("ok")
         """)],
         env=env, capture_output=True, text=True)
@@ -1631,6 +1690,60 @@ def test_config_parse_error_di_una_decodifica_resta_un_UnicodeDecodeError():
     assert str(err) == "File di configurazione malformato: 'configs/latin1.yml'"
 
 
+def test_config_parse_error_di_un_carattere_rifiutato_resta_un_ReaderError():
+    """L'ultimo `yaml.YAMLError` del percorso di caricamento a perdere il
+    proprio tipo concreto.
+
+    `ReaderError` e' l'unico non marcato che il *load* possa produrre -- gli
+    altri quattro (Emitter, Representer, Serializer, Resolver) stanno sul lato
+    dump -- quindi era l'unico caso rimasto in cui impacchettare *toglieva*:
+    prima della #257 `load_yaml` lasciava salire l'eccezione concreta, e con
+    lei `e.position` ed `e.character`, che sono le sole cose che dicano quale
+    carattere il parser rifiuta e dove. `config_parse_error` mappava
+    `MarkedYAMLError` e `UnicodeDecodeError` e lasciava questo alla base,
+    contro la regola che la #257 dichiara per tutti gli altri.
+    """
+    import yaml.reader
+    from pge.shared.exceptions import ConfigParseError, config_parse_error
+
+    causa = None
+    try:
+        yaml.safe_load('titolo: "a\x07b"\n')
+    except yaml.YAMLError as e:
+        causa = e
+    assert isinstance(causa, yaml.reader.ReaderError), (
+        f"non e' piu' un ReaderError che PyYAML solleva qui: {type(causa)}")
+
+    err = config_parse_error('configs/ctrl.yml', causa)
+
+    assert isinstance(err, yaml.reader.ReaderError)
+    assert isinstance(err, ConfigParseError)
+    # Il tipo senza lo stato e' meta' promessa: la stessa regola dei tre campi
+    # `OSError` e dei cinque di `UnicodeDecodeError`.
+    assert err.position == causa.position
+    assert err.character == causa.character
+    assert err.reason == causa.reason
+
+
+def test_config_parse_error_di_un_carattere_rifiutato_tiene_lo_str_di_dominio():
+    """Il prezzo, per la terza volta: `ReaderError.__str__` scrive due righe
+    col nome del file e la posizione, ed e' quella la riga che finisce nel log
+    engine. La coppia col test sopra e' il punto."""
+    import yaml
+    from pge.shared.exceptions import config_parse_error
+
+    causa = None
+    try:
+        yaml.safe_load('titolo: "a\x07b"\n')
+    except yaml.YAMLError as e:
+        causa = e
+
+    err = config_parse_error('configs/ctrl.yml', causa)
+
+    assert str(err) == "File di configurazione malformato: 'configs/ctrl.yml'"
+    assert '\n' not in str(err)
+
+
 # -----------------------------------------------------------------------------
 # Le tre classi devono sopravvivere al pickle
 # -----------------------------------------------------------------------------
@@ -1658,12 +1771,18 @@ def _classi_di_configurazione():
         'perch\xe8'.encode('latin-1').decode('utf-8')
     except UnicodeDecodeError as e:
         causa_unicode = e
+    causa_reader = None
+    try:
+        yaml.safe_load('titolo: "a\x07b"\n')
+    except yaml.YAMLError as e:
+        causa_reader = e
 
     return [
         mod.ConfigFileNotFoundError('configs/missing.yml'),
         mod.config_parse_error('configs/rotto.yml', yaml.YAMLError('boom')),
         mod.config_parse_error('configs/rotto.yml', causa_yaml),
         mod.config_parse_error('configs/latin1.yml', causa_unicode),
+        mod.config_parse_error('configs/ctrl.yml', causa_reader),
         mod.config_read_error(
             'configs/', IsADirectoryError(21, 'Is a directory', 'configs/')),
         mod.config_read_error('configs/x.yml', OSError(36, 'File name too long')),

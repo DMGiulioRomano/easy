@@ -449,6 +449,55 @@ class TestLoadYaml:
         assert err.object[err.start:err.end] == b'\xe8'
         assert err.reason
 
+    def test_load_yaml_carattere_rifiutato_conserva_il_tipo_concreto(
+            self, tmp_path):
+        """Il quarto tipo concreto, per la regola degli altri tre (#257).
+
+        Un carattere di controllo dentro il file (un `\\x07` incollato da un
+        terminale, un `.yml` mezzo binario) e' rifiutato dal *reader* di PyYAML
+        prima che esista un token, quindi non e' un `MarkedYAMLError`: e'
+        l'unico `yaml.YAMLError` che il caricamento possa produrre senza
+        posizione riga/colonna, e prima della #257 saliva concreto. Con lui
+        salivano `e.position` ed `e.character`, che sono le sole cose a dire
+        *quale* carattere e dove.
+        """
+        import yaml.reader
+        from pge.shared.exceptions import ConfigParseError
+
+        config = tmp_path / 'ctrl.yml'
+        config.write_text('titolo: "a\x07b"\nstreams: []\n', encoding='utf-8')
+
+        gen = _get_generator_class()(str(config))
+        with pytest.raises(yaml.reader.ReaderError) as exc:
+            gen.load_yaml()
+
+        assert isinstance(exc.value, ConfigParseError)
+        assert exc.value.position == exc.value.cause.position
+        assert exc.value.character == exc.value.cause.character
+
+    def test_load_yaml_carattere_rifiutato_non_rompe_il_blocco_del_messaggio(
+            self, tmp_path):
+        """`ReaderError.__str__` e' due righe, `user_message()` e' un blocco di
+        righe `  <Campo>:      <valore>`: la seconda usciva senza nome di campo.
+
+        E' l'unica causa del percorso di caricamento a cadere sul ripiego
+        `str(self.cause)`, quindi l'unica a poterlo rompere.
+        """
+        import re
+
+        config = tmp_path / 'ctrl.yml'
+        config.write_text('titolo: "a\x07b"\nstreams: []\n', encoding='utf-8')
+
+        gen = _get_generator_class()(str(config))
+        with pytest.raises(Exception) as exc:
+            gen.load_yaml()
+
+        righe = exc.value.user_message().split('\n')
+        for riga in righe[1:]:
+            assert (re.match(r'^  \S[^:]*: +\S', riga)
+                    or riga.startswith(' ' * 16)), (
+                f"riga senza nome di campo e non incolonnata: {riga!r}")
+
     def test_load_yaml_dichiara_l_encoding_dello_yaml(self):
         """`open()` deve nominare utf-8: senza, a decidere e' il locale.
 

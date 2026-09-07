@@ -634,6 +634,42 @@ def test_e2e_config_parse_error(tmp_path, cleanup_log):
 
 
 @pytest.mark.e2e
+def test_e2e_config_con_un_carattere_rifiutato(tmp_path, cleanup_log):
+    """Un carattere di controllo nel file: `yaml.reader.ReaderError`, l'unico
+    `yaml.YAMLError` del caricamento che non porti riga/colonna.
+
+    Due cose che solo il percorso reale mostra. La classe concreta nel log --
+    `config_parse_error()` la sceglie dal tipo della causa, che sotto mock non
+    c'e'. E il blocco del messaggio: `ReaderError.__str__` e' due righe
+    *sempre*, quindi e' l'unica causa che possa far uscire una riga dal
+    formato `[ERRORE] head` + `  <Campo>:      <valore>` -- proprio fra
+    `Dettaglio:` e il `Dettagli:` che `_handle_engine_error` appende sotto.
+    """
+    import re
+
+    yaml_abs = str(tmp_path / '55_config_carattere.yml')
+    with open(yaml_abs, 'w', encoding='utf-8') as f:
+        f.write('composition:\n  title: "a\x07b"\nstreams: []\n')
+    cleanup_log.append(_log_path_for(yaml_abs))
+    result = _run(yaml_abs)
+    _assert_clean_config_output(result)
+    assert "File di configurazione malformato" in result.stdout
+    assert "special characters are not allowed" in result.stdout
+    # Il seguito e' incolonnato sotto il valore, non a capo senza nome di campo.
+    corpo = result.stdout.split(
+        "[ERRORE] File di configurazione malformato")[1].split("\n")[1:]
+    for riga in corpo:
+        if not riga.strip():
+            break
+        assert (re.match(r'^  \S[^:]*: +\S', riga)
+                or riga.startswith(' ' * 16)), (
+            f"riga senza nome di campo e non incolonnata: {riga!r}")
+    _assert_log_contains(yaml_abs, "ConfigReaderParseError",
+                         ['55_config_carattere.yml'])
+    _assert_log_message_line(yaml_abs, "File di configurazione malformato")
+
+
+@pytest.mark.e2e
 def test_e2e_config_non_decodificabile(tmp_path, cleanup_log):
     """Un `.yml` salvato in latin-1: `open()` e' in modalita' testo e su UTF-8
     dichiarato, quindi lo rifiuta prima che PyYAML veda un byte."""

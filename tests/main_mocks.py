@@ -13,6 +13,7 @@ import sys
 import types
 
 import yaml
+import yaml.reader
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -58,7 +59,8 @@ def make_mock_logger_module():
 
 
 def _make_mock_yaml_module():
-    """Stub di `yaml` che porta pero' le classi d'errore, quelle vere.
+    """Stub di `yaml` (e del suo `yaml.reader`) che porta pero' le classi
+    d'errore, quelle vere.
 
     Dalla #257 `pge.shared.exceptions.ConfigParseError` eredita da
     `yaml.YAMLError` e `ConfigMarkedParseError` da `yaml.MarkedYAMLError`, e
@@ -69,9 +71,11 @@ def _make_mock_yaml_module():
     un `yaml.YAMLError` vero -- cioe' la promessa di libreria della #257
     cadrebbe dentro i test che dovrebbero difenderla.
 
-    **Il modulo li chiede in un solo `from yaml import ...`, e un `from` che
-    non trova un nome alza `ImportError`**: e' tutto il gruppo a mancare
-    quando ne manca uno. Perche' lo stub non resti indietro sul prossimo nome,
+    **Il modulo li chiede in due `from ... import` dentro lo stesso `try`, e
+    un `from` che non trova un nome alza `ImportError`**: e' tutto il gruppo a
+    mancare quando ne manca uno -- compreso il sottomodulo, che `from
+    yaml.reader import ...` risolve via `sys.modules['yaml.reader']` e non
+    leggendo un attributo dello stub. Perche' lo stub non resti indietro sul prossimo nome,
     `test_lo_stub_yaml_dei_test_non_manda_exceptions_nel_ripiego`
     (`tests/shared/test_engine_exceptions.py`) misura quell'import in un
     interprete figlio, con questo stub installato: e' l'unico posto dove si
@@ -85,7 +89,14 @@ def _make_mock_yaml_module():
     mod = types.ModuleType('yaml')
     mod.YAMLError = yaml.YAMLError
     mod.MarkedYAMLError = yaml.MarkedYAMLError
-    return mod
+    # `ReaderError` sta in `yaml.reader`, non nel namespace `yaml`: e' un
+    # sottomodulo, e `from yaml.reader import ...` non guarda `mod.reader` --
+    # passa da `sys.modules['yaml.reader']`. Ecco perche' questa funzione ne
+    # restituisce due, ed entrambi vanno in `sys.modules`.
+    sub = types.ModuleType('yaml.reader')
+    sub.ReaderError = yaml.reader.ReaderError
+    mod.reader = sub
+    return mod, sub
 
 
 def build_mock_modules():
@@ -136,6 +147,7 @@ def build_mock_modules():
     window_reg_mod = types.ModuleType('pge.rendering.numpy_window_registry')
     window_reg_mod.NumpyWindowRegistry = MagicMock(name='NumpyWindowRegistry')
 
+    _yaml_mock, _yaml_reader_mock = _make_mock_yaml_module()
     mock_modules = {
         'pge.engine.generator': gen_mod,
         'pge.rendering.score_visualizer': viz_mod,
@@ -146,7 +158,8 @@ def build_mock_modules():
         'pge.rendering.sample_registry': sample_reg_mod,
         'pge.rendering.numpy_window_registry': window_reg_mod,
         # dipendenze transitive
-        'yaml': _make_mock_yaml_module(),
+        'yaml': _yaml_mock,
+        'yaml.reader': _yaml_reader_mock,
         'soundfile': types.ModuleType('soundfile'),
     }
 
