@@ -800,3 +800,280 @@ def test_exponential_distribution_invalid_rate_is_parameter_bound():
     msg = err.user_message()
     assert "[ERRORE]" in msg
     assert "rate" in msg
+
+
+# =============================================================================
+# Issue #257 — lo YAML che manca (o che non si legge) ha un tipo, non una
+# posizione nel file sorgente della CLI
+# =============================================================================
+
+def test_config_file_not_found_e_un_config_error():
+    """Un file di configurazione che non esiste e' un errore di configurazione:
+    sta sotto ConfigError, quindi `except EngineError` della CLI lo prende."""
+    from pge.shared.exceptions import (
+        ConfigError, ConfigFileNotFoundError, EngineError,
+    )
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert isinstance(err, ConfigError)
+    assert isinstance(err, EngineError)
+    # ConfigError eredita ValueError, e la sottoclasse non lo perde.
+    assert isinstance(err, ValueError)
+
+
+def test_config_file_not_found_eredita_FileNotFoundError():
+    """Qui il builtin non e' una bugia: il file che manca e' proprio quello.
+
+    E' l'asimmetria con `_BinaryNotFoundError` (#228/#241), che il builtin lo
+    rifiuta perche' li' descriveva un file diverso da quello che il tipo
+    lasciava intendere. `Generator.load_yaml` e `api.load_generator`
+    dichiarano FileNotFoundError fra i `Raises`: chi lo cattura continua a
+    catturarlo."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert isinstance(err, FileNotFoundError)
+    assert isinstance(err, OSError)
+
+
+def _famiglia_engine_error():
+    """Ogni sottoclasse di EngineError che il pacchetto `pge` dichiara.
+
+    Derivata dall'albero delle classi, non dai membri di
+    `pge.shared.exceptions`. I due insiemi coincidono oggi perche' la
+    convenzione vuole le eccezioni li' (punto 1 di
+    docs/reference/errors.md), ma «dove la convenzione le vuole» non e'
+    «dove finiranno»: una sottoclasse dichiarata in un modulo di rendering
+    non comparirebbe fra i membri di quel file, e la regola qui sotto
+    tacerebbe proprio sul caso per cui esiste — un secondo erede di
+    `FileNotFoundError` nato lontano da dove qualcuno lo cerchera'.
+
+    I moduli si importano tutti prima di leggere `__subclasses__`, o la
+    risposta dipenderebbe da quali test hanno gia' girato; il filtro su
+    `__module__` tiene fuori le sottoclassi sintetiche dei test, per la
+    stessa ragione.
+    """
+    import importlib
+    import pkgutil
+
+    import pge
+    from pge.shared.exceptions import EngineError
+
+    for modulo in pkgutil.walk_packages(pge.__path__, 'pge.'):
+        importlib.import_module(modulo.name)
+
+    def discendenti(base):
+        for figlia in base.__subclasses__():
+            yield figlia
+            yield from discendenti(figlia)
+
+    return {cls for cls in discendenti(EngineError)
+            if cls.__module__.startswith('pge.')}
+
+
+def test_solo_la_configurazione_e_un_FileNotFoundError():
+    """La regola che #228/#241 e #257 scrivono insieme, derivata dalla
+    gerarchia invece che trascritta: dentro EngineError `FileNotFoundError`
+    significa una cosa sola — il file di configurazione che hai nominato non
+    esiste. Se un domani un binario assente, o un sample, tornasse a
+    ereditarlo, il tipo smetterebbe di isolare e questo test lo direbbe."""
+    famiglia = _famiglia_engine_error()
+    # La famiglia e' popolata: senza questa riga il test passerebbe anche su
+    # un modulo vuoto.
+    assert len(famiglia) > 10
+    eredi = {cls.__name__ for cls in famiglia
+             if issubclass(cls, FileNotFoundError)}
+    assert eredi == {'ConfigFileNotFoundError'}
+
+
+def test_la_regola_vede_anche_una_sottoclasse_dichiarata_altrove():
+    """La guardia misurata invece che riasserita.
+
+    Il caso che distingue le due letture: una sottoclasse di `EngineError`
+    che non sta in `pge/shared/exceptions.py`. Leggendo i membri di quel
+    modulo non esiste; leggendo l'albero delle classi si', ed e' la lettura
+    che la regola qui sopra richiede — altrimenti basterebbe dichiarare il
+    secondo erede di `FileNotFoundError` un file piu' in la' per farla
+    tacere. Non eredita `FileNotFoundError` di proposito: una classe
+    sintetica che sopravvivesse al test non deve poter arrossare la regola
+    vera.
+    """
+    import gc
+    import inspect
+
+    from pge.shared import exceptions as exc
+
+    class ErroreDichiaratoAltrove(exc.EngineError):
+        pass
+
+    # `__subclasses__` non guarda dove il file sta sul disco, guarda
+    # `__module__`: e' quello che va falsificato per simulare la classe
+    # dichiarata in un altro modulo di `pge`.
+    ErroreDichiaratoAltrove.__module__ = 'pge.engine.generator'
+    try:
+        assert ErroreDichiaratoAltrove in _famiglia_engine_error()
+
+        membri = {cls for _, cls in inspect.getmembers(exc, inspect.isclass)
+                  if issubclass(cls, exc.EngineError)}
+        assert ErroreDichiaratoAltrove not in membri, (
+            "la lettura per membri di modulo la vede: il caso scelto non "
+            "distingue le due letture, e la misura non misura niente")
+    finally:
+        del ErroreDichiaratoAltrove
+        gc.collect()
+
+
+def test_config_file_not_found_user_message_nomina_il_file_e_il_path():
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    msg = err.user_message()
+    assert "[ERRORE]" in msg
+    assert "File di configurazione non trovato" in msg
+    # Il nome come l'utente l'ha scritto, sulla riga di contesto di casa.
+    assert "  Config:       configs/mancante.yml" in msg
+    # E il path risolto, che dice in quale directory si e' cercato.
+    import os
+    assert os.path.abspath('configs/mancante.yml') in msg
+
+
+def test_config_file_not_found_non_ripete_il_path_gia_assoluto():
+    """Un intervallo che non esiste non si stampa (regola di
+    ParameterBoundError); un path che coincide con quello gia' scritto
+    nemmeno."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('/tmp/assoluto/mancante.yml')
+    msg = err.user_message()
+    assert "Path cercato" not in msg
+    assert msg.count('/tmp/assoluto/mancante.yml') == 1
+
+
+def test_config_file_not_found_valorizza_config_file():
+    """Il contesto strutturato e' quello di casa: chi legge l'eccezione a
+    programma trova il path dove lo trova in tutte le sorelle."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert err.config_file == 'configs/mancante.yml'
+
+
+def test_config_parse_error_e_un_config_error_e_uno_yaml_error():
+    """Il file c'e' ma non si legge: stessa famiglia, stesso trattamento.
+
+    `yaml.YAMLError` resta fra le basi per la stessa ragione del builtin
+    accanto — `load_yaml` e `api.load_generator` lo dichiarano nei `Raises`."""
+    import yaml
+    from pge.shared.exceptions import (
+        ConfigError, ConfigParseError, EngineError,
+    )
+    err = ConfigParseError('configs/rotto.yml', reason='qualcosa')
+    assert isinstance(err, ConfigError)
+    assert isinstance(err, EngineError)
+    assert isinstance(err, yaml.YAMLError)
+
+
+def test_config_parse_error_user_message():
+    from pge.shared.exceptions import ConfigParseError
+    err = ConfigParseError('configs/rotto.yml',
+                           reason="expected <block end>, but found ':'",
+                           line=4, column=10)
+    msg = err.user_message()
+    assert "[ERRORE]" in msg
+    assert "YAML non valido" in msg
+    assert "  Motivo:       expected <block end>, but found ':'" in msg
+    assert "  Posizione:    riga 4, colonna 10" in msg
+    assert "  Config:       configs/rotto.yml" in msg
+
+
+def test_config_parse_error_senza_posizione_non_stampa_la_riga():
+    from pge.shared.exceptions import ConfigParseError
+    err = ConfigParseError('configs/rotto.yml', reason='qualcosa')
+    assert "Posizione" not in err.user_message()
+
+
+def test_config_parse_error_from_yaml_error_legge_problema_e_marca():
+    """La posizione la sa gia' PyYAML: `problem` e `problem_mark` di
+    MarkedYAMLError. Le righe di YAML si contano da 1, il mark da 0."""
+    import yaml
+    from pge.shared.exceptions import ConfigParseError
+
+    testo = "composition:\n  title: uno\n   cattiva: due\n"
+    with pytest.raises(yaml.YAMLError) as excinfo:
+        yaml.safe_load(testo)
+
+    err = ConfigParseError.from_yaml_error('configs/rotto.yml', excinfo.value)
+    assert err.reason == excinfo.value.problem
+    assert err.line == excinfo.value.problem_mark.line + 1
+    assert err.column == excinfo.value.problem_mark.column + 1
+
+
+def test_config_parse_error_from_yaml_error_senza_marca():
+    """Un YAMLError generico non ha `problem_mark`: il motivo resta, la
+    posizione non si inventa."""
+    import yaml
+    from pge.shared.exceptions import ConfigParseError
+
+    err = ConfigParseError.from_yaml_error('x.yml', yaml.YAMLError('rotto'))
+    assert 'rotto' in err.reason
+    assert err.line is None and err.column is None
+
+
+def test_config_file_not_found_compila_i_campi_di_oserror():
+    """Ereditare il tipo non basta: chi cattura FileNotFoundError legge
+    `filename` e confronta `errno` con ENOENT. Su un wrapper nudo sono None,
+    cioe' la compatibilita' regge per `isinstance` e cade per tutto il resto,
+    in silenzio -- la stessa forma di guasto che la #257 chiude un piano piu'
+    su."""
+    import errno
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert err.errno == errno.ENOENT
+    assert err.filename == 'configs/mancante.yml'
+    assert err.strerror
+
+
+def test_config_file_not_found_str_resta_il_messaggio_di_casa():
+    """Il prezzo dei campi qui sopra, pagato: con `filename` valorizzato
+    `OSError.__str__` scriverebbe «[Errno 2] No such file or directory» e
+    butterebbe via la prosa -- ed e' `str(err)` che finisce nel log engine e
+    nel ramo generico di chi cattura."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert str(err) == "File di configurazione non trovato: 'configs/mancante.yml'"
+    assert 'Errno' not in str(err)
+
+
+def test_config_file_not_found_sopravvive_a_pickle_e_copy():
+    """Terzo modo di rompere la stessa promessa, e il piu' silenzioso.
+
+    `OSError.__reduce__` accoda `filename` agli `args` — un OSError si
+    ricostruisce da `(errno, strerror, filename)`. Valorizzare `filename`
+    (il test qui sopra) mette quindi questa classe nel caso in cui `args` e'
+    la sola prosa: senza `__reduce__`, il round trip chiamava
+    `ConfigFileNotFoundError(<la prosa>)` e tornava indietro un'eccezione con
+    il messaggio annidato dentro se' stesso e `path`/`filename` uguali al
+    messaggio. Nessuna eccezione sollevata: esattamente la compatibilita' che
+    regge per `isinstance` e cade in silenzio per tutto il resto.
+    """
+    import copy
+    import errno
+    import pickle
+    from pge.shared.exceptions import ConfigFileNotFoundError
+
+    originale = ConfigFileNotFoundError('configs/mancante.yml')
+    # Arricchito come il punto 5 di docs/reference/errors.md prescrive per
+    # ogni sottoclasse di ConfigError. Senza questa riga il round trip si
+    # misura sui soli campi che `__init__` ricostruisce dal path, cioe' su
+    # tutto tranne l'unico stato che il path non contiene: il test
+    # resterebbe verde su un `__reduce__` che butta via il `__dict__`, e la
+    # riga `Stream:` sparirebbe dal messaggio senza sollevare niente --
+    # ancora la promessa che regge per `isinstance` e cade in silenzio.
+    originale.stream_id = 'stream1'
+    for ricostruito in (pickle.loads(pickle.dumps(originale)),
+                        copy.copy(originale),
+                        copy.deepcopy(originale)):
+        assert isinstance(ricostruito, ConfigFileNotFoundError)
+        assert str(ricostruito) == str(originale)
+        assert ricostruito.path == 'configs/mancante.yml'
+        assert ricostruito.filename == 'configs/mancante.yml'
+        assert ricostruito.config_file == 'configs/mancante.yml'
+        assert ricostruito.errno == errno.ENOENT
+        assert ricostruito.stream_id == 'stream1'
+        assert ricostruito.user_message() == originale.user_message()
+        assert '  Stream:       stream1' in ricostruito.user_message()

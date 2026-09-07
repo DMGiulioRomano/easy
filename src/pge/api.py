@@ -4,8 +4,10 @@
 # Contratto del modulo
 # (docs/plans/done/2026-07-08-001-refactor-pge-library-cli-plan.md, sez. B.1):
 # - nessun sys.exit, nessuna lettura di sys.argv;
-# - errori -> eccezioni (EngineError e sottoclassi, FileNotFoundError,
-#   ValueError per argomenti API invalidi);
+# - errori -> eccezioni (EngineError e sottoclassi, ValueError per argomenti
+#   API invalidi). Dalla #257 anche il caricamento dello YAML sta dentro la
+#   gerarchia: ConfigFileNotFoundError e ConfigParseError, che restano pero'
+#   anche FileNotFoundError e yaml.YAMLError per chi li catturava cosi';
 # - import lazy dei moduli pesanti dentro le funzioni (stesso stile di
 #   main.py): mantiene mockabile via sys.modules e non paga matplotlib
 #   all'import;
@@ -226,9 +228,16 @@ def load_generator(yaml_path: str, *, samples_dir: Optional[str] = None):
             precedenti (submodule non ancora aggiornati).
 
     Raises:
-        FileNotFoundError, yaml.YAMLError, EngineError (SampleNotFoundError,
-        ConfigError, ...). Nessun print proprio (quelli interni di Generator
-        restano).
+        EngineError e sottoclassi (ConfigFileNotFoundError,
+        ConfigParseError, SampleNotFoundError, ConfigError, ...). Dalla
+        issue #257 anche i due guasti del caricamento hanno un tipo di
+        dominio: `ConfigFileNotFoundError` per lo YAML che non c'e',
+        `ConfigParseError` per quello che non si parsa. Restano
+        rispettivamente un `FileNotFoundError` e uno `yaml.YAMLError` --
+        questa firma li dichiarava, e chi li cattura continua a catturarli --
+        ma adesso portano un `user_message()` e non passano piu' dal ramo
+        generico di chi le chiama. Nessun print proprio (quelli interni di
+        Generator restano).
     """
     from pge.engine.generator import Generator
 

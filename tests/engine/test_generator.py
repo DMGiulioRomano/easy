@@ -159,14 +159,24 @@ class TestLoadYaml:
     """Test per load_yaml() - caricamento e preprocessing YAML."""
 
     def test_load_yaml_reads_file(self, gen):
-        """load_yaml apre il file specificato."""
+        """load_yaml apre il file specificato, e lo apre in binario.
+
+        Il modo non e' un dettaglio: in testo la decodifica sta nel layer di
+        `open()` e usa `locale.getpreferredencoding()`, quindi un config UTF-8
+        valido non si carica su una macchina con locale ASCII, e un byte che
+        non torna esce come `UnicodeDecodeError` grezzo -- fuori sia dai due
+        tipi di dominio della #257 sia dal perimetro che quella issue dichiara
+        di lasciare fuori. In binario la codifica e' di PyYAML (UTF-8/UTF-16
+        come prescrive YAML 1.1, BOM incluso) e il byte cattivo diventa un
+        `ReaderError`, cioe' uno `yaml.YAMLError` -> `ConfigParseError`.
+        """
         yaml_data = {'streams': []}
         m = mock_open(read_data=yaml.dump(yaml_data))
 
         with patch('builtins.open', m):
             gen.load_yaml()
 
-        m.assert_called_once_with('test_config.yml', 'r')
+        m.assert_called_once_with('test_config.yml', 'rb')
 
     def test_load_yaml_returns_dict(self, gen):
         """load_yaml ritorna un dizionario."""

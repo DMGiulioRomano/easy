@@ -8,6 +8,15 @@ __str__ per i log.
 """
 from __future__ import annotations
 
+import errno
+import os
+
+# Import non lazy: `ConfigParseError` eredita `yaml.YAMLError`, e una base
+# deve esistere quando la classe si crea. PyYAML e' dipendenza dura del
+# pacchetto (pyproject) e `pge.engine.generator` la importa gia' a livello di
+# modulo: questo import non ne aggiunge una, la dichiara dove serve.
+import yaml
+
 
 class EngineError(Exception):
     """Base per errori dell'pge.engine. Sottoclassi forniscono user_message()."""
@@ -56,6 +65,139 @@ class ConfigError(EngineError, ValueError):
         if self.config_file:
             lines.append(f"  Config:       {self.config_file}")
         return lines
+
+
+class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
+    """Il file YAML di configurazione non esiste (issue #257).
+
+    EREDITA FileNotFoundError, all'opposto di `_BinaryNotFoundError`, e
+    l'asimmetria e' voluta. Per un binario assente quel tipo era una bugia
+    utile a nessuno -- il file che mancava non era quello che il tipo lasciava
+    intendere. Qui e' semplicemente vero, ed e' anche cio' che
+    `Generator.load_yaml` e `api.load_generator` dichiarano da sempre fra i
+    `Raises`: chi lo cattura continua a catturarlo, per la stessa ragione per
+    cui `ConfigError` eredita `ValueError`.
+
+    Le due decisioni opposte fanno una regola sola, e la regola e' il guadagno:
+    dentro la gerarchia EngineError `FileNotFoundError` significa una cosa e
+    una sola -- il file di configurazione che hai nominato non esiste. Cosi'
+    la CLI puo' smettere di intercettare il builtin (questo errore le arriva
+    da `except EngineError`), e un guasto di I/O che risale da qualunque altra
+    profondita' non si traveste piu' da configurazione mancante. Prima della
+    #257 quella garanzia era l'estensione fisica di un `try`, non un tipo:
+    reggeva finche' nessuno aggiungeva una riga li' dentro.
+    """
+
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f"File di configurazione non trovato: '{path}'")
+        # Il contesto strutturato di casa: chi legge l'eccezione a programma
+        # trova il path dove lo trova in tutte le sorelle.
+        self.config_file = path
+        # Ereditare il tipo non basta a mantenere la promessa. Chi cattura un
+        # FileNotFoundError raramente si ferma alla cattura: legge `filename`
+        # e confronta `errno` con `errno.ENOENT`. Su un wrapper nudo sono
+        # None -- cioe' la compatibilita' regge per `isinstance` e cade per
+        # tutto il resto, in silenzio. `open()` li avrebbe riempiti.
+        self.errno = errno.ENOENT
+        self.strerror = os.strerror(errno.ENOENT)
+        self.filename = path
+
+    def __str__(self) -> str:
+        # Il prezzo dei tre campi qui sopra: con `filename` valorizzato
+        # `OSError.__str__` smette di stampare `args[0]` e scrive «[Errno 2]
+        # No such file or directory: 'x.yml'». Ed e' `str(err)` che finisce
+        # nel log engine (`logger.error("%s", err)`) e nel ramo generico di
+        # chi ci chiama: il messaggio resta quello che la classe ha costruito.
+        return self.args[0]
+
+    def __reduce__(self):
+        # Secondo prezzo degli stessi tre campi, e va pagato anche questo.
+        # `OSError.__reduce__` accoda `filename` agli `args`, perche' un
+        # OSError si ricostruisce da `(errno, strerror, filename)`. Qui
+        # `args` e' uno solo -- la prosa della classe -- e la ricostruzione
+        # chiamerebbe `ConfigFileNotFoundError(<la prosa>)`: il messaggio si
+        # anniderebbe dentro se' stesso e `path`, `filename` e `config_file`
+        # diventerebbero il messaggio. Senza sollevare niente: la promessa
+        # reggerebbe per `isinstance` e cadrebbe in silenzio per tutto il
+        # resto, cioe' la forma di guasto che la #257 chiude un piano piu'
+        # su. Il path ricostruisce tutto cio' che `__init__` deriva; il
+        # `__dict__` va accodato lo stesso, perche' non tutto lo stato viene
+        # da li'. `stream_id` lo scrive il chiamante piu' prossimo dopo il
+        # raise (punto 5 di docs/reference/errors.md, la regola di ogni
+        # sottoclasse di ConfigError), e senza il terzo elemento -- che il
+        # `__reduce__` di BaseException accoda proprio per questo -- il round
+        # trip lo perdeva, cioe' toglieva la riga `Stream:` dal messaggio
+        # senza sollevare niente: la stessa promessa muta che questi tre
+        # override esistono per non fare.
+        return (self.__class__, (self.path,), self.__dict__)
+
+    def user_message(self) -> str:
+        lines = ["[ERRORE] File di configurazione non trovato"]
+        risolto = os.path.abspath(self.path)
+        # Il path risolto dice in quale directory si e' cercato, e serve
+        # proprio a chi ha passato un path relativo. Con un path gia'
+        # assoluto sarebbe la riga `Config:` scritta due volte: stessa regola
+        # dei bounds ignoti di ParameterBoundError, una riga che non aggiunge
+        # niente non si stampa.
+        if risolto != self.path:
+            lines.append(f"  Path cercato: {risolto}")
+        lines.extend(self._context_lines())
+        return "\n".join(lines)
+
+
+class ConfigParseError(ConfigError, yaml.YAMLError):
+    """Il file di configurazione c'e' ma non si lascia leggere (issue #257).
+
+    Stessa ereditarieta' doppia della sorella qui sopra e per la stessa
+    ragione: `yaml.YAMLError` e' dichiarato nei `Raises` di `load_yaml` e di
+    `api.load_generator`. Prima della #257 nessuno lo traduceva, e uno YAML
+    malformato usciva dal ramo generico della CLI -- messaggio piu' traceback
+    invece di un `user_message()`. E' lo stesso difetto un gradino piu' in
+    la' del file che manca: chiuderne uno solo avrebbe lasciato la gerarchia
+    coperta a meta'.
+
+    `problem` e `problem_mark` di PyYAML dicono gia' cosa e dove: la
+    posizione non si stima, si legge.
+    """
+
+    def __init__(self, path: str, reason: str,
+                 line: int | None = None, column: int | None = None):
+        self.path = path
+        self.reason = reason
+        self.line = line
+        self.column = column
+        posizione = f" (riga {line}, colonna {column})" if line is not None else ""
+        super().__init__(f"YAML non valido in '{path}'{posizione}: {reason}")
+        self.config_file = path
+
+    @classmethod
+    def from_yaml_error(cls, path: str, err: Exception) -> "ConfigParseError":
+        """Costruisce dall'errore di PyYAML, marca inclusa quando c'e'.
+
+        `problem_mark` esiste solo su MarkedYAMLError: un YAMLError generico
+        conserva il motivo e non si inventa una posizione.
+        """
+        reason = getattr(err, 'problem', None)
+        if not reason:
+            testo = str(err).strip()
+            reason = testo.splitlines()[0] if testo else type(err).__name__
+        mark = getattr(err, 'problem_mark', None)
+        # PyYAML conta righe e colonne da 0, gli editor da 1.
+        line = mark.line + 1 if mark is not None else None
+        column = mark.column + 1 if mark is not None else None
+        return cls(path, reason, line=line, column=column)
+
+    def user_message(self) -> str:
+        lines = [
+            "[ERRORE] YAML non valido",
+            f"  Motivo:       {self.reason}",
+        ]
+        if self.line is not None:
+            lines.append(
+                f"  Posizione:    riga {self.line}, colonna {self.column}")
+        lines.extend(self._context_lines())
+        return "\n".join(lines)
 
 
 class MissingFieldError(ConfigError):

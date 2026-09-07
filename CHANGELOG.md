@@ -10,6 +10,91 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Lo YAML che manca — o che non si legge — ha un tipo, non una posizione**
+  (issue #257). `Generator.load_yaml` solleva `ConfigFileNotFoundError` per il
+  file di configurazione che non esiste e `ConfigParseError` per quello che il
+  parser rifiuta; entrambe stanno sotto `ConfigError`, ed entrambe arrivano
+  alla CLI da `except EngineError` con un `user_message()` nel formato di casa
+  invece che da un `print` scritto a mano o dal ramo generico.
+
+  ```
+  [ERRORE] File di configurazione non trovato
+    Path cercato: /home/utente/PythonGranularEngine/configs/inesistente.yml
+    Config:       configs/inesistente.yml
+    Dettagli:     logs/inesistente_engine.log
+  ```
+
+  ```
+  [ERRORE] YAML non valido
+    Motivo:       mapping values are not allowed here
+    Posizione:    riga 3, colonna 11
+    Config:       configs/rotto.yml
+    Dettagli:     logs/rotto_engine.log
+  ```
+
+  Il secondo messaggio prima non esisteva: uno YAML malformato usciva dal ramo
+  generico, cioè messaggio più traceback. Motivo e posizione vengono da
+  `problem` e `problem_mark` di PyYAML — non si stimano, si leggono — e
+  l'errore originale resta in catena (`raise ... from`), quindi lo sproloquio
+  completo del parser continua a finire nel log engine.
+
+  **Le due classi ereditano il tipo esterno che sostituiscono**
+  (`FileNotFoundError` e `yaml.YAMLError`), all'opposto di
+  `_BinaryNotFoundError` (#228/#241), e l'asimmetria è la decisione centrale
+  della issue. Per un binario assente quel builtin era una bugia utile a
+  nessuno: il file che mancava non era quello che il tipo lasciava intendere a
+  chi lo catturava. Qui è semplicemente vero, ed è anche ciò che `load_yaml` e
+  `api.load_generator` dichiarano fra i `Raises` da sempre — chi lo catturava
+  continua a catturarlo, come per il `ValueError` di `ConfigError`. Prese
+  insieme, le due decisioni opposte fanno una regola sola, e la regola è il
+  guadagno: dentro `EngineError`, `FileNotFoundError` significa una cosa e una
+  sola, «il file di configurazione che hai nominato non esiste». Il test che la
+  regge la deriva dall'albero delle classi invece di trascriverla — e
+  dall'albero, non dai membri di `pge/shared/exceptions.py`: la convenzione
+  vuole le eccezioni lì, ma un secondo erede dichiarato altrove la farebbe
+  tacere proprio sul caso per cui esiste.
+
+  Ereditare il tipo, però, non basta a mantenere la promessa: chi cattura un
+  `FileNotFoundError` raramente si ferma alla cattura — legge `e.filename` e
+  confronta `e.errno` con `errno.ENOENT`, che su un wrapper nudo sono `None`.
+  La compatibilità reggerebbe per `isinstance` e cadrebbe per tutto il resto,
+  in silenzio: cioè la stessa forma di guasto che questa issue chiude un piano
+  più su. I tre campi sono quindi valorizzati come li avrebbe riempiti
+  `open()`, e `__str__` è sovrascritto per pagarne il prezzo — con `filename`
+  valorizzato `OSError.__str__` scriverebbe «[Errno 2] No such file or
+  directory» buttando via la prosa, ed è proprio `str(err)` che finisce nel
+  log engine. Lo stesso vale per `__reduce__`: `OSError` si ricostruisce da
+  `(errno, strerror, filename)` e accoda quindi `filename` agli `args`, che
+  qui sono la sola prosa — un round trip (`pickle`, `copy`) tornava indietro
+  con il messaggio annidato dentro sé stesso e `path`/`filename` uguali al
+  messaggio, in silenzio. La ricostruzione parte dal path e si porta dietro
+  il `__dict__`: il path basta per tutto ciò che `__init__` deriva, non per
+  `stream_id`, che il chiamante più prossimo scrive dopo il raise — e senza
+  quel terzo elemento il round trip perdeva la riga `Stream:` del messaggio,
+  in silenzio come le altre due volte.
+
+  **La lettura è in binario, e la decodifica è di PyYAML.** Chi decodifica
+  decide anche chi solleva: con `open(path, 'r')` la decodifica avviene nel
+  layer di testo, prima che PyYAML veda alcunché, e ne esce un
+  `UnicodeDecodeError` grezzo — che non è uno `yaml.YAMLError` e non è un
+  `OSError`, quindi non cade né nel perimetro tradotto qui né in quello
+  lasciato fuori di proposito (una directory, i permessi): finiva nel ramo
+  generico, messaggio più traceback. Il guasto era doppio, e la seconda metà
+  peggiore della prima: quel layer decodifica con
+  `locale.getpreferredencoding()`, quindi sotto `LC_ALL=C` — un container, un
+  cron, una Action senza locale — i config con byte non-ASCII che questo repo
+  distribuisce (`configs/PGE_12min.yml` fra loro) non si caricavano affatto.
+  Letto in binario, la codifica torna un fatto del file (YAML 1.1: UTF-8 o
+  UTF-16, riconosciute dal BOM) e un byte che non torna diventa un
+  `ReaderError`, cioè uno `yaml.YAMLError` che passa dalla porta che esiste
+  già — senza allargare nessun `try`.
+
+  La conversione è stretta sulla sola `open()`, non sul blocco che la contiene:
+  allargarla a tutto il caricamento rifarebbe un piano più giù lo stesso
+  difetto che questa issue chiude — una garanzia per posizione invece che per
+  tipo — e c'è un test che la sabota alzando un `FileNotFoundError` *dentro*
+  `yaml.safe_load`, per un file che non è lo YAML.
+
 - **Il log dice di nuovo quanti grani ha generato ogni stream** (issue #250).
   Dopo `Rendering completato in ...` la CLI stampa una riga per stream:
 
@@ -179,6 +264,74 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
 
 
 ### Corretto
+
+- **`cli.main()` non intercetta più nessun tipo builtin lungo la pipeline**
+  (issue #257, seguito della #241). La #241 aveva stretto l'handler
+  `FileNotFoundError` attorno alle due righe che caricano lo YAML, e
+  funzionava; ma la garanzia che il commento rivendicava — «questo è l'unico
+  punto che può sollevarlo per il motivo che il messaggio annuncia» — era vera
+  per **estensione fisica del blocco**, non per il tipo dell'eccezione.
+  Bastava una riga in più lì dentro (un `!include`, una prescansione dei
+  sample, una validazione di `--samples-dir`) o il passaggio ad
+  `api.load_generator`, che impacchetta anche `create_elements`, per rimettere
+  in circolo il messaggio falso — in silenzio, perché nessun test sorvegliava
+  la premessa.
+
+  Ora l'handler non c'è: restano `except EngineError` e il ramo generico. Un
+  `FileNotFoundError` che risale da qualunque altra profondità esce con il
+  proprio messaggio e il proprio traceback, invece di travestirsi da
+  configurazione mancante. Gli `except ValueError` sopravvissuti in `main()`
+  stanno attorno a `int()`/`float()` su `sys.argv`, fuori dal `try` della
+  pipeline.
+
+  Due test tengono il posto, e nessuno dei due si limita a riasserire la
+  premessa: `tests/test_cli_builtin_handlers.py` legge `cli.py` come AST e
+  rifiuta un handler su un tipo builtin dentro il blocco che avvolge la
+  pipeline — e su qualunque errore della famiglia `OSError` in tutto il file;
+  `test_file_not_found_dal_caricamento_non_incolpa_lo_yaml` la sabota, alzando
+  un `FileNotFoundError` grezzo **per un altro file** proprio dentro il
+  caricamento. Prima della #257 quel test era rosso, e nessuno lo avrebbe
+  scoperto.
+
+  Il messaggio dello YAML mancante cambia di conseguenza — da
+  `Errore: file 'x.yml' non trovato` alle quattro righe del formato di casa —
+  e con lui si muove il golden di `tests/test_cli_contract.py`.
+
+- **La guardia AST della CLI non esisteva sulla 3.9** (issue #257).
+  `tests/test_cli_builtin_handlers.py` dichiarava `-> str | None` senza
+  `from __future__ import annotations`: PEP 604 in una firma si valuta alla
+  `def`, e sulla 3.9 — il minimo di `requires-python`, e un job della matrice
+  CI — alza `TypeError`. Il file moriva in raccolta, cioè la guardia che tiene
+  in piedi la regola della issue non falliva: spariva, e con lei gli altri
+  test dello stesso modulo. In locale non si vedeva, perché nessuno sviluppa
+  sull'interprete più vecchio della matrice.
+
+  Il rimedio è il future import; a tenerlo è `tests/test_minimum_python_syntax.py`,
+  che legge la soglia da `requires-python` invece di trascriverla e distingue
+  le annotazioni che l'interprete valuta davvero — firme, modulo, classe — da
+  quelle locali, che non valuta e che sarebbe ingiusto accusare. La
+  distinzione passa per il corpo di ogni `class`, anche quando la `class` sta
+  dentro una funzione: lì «dentro una funzione» e «non valutata» smettono di
+  coincidere — il corpo si esegue quando si esegue la `class` — ed è l'unico
+  punto in cui la guardia poteva confondere le due regole che dichiara.
+
+  Quella metà però non copriva il sintomo, solo una delle sue due cause.
+  Un'annotazione PEP 604 muore alla `def`; una `match`, un `except*`, un
+  `type X = int`, una f-string annidata muoiono un momento prima, alla
+  compilazione — e l'esito è identico: il file non viene importato, i test che
+  conteneva spariscono invece di fallire, e il rosso arriva solo dal job più
+  vecchio della matrice. Cercare la sola PEP 604 lasciava fuori la classe più
+  numerosa (tutta la sintassi introdotta dalla 3.10 in poi) proprio mentre il
+  file dichiarava di sorvegliare il minimo. La seconda metà non è un elenco di
+  costrutti da tenere aggiornato: `ast.parse(..., feature_version=<minimo>)`
+  pone la domanda al parser di casa, che le versioni le conosce per mestiere.
+  Quando il minimo salirà, la metà su PEP 604 si spegnerà da sola e questa si
+  limiterà ad alzare l'asticella con lui.
+
+  Prima conseguenza di leggere davvero tutti i sorgenti: `utils/check_envelope_grafie.py`
+  aveva `\#234` nella docstring, cioè una sequenza di escape non valida —
+  `DeprecationWarning` fino alla 3.11, `SyntaxWarning` dalla 3.12 — che da qui
+  in avanti sarebbe comparsa a ogni `make tests`. Corretta.
 
 - **`api.py` prometteva un silenzio che non ha mai avuto** (issue #189).
   L'intestazione dichiarava «nessun print» come primo punto del contratto
