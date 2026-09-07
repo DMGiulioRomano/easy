@@ -809,6 +809,23 @@ class TestLoadGenerator:
         with pytest.raises(yaml.YAMLError):
             api_mocks['api'].load_generator('broken.yml')
 
+    def test_config_read_error_resta_catturabile_come_os_error(
+            self, api_mocks):
+        """La terza delle tre promesse di libreria (#257).
+
+        La docstring di `load_generator` dichiara `OSError` accanto agli altri
+        due builtin, e le altre due promesse hanno gia' il loro caso qui: senza
+        questo, la piu' recente delle tre e' l'unica che nessuno misura dal
+        lato chiamante.
+        """
+        from pge.shared.exceptions import ConfigReadError
+
+        api_mocks['generator_instance'].load_yaml.side_effect = ConfigReadError(
+            'configs/', IsADirectoryError(21, 'Is a directory', 'configs/'))
+
+        with pytest.raises(OSError):
+            api_mocks['api'].load_generator('configs/')
+
     def test_no_own_print(self, api_mocks, capsys):
         api_mocks['api'].load_generator('test.yml')
         assert capsys.readouterr().out == ''
