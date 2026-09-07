@@ -159,3 +159,115 @@ def test_directory_al_posto_del_file_non_e_un_file_mancante(tmp_path):
     # copia a mano.
     assert excinfo.value.errno == errno.EISDIR
     assert os.path.isdir(str(tmp_path))
+
+
+# =============================================================================
+# Il file c'e', ma i suoi byte non sono quelli che il locale si aspetta
+# =============================================================================
+
+# Accentata di proposito: e' la forma normale dei titoli in questo repo
+# (`configs/PGE_12min.yml` e altri nove hanno byte non-ASCII), quindi non e'
+# un caso di laboratorio.
+CONFIG_ACCENTATA = 'composition:\n  title: "città perduta"\nstreams: []\n'
+
+
+def test_config_non_utf8_e_uno_yaml_che_non_si_parsa(tmp_path):
+    """«Il file c'e' ma non si lascia leggere» e' la definizione di
+    ConfigParseError, e un byte non decodificabile ci sta dentro.
+
+    Chi decodifica decide anche chi solleva. Con `open(path, 'r')` la
+    decodifica avviene nel layer di testo, prima che PyYAML veda alcunche':
+    ne esce un `UnicodeDecodeError` grezzo, che non e' uno `yaml.YAMLError` e
+    non e' un `OSError` -- cioe' non e' nel perimetro che la #257 dichiara ne'
+    in quello che dichiara di lasciare fuori. Finiva nel ramo generico della
+    CLI: messaggio piu' traceback, l'esito che il criterio della issue vieta.
+    Leggendo i byte e lasciando la decodifica a PyYAML, lo stesso guasto
+    diventa un `ReaderError` -- uno `yaml.YAMLError` -- e passa dalla porta
+    che esiste gia'.
+    """
+    rotto = tmp_path / "non_utf8.yml"
+    rotto.write_bytes(CONFIG_ACCENTATA.encode('latin-1'))
+
+    with pytest.raises(ConfigParseError) as excinfo:
+        Generator(str(rotto)).load_yaml()
+
+    msg = excinfo.value.user_message()
+    assert "[ERRORE]" in msg
+    assert "YAML non valido" in msg
+    assert str(rotto) in msg
+
+
+def test_config_non_utf8_resta_uno_yaml_error(tmp_path):
+    """Stessa promessa di libreria della sorella malformata: il tipo esterno
+    che `load_yaml` dichiara nei `Raises` resta fra le basi."""
+    rotto = tmp_path / "non_utf8.yml"
+    rotto.write_bytes(CONFIG_ACCENTATA.encode('latin-1'))
+    with pytest.raises(yaml.YAMLError):
+        Generator(str(rotto)).load_yaml()
+
+
+def test_config_non_utf8_incatena_l_errore_originale(tmp_path):
+    """Il motivo vero non si perde: `raise ... from` lo tiene in catena e
+    `traceback.format_exc()` lo scrive nel log engine."""
+    rotto = tmp_path / "non_utf8.yml"
+    rotto.write_bytes(CONFIG_ACCENTATA.encode('latin-1'))
+    with pytest.raises(ConfigParseError) as excinfo:
+        Generator(str(rotto)).load_yaml()
+    assert isinstance(excinfo.value.__cause__, yaml.YAMLError)
+
+
+def test_la_codifica_del_config_non_dipende_dal_locale(tmp_path):
+    """L'altra meta', e la piu' spiacevole: un config UTF-8 valido non deve
+    smettere di caricarsi perche' la macchina ha un locale ASCII.
+
+    `open(path, 'r')` decodifica con `locale.getpreferredencoding()`. Sotto
+    `LC_ALL=C` -- un container, un cron, una GitHub Action senza locale --
+    quello e' ASCII, e i dieci config accentati che questo repo distribuisce
+    (`configs/PGE_12min.yml` fra loro) morivano con un `UnicodeDecodeError`
+    grezzo prima ancora che PyYAML fosse chiamato. YAML 1.1 prescrive UTF-8 o
+    UTF-16: la codifica del file e' un fatto del file, non dell'ambiente, e
+    lasciarla a PyYAML e' il modo di dirlo una volta sola.
+
+    Il locale si degrada solo in un processo figlio, quindi la prova e' un
+    subprocess -- e se il degrado non riesce (piattaforme che coercono
+    comunque a UTF-8) il test si dichiara muto invece di passare per caso.
+    """
+    import os
+    import subprocess
+    import sys
+
+    buono = tmp_path / "accentato.yml"
+    buono.write_bytes(CONFIG_ACCENTATA.encode('utf-8'))
+
+    radice = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    env = dict(
+        os.environ,
+        LC_ALL='C', LANG='C', LANGUAGE='C',
+        PYTHONUTF8='0', PYTHONCOERCECLOCALE='0',
+        PYTHONPATH=os.pathsep.join([radice, os.path.join(radice, 'src')]),
+    )
+    codice = (
+        "import locale, sys\n"
+        "from pge.engine.generator import Generator\n"
+        "print(locale.getpreferredencoding(False))\n"
+        "titolo = Generator(sys.argv[1]).load_yaml()['composition']['title']\n"
+        # Solo ASCII sullo stdout del figlio: sotto LC_ALL=C stampare
+        # l'accento sarebbe un UnicodeEncodeError, cioe' un rosso che parla
+        # del print e non del caricamento.
+        "print(titolo.encode('utf-8').hex())\n"
+    )
+    res = subprocess.run(
+        [sys.executable, '-c', codice, str(buono)],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+
+    righe = res.stdout.splitlines()
+    assert righe, f"il figlio non ha stampato niente: {res.stderr}"
+    codifica = righe[0].lower().replace('-', '').replace('_', '')
+    if 'utf8' in codifica:
+        pytest.skip(f"locale non degradabile qui ({righe[0]}): la prova non "
+                    "distinguerebbe le due letture")
+
+    assert res.returncode == 0, res.stderr
+    assert righe[1] == 'città perduta'.encode('utf-8').hex()

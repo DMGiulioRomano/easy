@@ -561,3 +561,33 @@ def test_e2e_config_file_malformato(tmp_path, cleanup_log):
     # di PyYAML.
     _assert_log_contains(yaml_abs, "ConfigParseError",
                          ["ScannerError", "direct cause"])
+
+
+# Byte non decodificabili in un file che, per il resto, e' YAML valido: il
+# guasto e' la codifica, non la sintassi. Scritto in latin-1 come lo
+# scriverebbe un editor mal configurato su un titolo accentato -- che in
+# questo repo e' la norma, non l'eccezione.
+YAML_NON_UTF8 = 'composition:\n  title: "città perduta"\nstreams: []\n'
+
+
+@pytest.mark.e2e
+def test_e2e_config_file_non_utf8(tmp_path, cleanup_log):
+    """Il file c'e' e la sintassi e' giusta: sono i byte a non tornare.
+
+    Finche' la decodifica stava nel layer di testo di `open(path, 'r')`, il
+    guasto usciva come `UnicodeDecodeError` grezzo dal ramo generico --
+    messaggio piu' traceback, l'esito che il criterio della #257 vieta -- e
+    non c'era modo di raggiungerlo dai due tipi nuovi: non e' uno
+    `yaml.YAMLError` e non e' un `OSError`. Letto in binario lo diventa.
+    """
+    yaml_abs = str(tmp_path / '52_config_non_utf8.yml')
+    with open(yaml_abs, 'wb') as f:
+        f.write(YAML_NON_UTF8.encode('latin-1'))
+    cleanup_log.append(_log_path_for(yaml_abs))
+
+    result = _run(yaml_abs)
+    _assert_clean_user_output(result)
+    assert "YAML non valido" in result.stdout
+    assert "Motivo:" in result.stdout
+    _assert_log_contains(yaml_abs, "ConfigParseError",
+                         ["ReaderError", "direct cause"])

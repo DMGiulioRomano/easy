@@ -92,11 +92,26 @@ class Generator:
             ConfigFileNotFoundError: se il file YAML non esiste. E' anche un
                 FileNotFoundError, che questa funzione ha sempre dichiarato:
                 chi lo catturava continua a catturarlo (issue #257).
-            ConfigParseError: se il file YAML è malformato. E' anche uno
+            ConfigParseError: se il file YAML è malformato, o se i suoi
+                byte non sono UTF-8/UTF-16 (il file si legge in binario e la
+                decodifica e' di PyYAML, non del locale). E' anche uno
                 yaml.YAMLError, idem.
         """
+        # Byte, non testo: la decodifica e' di PyYAML, non del locale.
+        # `open(path, 'r')` decodifica con `locale.getpreferredencoding()`
+        # nel layer di testo, cioe' prima che PyYAML veda alcunche', e ne
+        # esce un `UnicodeDecodeError` grezzo -- che non e' uno
+        # `yaml.YAMLError` e non e' un `OSError`, quindi non cade ne' nel
+        # perimetro tradotto qui sotto ne' in quello lasciato fuori di
+        # proposito: finiva nel ramo generico della CLI, messaggio piu'
+        # traceback. Due guasti in uno: sotto `LC_ALL=C` quel locale e'
+        # ASCII, e i config accentati di questo repo non si caricavano
+        # affatto. YAML 1.1 prescrive UTF-8 o UTF-16 e PyYAML le riconosce
+        # dal BOM: la codifica del file torna un fatto del file, e un byte
+        # che non torna diventa un ReaderError, cioe' uno `yaml.YAMLError`
+        # che passa dalla porta che esiste gia'.
         try:
-            handle = open(self.yaml_path, 'r')
+            handle = open(self.yaml_path, 'rb')
         except FileNotFoundError as err:
             # La conversione sta sulla sola open(), non sul blocco che la
             # contiene (issue #257): l'errore di dominio deve nascere dal file
