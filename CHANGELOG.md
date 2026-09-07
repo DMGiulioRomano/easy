@@ -61,7 +61,11 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `open()`, e `__str__` è sovrascritto per pagarne il prezzo — con `filename`
   valorizzato `OSError.__str__` scriverebbe «[Errno 2] No such file or
   directory» buttando via la prosa, ed è proprio `str(err)` che finisce nel
-  log engine.
+  log engine. Lo stesso vale per `__reduce__`: `OSError` si ricostruisce da
+  `(errno, strerror, filename)` e accoda quindi `filename` agli `args`, che
+  qui sono la sola prosa — un round trip (`pickle`, `copy`) tornava indietro
+  con il messaggio annidato dentro sé stesso e `path`/`filename` uguali al
+  messaggio, in silenzio.
 
   La conversione è stretta sulla sola `open()`, non sul blocco che la contiene:
   allargarla a tutto il caricamento rifarebbe un piano più giù lo stesso

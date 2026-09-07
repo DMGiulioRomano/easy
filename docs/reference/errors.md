@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: "0141021"
+last_synced_commit: 386e6d2
 entry_for: [error-handling]
 ---
 
@@ -120,10 +120,16 @@ EngineError                                  (Exception)
   `errno`, `strerror` e `filename` come li avrebbe riempiti `open()`, perché
   chi cattura quel tipo raramente si ferma alla cattura — e una promessa che
   regge per `isinstance` e cade per `e.filename` sarebbe muta, cioè la forma
-  di guasto che questa issue chiude. Il prezzo è che `OSError.__str__`, visto
-  `filename`, smetterebbe di stampare `args[0]`: `__str__` è sovrascritto, e
-  `str(err)` — quello che finisce nel log engine — resta la prosa della
-  classe.
+  di guasto che questa issue chiude. Il prezzo si paga due volte, e va pagato
+  tutto. `OSError.__str__`, visto `filename`, smetterebbe di stampare
+  `args[0]`: `__str__` è sovrascritto, e `str(err)` — quello che finisce nel
+  log engine — resta la prosa della classe. E `OSError.__reduce__` accoda
+  `filename` agli `args`, perché un OSError si ricostruisce da `(errno,
+  strerror, filename)`: qui gli `args` sono la sola prosa, quindi un round
+  trip (`pickle`, `copy`) tornava indietro con il messaggio annidato dentro
+  sé stesso e `path`/`filename` uguali al messaggio — senza sollevare
+  niente, cioè la stessa promessa muta un piano più in là. Anche `__reduce__`
+  è sovrascritto: tutto lo stato della classe è il suo path.
 
   Il guadagno non è la compatibilità (che è il prezzo di ammissione): è che
   il tipo torna a *isolare*. Un `FileNotFoundError` che risale dall'engine
