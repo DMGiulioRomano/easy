@@ -10,6 +10,54 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Lo YAML che manca — o che non si legge — ha un tipo, non una posizione**
+  (issue #257). `Generator.load_yaml` solleva `ConfigFileNotFoundError` per il
+  file di configurazione che non esiste e `ConfigParseError` per quello che il
+  parser rifiuta; entrambe stanno sotto `ConfigError`, ed entrambe arrivano
+  alla CLI da `except EngineError` con un `user_message()` nel formato di casa
+  invece che da un `print` scritto a mano o dal ramo generico.
+
+  ```
+  [ERRORE] File di configurazione non trovato
+    Path cercato: /home/utente/PythonGranularEngine/configs/inesistente.yml
+    Config:       configs/inesistente.yml
+    Dettagli:     logs/inesistente_engine.log
+  ```
+
+  ```
+  [ERRORE] YAML non valido
+    Motivo:       mapping values are not allowed here
+    Posizione:    riga 3, colonna 11
+    Config:       configs/rotto.yml
+    Dettagli:     logs/rotto_engine.log
+  ```
+
+  Il secondo messaggio prima non esisteva: uno YAML malformato usciva dal ramo
+  generico, cioè messaggio più traceback. Motivo e posizione vengono da
+  `problem` e `problem_mark` di PyYAML — non si stimano, si leggono — e
+  l'errore originale resta in catena (`raise ... from`), quindi lo sproloquio
+  completo del parser continua a finire nel log engine.
+
+  **Le due classi ereditano il tipo esterno che sostituiscono**
+  (`FileNotFoundError` e `yaml.YAMLError`), all'opposto di
+  `_BinaryNotFoundError` (#228/#241), e l'asimmetria è la decisione centrale
+  della issue. Per un binario assente quel builtin era una bugia utile a
+  nessuno: il file che mancava non era quello che il tipo lasciava intendere a
+  chi lo catturava. Qui è semplicemente vero, ed è anche ciò che `load_yaml` e
+  `api.load_generator` dichiarano fra i `Raises` da sempre — chi lo catturava
+  continua a catturarlo, come per il `ValueError` di `ConfigError`. Prese
+  insieme, le due decisioni opposte fanno una regola sola, e la regola è il
+  guadagno: dentro `EngineError`, `FileNotFoundError` significa una cosa e una
+  sola, «il file di configurazione che hai nominato non esiste». Il test che la
+  regge la deriva dalla gerarchia invece di trascriverla, così un terzo erede
+  la farebbe parlare.
+
+  La conversione è stretta sulla sola `open()`, non sul blocco che la contiene:
+  allargarla a tutto il caricamento rifarebbe un piano più giù lo stesso
+  difetto che questa issue chiude — una garanzia per posizione invece che per
+  tipo — e c'è un test che la sabota alzando un `FileNotFoundError` *dentro*
+  `yaml.safe_load`, per un file che non è lo YAML.
+
 - **Il log dice di nuovo quanti grani ha generato ogni stream** (issue #250).
   Dopo `Rendering completato in ...` la CLI stampa una riga per stream:
 
@@ -179,6 +227,38 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
 
 
 ### Corretto
+
+- **`cli.main()` non intercetta più nessun tipo builtin lungo la pipeline**
+  (issue #257, seguito della #241). La #241 aveva stretto l'handler
+  `FileNotFoundError` attorno alle due righe che caricano lo YAML, e
+  funzionava; ma la garanzia che il commento rivendicava — «questo è l'unico
+  punto che può sollevarlo per il motivo che il messaggio annuncia» — era vera
+  per **estensione fisica del blocco**, non per il tipo dell'eccezione.
+  Bastava una riga in più lì dentro (un `!include`, una prescansione dei
+  sample, una validazione di `--samples-dir`) o il passaggio ad
+  `api.load_generator`, che impacchetta anche `create_elements`, per rimettere
+  in circolo il messaggio falso — in silenzio, perché nessun test sorvegliava
+  la premessa.
+
+  Ora l'handler non c'è: restano `except EngineError` e il ramo generico. Un
+  `FileNotFoundError` che risale da qualunque altra profondità esce con il
+  proprio messaggio e il proprio traceback, invece di travestirsi da
+  configurazione mancante. Gli `except ValueError` sopravvissuti in `main()`
+  stanno attorno a `int()`/`float()` su `sys.argv`, fuori dal `try` della
+  pipeline.
+
+  Due test tengono il posto, e nessuno dei due si limita a riasserire la
+  premessa: `tests/test_cli_builtin_handlers.py` legge `cli.py` come AST e
+  rifiuta un handler su un tipo builtin dentro il blocco che avvolge la
+  pipeline — e su qualunque errore della famiglia `OSError` in tutto il file;
+  `test_file_not_found_dal_caricamento_non_incolpa_lo_yaml` la sabota, alzando
+  un `FileNotFoundError` grezzo **per un altro file** proprio dentro il
+  caricamento. Prima della #257 quel test era rosso, e nessuno lo avrebbe
+  scoperto.
+
+  Il messaggio dello YAML mancante cambia di conseguenza — da
+  `Errore: file 'x.yml' non trovato` alle quattro righe del formato di casa —
+  e con lui si muove il golden di `tests/test_cli_contract.py`.
 
 - **`api.py` prometteva un silenzio che non ha mai avuto** (issue #189).
   L'intestazione dichiarava «nessun print» come primo punto del contratto
