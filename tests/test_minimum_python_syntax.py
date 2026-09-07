@@ -1,0 +1,185 @@
+# =============================================================================
+# tests/test_minimum_python_syntax.py
+# =============================================================================
+"""
+Le annotazioni valutate a runtime restano leggibili dal Python piu' vecchio
+che `pyproject.toml` dichiara di supportare.
+
+Il repo dichiara `requires-python = ">=3.9"` e la matrice CI ci gira sopra,
+ma **nessuno sviluppa su 3.9**: in locale si lavora sull'interprete corrente,
+dove `str | None` in una firma e' legale, e il rosso arriva solo dal job piu'
+vecchio della matrice -- un'ora dopo, su una PR che in locale era verde.
+
+E' successo davvero, dentro la #257: `tests/test_cli_builtin_handlers.py`
+-- cioe' proprio la guardia che tiene in piedi la regola della issue --
+dichiarava `-> str | None` senza `from __future__ import annotations`, e su
+3.9 esplodeva in raccolta con un `TypeError`. Il file non veniva importato
+affatto: la guardia non falliva, semplicemente non esisteva piu'.
+
+Che cosa si valuta e quando, perche' la guardia non e' piu' larga del vero:
+
+- le annotazioni di **firma** (parametri e ritorno) si valutano alla `def`;
+- le annotazioni di **modulo e di classe** (`x: T = ...`) si valutano
+  all'esecuzione del corpo;
+- quelle **locali dentro una funzione** non si valutano mai;
+- `from __future__ import annotations` le rende tutte stringhe, quindi un
+  file che ce l'ha e' fuori discussione.
+
+Solo PEP 604 (`X | Y`) e' un problema: PEP 585 (`list[str]`, `dict[str, int]`)
+funziona gia' dalla 3.9.
+
+La soglia non e' trascritta qui: si legge da `requires-python`. Il giorno in
+cui il minimo passa a 3.10 questo file si spegne da solo.
+"""
+
+import ast
+import os
+import re
+
+import pytest
+
+
+RADICE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CARTELLE = ('src', 'tests', 'utils')
+
+
+def _minimo_dichiarato():
+    """`(major, minor)` da `requires-python` di pyproject.toml, o None.
+
+    Letto a mano invece che con tomllib: quello arriva in 3.11, e un test
+    sulla compatibilita' con la 3.9 che non gira sulla 3.9 sarebbe una barzelletta.
+    """
+    percorso = os.path.join(RADICE, 'pyproject.toml')
+    with open(percorso, encoding='utf-8') as f:
+        testo = f.read()
+    m = re.search(r'^\s*requires-python\s*=\s*["\'][^0-9]*(\d+)\.(\d+)',
+                  testo, re.MULTILINE)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _sorgenti():
+    for cartella in CARTELLE:
+        base = os.path.join(RADICE, cartella)
+        for r, dirs, fs in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in ('__pycache__', '.venv')]
+            for fn in fs:
+                if fn.endswith('.py'):
+                    yield os.path.join(r, fn)
+
+
+def _annotazioni_valutate(albero):
+    """Le annotazioni che l'interprete valuta davvero, con la loro riga.
+
+    Firme di funzione ovunque; `AnnAssign` solo fuori dai corpi di funzione,
+    dove non si valutano. La discesa e' esplicita proprio per poter smettere
+    all'ingresso di una funzione: `ast.walk` non distingue i due casi.
+    """
+    fuori = []
+
+    def scendi(nodo, dentro_funzione):
+        for figlio in ast.iter_child_nodes(nodo):
+            if isinstance(figlio, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = figlio.args
+                for a in (list(args.posonlyargs) + list(args.args)
+                          + list(args.kwonlyargs)
+                          + [args.vararg, args.kwarg]):
+                    if a is not None and a.annotation is not None:
+                        fuori.append((a.annotation, figlio.lineno))
+                if figlio.returns is not None:
+                    fuori.append((figlio.returns, figlio.lineno))
+                scendi(figlio, True)
+            elif isinstance(figlio, ast.AnnAssign):
+                if not dentro_funzione and figlio.annotation is not None:
+                    fuori.append((figlio.annotation, figlio.lineno))
+                scendi(figlio, dentro_funzione)
+            else:
+                scendi(figlio, dentro_funzione)
+
+    scendi(albero, False)
+    return fuori
+
+
+def _pep604(percorso):
+    """Le righe del file con una `X | Y` valutata a runtime. Lista vuota se
+    il file ha il future import (li' non si valuta niente)."""
+    with open(percorso, encoding='utf-8') as f:
+        sorgente = f.read()
+    albero = ast.parse(sorgente, filename=percorso)
+    for nodo in albero.body:
+        if (isinstance(nodo, ast.ImportFrom) and nodo.module == '__future__'
+                and any(a.name == 'annotations' for a in nodo.names)):
+            return []
+    righe = []
+    for annotazione, riga in _annotazioni_valutate(albero):
+        for sub in ast.walk(annotazione):
+            if isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.BitOr):
+                righe.append(riga)
+                break
+    return sorted(set(righe))
+
+
+def test_requires_python_e_leggibile():
+    """Senza la soglia la guardia non saprebbe quando tacere: e se
+    `requires-python` sparisse, tacerebbe per sempre senza dirlo."""
+    assert _minimo_dichiarato() is not None, (
+        "requires-python non si legge da pyproject.toml: la soglia di questa "
+        "guardia viene da li' e non e' trascritta altrove")
+
+
+def test_nessuna_pep604_valutata_sotto_il_minimo_dichiarato():
+    minimo = _minimo_dichiarato()
+    if minimo >= (3, 10):
+        pytest.skip(f"requires-python e' {minimo[0]}.{minimo[1]}: PEP 604 "
+                    "e' legale ovunque, la guardia non ha piu' oggetto")
+
+    colpevoli = []
+    for percorso in sorted(_sorgenti()):
+        for riga in _pep604(percorso):
+            colpevoli.append(f"{os.path.relpath(percorso, RADICE)}:{riga}")
+
+    assert not colpevoli, (
+        f"annotazione PEP 604 (`X | Y`) valutata a runtime su Python "
+        f"{minimo[0]}.{minimo[1]}, che pyproject.toml dichiara di supportare "
+        f"e la matrice CI esegue: {colpevoli}. In locale non si vede -- "
+        "l'interprete corrente la accetta -- e il job piu' vecchio muore in "
+        "raccolta, quindi il file non viene importato affatto. Rimedio: "
+        "`from __future__ import annotations` in testa al file, oppure "
+        "`Optional[...]` / `Union[...]`."
+    )
+
+
+def test_la_guardia_vede_le_due_forme_valutate_e_non_la_terza():
+    """La guardia misurata, non riasserita: due sorgenti sintetici, uno con
+    le annotazioni che l'interprete valuta e uno con quelle che non valuta.
+
+    La terza forma -- l'annotazione locale dentro una funzione -- e' legale
+    anche su 3.9, e una guardia che la accusasse chiederebbe di cambiare
+    codice che non e' rotto."""
+    import tempfile
+
+    valutate = (
+        "def f(x: int | None) -> str | None: ...\n"
+        "class C:\n"
+        "    y: int | None = None\n"
+        "z: str | None = None\n"
+    )
+    non_valutate = (
+        "from __future__ import annotations\n"
+        "def g(x: int | None) -> str | None: ...\n"
+    )
+    locale_soltanto = (
+        "def h():\n"
+        "    v: int | None = None\n"
+        "    return v\n"
+        "def i(x: list[str]) -> dict[str, int]: ...\n"
+    )
+
+    with tempfile.TemporaryDirectory() as d:
+        for nome, sorgente, atteso in (
+                ('valutate.py', valutate, 3),
+                ('future.py', non_valutate, 0),
+                ('locale.py', locale_soltanto, 0)):
+            p = os.path.join(d, nome)
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write(sorgente)
+            assert len(_pep604(p)) == atteso, (nome, _pep604(p))

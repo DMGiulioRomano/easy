@@ -43,6 +43,12 @@ l'handler e' scritto ripete, un piano piu' su, il difetto che la #257
 corregge nel codice.
 """
 
+# Le annotazioni di questo file usano PEP 604 (`str | None`), che sulla 3.9
+# -- il minimo di `requires-python`, e un job della matrice CI -- si valuta
+# alla `def` e alza TypeError: il file moriva in raccolta, cioe' la guardia
+# non falliva, spariva. Il future import le rende stringhe.
+from __future__ import annotations
+
 import ast
 import builtins
 import os

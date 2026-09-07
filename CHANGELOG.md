@@ -291,6 +291,21 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   `Errore: file 'x.yml' non trovato` alle quattro righe del formato di casa —
   e con lui si muove il golden di `tests/test_cli_contract.py`.
 
+- **La guardia AST della CLI non esisteva sulla 3.9** (issue #257).
+  `tests/test_cli_builtin_handlers.py` dichiarava `-> str | None` senza
+  `from __future__ import annotations`: PEP 604 in una firma si valuta alla
+  `def`, e sulla 3.9 — il minimo di `requires-python`, e un job della matrice
+  CI — alza `TypeError`. Il file moriva in raccolta, cioè la guardia che tiene
+  in piedi la regola della issue non falliva: spariva, e con lei gli altri
+  test dello stesso modulo. In locale non si vedeva, perché nessuno sviluppa
+  sull'interprete più vecchio della matrice.
+
+  Il rimedio è il future import; a tenerlo è `tests/test_minimum_python_syntax.py`,
+  che legge la soglia da `requires-python` invece di trascriverla (quando il
+  minimo passerà a 3.10 la guardia si spegne da sola) e distingue le
+  annotazioni che l'interprete valuta davvero — firme, modulo, classe — da
+  quelle locali, che non valuta e che sarebbe ingiusto accusare.
+
 - **`api.py` prometteva un silenzio che non ha mai avuto** (issue #189).
   L'intestazione dichiarava «nessun print» come primo punto del contratto
   del modulo, e la dichiarazione era falsa: nessuna funzione di `api.py`
