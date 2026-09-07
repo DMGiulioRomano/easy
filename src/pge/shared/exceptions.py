@@ -20,12 +20,16 @@ import os
 # dell'intero motore, comprese le parti che YAML non lo parsano.
 #
 # Il conto lo paga chi importa il motore da un checkout senza installarlo:
-# l'oracolo di parita' di PGE-ui (`tests/parity/engine_oracle.py`) importa
-# `stream_cache_manager`, `gate_factory`, `parameter_definitions` e
-# `time_distribution` con il solo python del runner, per contratto scritto
-# («No op may need the engine venv»). Quei quattro moduli non avevano una sola
-# dipendenza di terze parti; con `import yaml` qui smettevano tutti di
-# importarsi, e il rosso sarebbe arrivato su ogni PR di un altro repository.
+# l'oracolo di parita' di PGE-ui (`tests/parity/engine_oracle.py`) importa otto
+# moduli del motore con il solo python del runner, per contratto scritto («No op
+# may need the engine venv»). Nessuno di quegli otto ha una dipendenza di terze
+# parti; con `import yaml` qui smettevano tutti di importarsi, e il rosso
+# sarebbe arrivato su ogni PR di un altro repository. La meta' di loro l'oracolo
+# la chiede dentro un `try/except` che scrive `None` nel payload invece di
+# morire: rosso comunque a valle, e piu' muto -- da qui l'elenco intero in
+# `_MODULI_SENZA_TERZE_PARTI` (`tests/shared/test_engine_exceptions.py`), che e'
+# la forma eseguibile di questo commento e blocca ogni dipendenza dichiarata,
+# non la sola PyYAML.
 #
 # Il ripiego non e' una degradazione silenziosa: dove PyYAML manca, `yaml` non
 # e' nominabile, quindi nessuno puo' scrivere l'`except yaml.YAMLError` che la
