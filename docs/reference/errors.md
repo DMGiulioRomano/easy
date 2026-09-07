@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: 6de58b4
+last_synced_commit: e19eddb
 entry_for: [error-handling]
 ---
 
