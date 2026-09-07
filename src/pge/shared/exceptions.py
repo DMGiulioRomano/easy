@@ -218,17 +218,11 @@ class ConfigParseError(ConfigError, _YamlError):
             if hasattr(cause, attributo):
                 setattr(self, attributo, getattr(cause, attributo))
 
-    # `__reduce__` proprio, per la ragione scritta su
-    # `ConfigFileNotFoundError`: il default ripassa `self.args` al costruttore, e il
-    # costruttore di queste classi vuole il *path*. I builtin che la #257
-    # sostituisce erano tutti picklabili -- e' cosi' che un'eccezione
-    # attraversa un confine di processo, il meccanismo con cui
-    # `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent
-    # -- quindi impacchettarli senza questo metodo e' una regressione. I due
-    # modi di rompersi sono diversi e uno dei due e' muto: chi ha due
-    # argomenti alza `TypeError` in unpickling, chi ne ha uno rientra col
-    # messaggio gia' costruito al posto del path e ne esce impacchettato due
-    # volte.
+    # `__reduce__` proprio, per la ragione scritta per esteso su
+    # `ConfigFileNotFoundError` e non ricopiata qui: una ragione in tre copie
+    # e' una ragione che diverge. Di quei due modi di rompersi questo e'
+    # quello rumoroso -- il costruttore vuole due argomenti e il default gli
+    # ripassa il solo `self.args`, cioe' `TypeError` in unpickling.
     def __reduce__(self):
         return (self.__class__, (self.path, self.cause), self.__dict__)
 
@@ -285,17 +279,11 @@ class ConfigReadError(ConfigError, OSError):
         self.strerror = getattr(cause, 'strerror', None)
         self.filename = getattr(cause, 'filename', None) or path
 
-    # `__reduce__` proprio, per la ragione scritta su
-    # `ConfigFileNotFoundError`: il default ripassa `self.args` al costruttore, e il
-    # costruttore di queste classi vuole il *path*. I builtin che la #257
-    # sostituisce erano tutti picklabili -- e' cosi' che un'eccezione
-    # attraversa un confine di processo, il meccanismo con cui
-    # `ProcessPoolExecutor` (quello di `numpy_parallel`) la ripaga nel parent
-    # -- quindi impacchettarli senza questo metodo e' una regressione. I due
-    # modi di rompersi sono diversi e uno dei due e' muto: chi ha due
-    # argomenti alza `TypeError` in unpickling, chi ne ha uno rientra col
-    # messaggio gia' costruito al posto del path e ne esce impacchettato due
-    # volte.
+    # `__reduce__` proprio, per la ragione scritta per esteso su
+    # `ConfigFileNotFoundError` e non ricopiata qui: una ragione in tre copie
+    # e' una ragione che diverge. Di quei due modi di rompersi questo e'
+    # quello rumoroso -- il costruttore vuole due argomenti e il default gli
+    # ripassa il solo `self.args`, cioe' `TypeError` in unpickling.
     def __reduce__(self):
         return (self.__class__, (self.path, self.cause), self.__dict__)
 
