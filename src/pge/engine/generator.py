@@ -20,7 +20,12 @@ from pge.core.stream import Stream
 from pge.rendering.ftable_manager import FtableManager
 from pge.rendering.score_writer import ScoreWriter
 from pge.controllers.window_controller import WindowController
-from pge.shared.exceptions import ConfigError, SampleNotFoundError
+from pge.shared.exceptions import (
+    ConfigError,
+    ConfigFileNotFoundError,
+    ConfigParseError,
+    SampleNotFoundError,
+)
 from pge.shared.seeding import session_seed
 
 class Generator:
@@ -82,13 +87,30 @@ class Generator:
         
         Returns:
             dict: dati YAML preprocessati
-            
+
         Raises:
-            FileNotFoundError: se il file YAML non esiste
-            yaml.YAMLError: se il file YAML è malformato
+            ConfigFileNotFoundError: se il file YAML non esiste. E' anche un
+                FileNotFoundError, che questa funzione ha sempre dichiarato:
+                chi lo catturava continua a catturarlo (issue #257).
+            ConfigParseError: se il file YAML è malformato. E' anche uno
+                yaml.YAMLError, idem.
         """
-        with open(self.yaml_path, 'r') as f:
-            raw_data = yaml.safe_load(f)
+        try:
+            handle = open(self.yaml_path, 'r')
+        except FileNotFoundError as err:
+            # La conversione sta sulla sola open(), non sul blocco che la
+            # contiene (issue #257): l'errore di dominio deve nascere dal file
+            # che il messaggio nomina. Allargarla a tutto il caricamento
+            # rifarebbe il difetto che questa issue chiude -- una garanzia
+            # per posizione invece che per tipo -- solo un piano piu' giu'.
+            raise ConfigFileNotFoundError(self.yaml_path) from err
+
+        with handle as f:
+            try:
+                raw_data = yaml.safe_load(f)
+            except yaml.YAMLError as err:
+                raise ConfigParseError.from_yaml_error(
+                    self.yaml_path, err) from err
 
         self.data = self._eval_math_expressions(raw_data)
         # Seed top-level opzionale (issue #81): None se assente (il session

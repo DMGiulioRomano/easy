@@ -800,3 +800,149 @@ def test_exponential_distribution_invalid_rate_is_parameter_bound():
     msg = err.user_message()
     assert "[ERRORE]" in msg
     assert "rate" in msg
+
+
+# =============================================================================
+# Issue #257 — lo YAML che manca (o che non si legge) ha un tipo, non una
+# posizione nel file sorgente della CLI
+# =============================================================================
+
+def test_config_file_not_found_e_un_config_error():
+    """Un file di configurazione che non esiste e' un errore di configurazione:
+    sta sotto ConfigError, quindi `except EngineError` della CLI lo prende."""
+    from pge.shared.exceptions import (
+        ConfigError, ConfigFileNotFoundError, EngineError,
+    )
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert isinstance(err, ConfigError)
+    assert isinstance(err, EngineError)
+    # ConfigError eredita ValueError, e la sottoclasse non lo perde.
+    assert isinstance(err, ValueError)
+
+
+def test_config_file_not_found_eredita_FileNotFoundError():
+    """Qui il builtin non e' una bugia: il file che manca e' proprio quello.
+
+    E' l'asimmetria con `_BinaryNotFoundError` (#228/#241), che il builtin lo
+    rifiuta perche' li' descriveva un file diverso da quello che il tipo
+    lasciava intendere. `Generator.load_yaml` e `api.load_generator`
+    dichiarano FileNotFoundError fra i `Raises`: chi lo cattura continua a
+    catturarlo."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert isinstance(err, FileNotFoundError)
+    assert isinstance(err, OSError)
+
+
+def test_solo_la_configurazione_e_un_FileNotFoundError():
+    """La regola che #228/#241 e #257 scrivono insieme, derivata dalla
+    gerarchia invece che trascritta: dentro EngineError `FileNotFoundError`
+    significa una cosa sola — il file di configurazione che hai nominato non
+    esiste. Se un domani un binario assente, o un sample, tornasse a
+    ereditarlo, il tipo smetterebbe di isolare e questo test lo direbbe."""
+    import inspect
+    from pge.shared import exceptions as exc
+
+    famiglia = [
+        cls for _, cls in inspect.getmembers(exc, inspect.isclass)
+        if issubclass(cls, exc.EngineError)
+    ]
+    # La famiglia e' popolata: senza questa riga il test passerebbe anche su
+    # un modulo vuoto.
+    assert len(famiglia) > 10
+    eredi = {cls.__name__ for cls in famiglia
+             if issubclass(cls, FileNotFoundError)}
+    assert eredi == {'ConfigFileNotFoundError'}
+
+
+def test_config_file_not_found_user_message_nomina_il_file_e_il_path():
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    msg = err.user_message()
+    assert "[ERRORE]" in msg
+    assert "File di configurazione non trovato" in msg
+    # Il nome come l'utente l'ha scritto, sulla riga di contesto di casa.
+    assert "  Config:       configs/mancante.yml" in msg
+    # E il path risolto, che dice in quale directory si e' cercato.
+    import os
+    assert os.path.abspath('configs/mancante.yml') in msg
+
+
+def test_config_file_not_found_non_ripete_il_path_gia_assoluto():
+    """Un intervallo che non esiste non si stampa (regola di
+    ParameterBoundError); un path che coincide con quello gia' scritto
+    nemmeno."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('/tmp/assoluto/mancante.yml')
+    msg = err.user_message()
+    assert "Path cercato" not in msg
+    assert msg.count('/tmp/assoluto/mancante.yml') == 1
+
+
+def test_config_file_not_found_valorizza_config_file():
+    """Il contesto strutturato e' quello di casa: chi legge l'eccezione a
+    programma trova il path dove lo trova in tutte le sorelle."""
+    from pge.shared.exceptions import ConfigFileNotFoundError
+    err = ConfigFileNotFoundError('configs/mancante.yml')
+    assert err.config_file == 'configs/mancante.yml'
+
+
+def test_config_parse_error_e_un_config_error_e_uno_yaml_error():
+    """Il file c'e' ma non si legge: stessa famiglia, stesso trattamento.
+
+    `yaml.YAMLError` resta fra le basi per la stessa ragione del builtin
+    accanto — `load_yaml` e `api.load_generator` lo dichiarano nei `Raises`."""
+    import yaml
+    from pge.shared.exceptions import (
+        ConfigError, ConfigParseError, EngineError,
+    )
+    err = ConfigParseError('configs/rotto.yml', reason='qualcosa')
+    assert isinstance(err, ConfigError)
+    assert isinstance(err, EngineError)
+    assert isinstance(err, yaml.YAMLError)
+
+
+def test_config_parse_error_user_message():
+    from pge.shared.exceptions import ConfigParseError
+    err = ConfigParseError('configs/rotto.yml',
+                           reason="expected <block end>, but found ':'",
+                           line=4, column=10)
+    msg = err.user_message()
+    assert "[ERRORE]" in msg
+    assert "YAML non valido" in msg
+    assert "  Motivo:       expected <block end>, but found ':'" in msg
+    assert "  Posizione:    riga 4, colonna 10" in msg
+    assert "  Config:       configs/rotto.yml" in msg
+
+
+def test_config_parse_error_senza_posizione_non_stampa_la_riga():
+    from pge.shared.exceptions import ConfigParseError
+    err = ConfigParseError('configs/rotto.yml', reason='qualcosa')
+    assert "Posizione" not in err.user_message()
+
+
+def test_config_parse_error_from_yaml_error_legge_problema_e_marca():
+    """La posizione la sa gia' PyYAML: `problem` e `problem_mark` di
+    MarkedYAMLError. Le righe di YAML si contano da 1, il mark da 0."""
+    import yaml
+    from pge.shared.exceptions import ConfigParseError
+
+    testo = "composition:\n  title: uno\n   cattiva: due\n"
+    with pytest.raises(yaml.YAMLError) as excinfo:
+        yaml.safe_load(testo)
+
+    err = ConfigParseError.from_yaml_error('configs/rotto.yml', excinfo.value)
+    assert err.reason == excinfo.value.problem
+    assert err.line == excinfo.value.problem_mark.line + 1
+    assert err.column == excinfo.value.problem_mark.column + 1
+
+
+def test_config_parse_error_from_yaml_error_senza_marca():
+    """Un YAMLError generico non ha `problem_mark`: il motivo resta, la
+    posizione non si inventa."""
+    import yaml
+    from pge.shared.exceptions import ConfigParseError
+
+    err = ConfigParseError.from_yaml_error('x.yml', yaml.YAMLError('rotto'))
+    assert 'rotto' in err.reason
+    assert err.line is None and err.column is None
