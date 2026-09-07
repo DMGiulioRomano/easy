@@ -600,14 +600,23 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   ri-esportare «solo simboli leggeri». Un `import yaml` li' mette PyYAML fra le
   dipendenze di import anche delle parti che YAML non lo parsano, e il conto lo
   paga chi importa il motore da un checkout **senza installarlo**: l'oracolo di
-  parita' di PGE-ui importa `stream_cache_manager`, `gate_factory`,
-  `parameter_definitions` e `time_distribution` con il solo python del runner,
-  per contratto scritto, e quei quattro moduli non avevano una sola dipendenza
-  di terze parti. L'import sta quindi in un `try/except ImportError` con un
-  segnaposto; dove PyYAML manca `yaml` non e' nominabile, quindi non c'e' un
-  `except yaml.YAMLError` da tenere in piedi, e `ConfigParseError` non e'
-  nemmeno sollevabile -- a sollevarla e' `Generator.load_yaml`, in un modulo
-  che PyYAML lo importa davvero. Due test fissano le due direzioni.
+  parita' di PGE-ui importa otto moduli del motore con il solo python del
+  runner, per contratto scritto («No op may need the engine venv»), e nessuno
+  di loro ha una dipendenza di terze parti. L'import sta quindi in un
+  `try/except ImportError` con un segnaposto; dove PyYAML manca `yaml` non e'
+  nominabile, quindi non c'e' un `except yaml.YAMLError` da tenere in piedi, e
+  `ConfigParseError` non e' nemmeno sollevabile -- a sollevarla e'
+  `Generator.load_yaml`, in un modulo che PyYAML lo importa davvero. Due test
+  fissano le due direzioni, e il secondo blocca **tutte** le dipendenze
+  dichiarate, lette dal `pyproject` e non trascritte: il danno lo farebbe
+  altrettanto un `import numpy`, e bloccando la sola `yaml` sarebbe passato in
+  silenzio -- numpy l'interprete del test ce l'ha, il runner di PGE-ui no.
+
+  I messaggi delle tre classi hanno anche i loro casi in
+  `tests/e2e/test_engine_errors_e2e.py`, sulla CLI reale: e' l'unico posto in
+  cui si legge la riga che finisce nel **log engine**, che e' `str(err)` e non
+  `user_message()` -- cioe' esattamente cio' che i quattro `__str__` di dominio
+  esistono per difendere.
 
 - **La sintassi Csound si scrive in un posto solo** (issue #203). Tre moduli
   la producevano, e due stavano sotto il livello che deve restare
