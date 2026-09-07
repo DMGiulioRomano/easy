@@ -521,7 +521,12 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   con `filename` valorizzato `OSError` riscriverebbe in «[Errno 2] No such
   file or directory», buttando via la prosa proprio nella riga che finisce nel
   log engine); `ConfigParseError` riporta dalla causa gli attributi di
-  `MarkedYAMLError` quando ci sono, senza mai fabbricarli.
+  `MarkedYAMLError` quando ci sono, senza mai fabbricarli; e
+  `ConfigUnicodeParseError` i cinque di `UnicodeDecodeError` (`encoding`,
+  `object`, `start`, `end`, `reason`), dove `e.object[e.start:e.end]` sono i
+  byte incriminati -- li' l'assenza e' anche meno leggibile, perche' senza
+  riporto `start` ed `end` non restano assenti ma valgono `0`, cioe' una
+  posizione plausibile e falsa.
 
   Nella stessa passata gli altri modi in cui un file di configurazione non si
   legge, perche' erano piu' di uno e nessuno di loro aveva un tipo. Il

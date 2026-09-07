@@ -402,6 +402,27 @@ class ConfigUnicodeParseError(ConfigParseError, UnicodeDecodeError):
     esatto, che e' quello che si scrive quando si sa cosa si sta cercando.
     """
 
+    #: Lo stato che `UnicodeDecodeError` espone, e che chi lo cattura legge:
+    #: `e.object[e.start:e.end]` sono i byte incriminati, `e.reason` il perche'.
+    #: Riportati dalla causa con la regola degli attributi di PyYAML -- mai
+    #: fabbricati -- perche' qui il valore vuoto del tipo non e' un'assenza
+    #: leggibile: `start` ed `end` varrebbero `0`, cioe' una posizione
+    #: plausibile e falsa.
+    _ATTRIBUTI_UNICODE = ('encoding', 'object', 'start', 'end', 'reason')
+
+    def __init__(self, path: str, cause: Exception):
+        super().__init__(path, cause)
+        # `UnicodeDecodeError.__init__` non viene chiamato (vuole cinque
+        # argomenti e intercetterebbe il messaggio: la ragione sta su
+        # `ConfigError.__init__`), quindi i cinque campi resterebbero al
+        # valore vuoto del tipo. Ereditare `UnicodeDecodeError` senza di loro
+        # e' la meta' della promessa che regge per `isinstance` e cade per
+        # tutto il resto -- lo stesso guasto chiuso sui tre campi `OSError` di
+        # `ConfigFileNotFoundError` e sugli attributi di `MarkedYAMLError`.
+        for attributo in self._ATTRIBUTI_UNICODE:
+            if hasattr(cause, attributo):
+                setattr(self, attributo, getattr(cause, attributo))
+
     def __str__(self) -> str:
         # Come sopra: `UnicodeDecodeError.__str__` scrive «'utf-8' codec can't
         # decode byte ...», che e' la riga di `Dettaglio:`, non il messaggio.
@@ -609,16 +630,13 @@ class EngineRuntimeError(EngineError):
     def __init__(self, message: str):
         self.stream_id: str | None = None
         self.config_file: str | None = None
-        # `Exception.__init__` esplicito, non `super()`: le sottoclassi della
-        # #257 mescolano un builtin, e alcuni builtin hanno un `__init__`
-        # proprio che sta *dopo* ConfigError nell'MRO e intercetterebbe il
-        # messaggio. `UnicodeDecodeError.__init__` vuole cinque argomenti e
-        # alza `TypeError` su uno; `MarkedYAMLError.__init__` ne accetta uno e
-        # lo scrive in `context`, lasciando `args` vuoto -- cioe' fallisce in
-        # silenzio, che e' peggio. Qui serve solo che `args` porti il
-        # messaggio: e' quello che `__str__` e `user_message()` leggono, e per
-        # i campi del builtin provvede ciascuna sottoclasse. Stessa forma del
-        # prezzo gia' pagato con gli `__str__` piu' sotto.
+        # `Exception.__init__` esplicito, non `super()`: la stessa forma di
+        # `ConfigError.__init__`, dove la ragione e' scritta per esteso. Qui
+        # nessuna sottoclasse mescola un builtin -- `_BinaryNotFoundError`
+        # sceglie di proposito di non farlo (#228, #241) -- quindi la chiamata
+        # non cambia niente oggi: tiene simmetriche le due basi per il giorno
+        # in cui una sottoclasse di questo ramo mescoli un builtin col proprio
+        # `__init__`, che intercetterebbe il messaggio.
         Exception.__init__(self, message)
 
     def _context_lines(self) -> list[str]:

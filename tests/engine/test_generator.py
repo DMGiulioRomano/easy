@@ -425,6 +425,30 @@ class TestLoadYaml:
 
         assert isinstance(exc.value, ConfigParseError)
 
+    def test_load_yaml_non_decodificabile_conserva_lo_stato_del_builtin(
+            self, tmp_path):
+        """Il tipo concreto senza il suo stato e' meta' promessa (#257).
+
+        Chi cattura `UnicodeDecodeError` non si ferma alla cattura: legge
+        `e.reason` e taglia `e.object[e.start:e.end]` per dire *quale* byte
+        non si decodifica e dove -- e' l'idioma, come `e.errno` per `OSError`
+        e `e.problem_mark` per PyYAML. Su un wrapper che porta solo il tipo
+        quei campi sono vuoti, e `start`/`end` a zero non sono un «non lo so»
+        ma una posizione plausibile e falsa: la promessa regge per
+        `isinstance` e cade per tutto il resto, in silenzio.
+        """
+        config = tmp_path / 'latin1.yml'
+        config.write_bytes('# perch\xe8 no\nstreams: []\n'.encode('latin-1'))
+
+        gen = _get_generator_class()(str(config))
+        with pytest.raises(UnicodeDecodeError) as exc:
+            gen.load_yaml()
+
+        err = exc.value
+        assert err.encoding == 'utf-8'
+        assert err.object[err.start:err.end] == b'\xe8'
+        assert err.reason
+
     def test_load_yaml_dichiara_l_encoding_dello_yaml(self):
         """`open()` deve nominare utf-8: senza, a decidere e' il locale.
 

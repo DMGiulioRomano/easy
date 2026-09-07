@@ -1070,6 +1070,54 @@ def test_config_parse_error_senza_marker_non_inventa_gli_attributi():
     assert not hasattr(err, 'problem')
 
 
+def test_config_unicode_parse_error_e_un_UnicodeDecodeError_completo():
+    """Il terzo builtin ereditato, e l'ultimo a cui mancava lo stato.
+
+    `e.object[e.start:e.end]` -- i byte che non si decodificano -- e' l'idioma
+    con cui si legge un `UnicodeDecodeError`, come `e.problem_mark` lo e' per
+    PyYAML e `e.errno` per `OSError`, e prima della #257 il chiamante riceveva
+    il builtin vero. `UnicodeDecodeError.__init__` qui non viene chiamato --
+    vuole cinque argomenti e intercetterebbe il messaggio -- quindi senza
+    riporto quei cinque campi restano al valore vuoto del tipo: `None` per
+    tre, e `0` per `start` e `end`, che non e' un «non lo so» ma una posizione
+    plausibile e falsa.
+    """
+    from pge.shared.exceptions import config_parse_error
+
+    causa = None
+    try:
+        'perch\xe8 no'.encode('latin-1').decode('utf-8')
+    except UnicodeDecodeError as e:
+        causa = e
+    assert causa is not None
+
+    err = config_parse_error('configs/latin1.yml', causa)
+
+    assert err.encoding == causa.encoding
+    assert err.object == causa.object
+    assert err.start == causa.start
+    assert err.end == causa.end
+    assert err.reason == causa.reason
+    # L'idioma per esteso: i byte incriminati restano leggibili dal wrapper.
+    assert err.object[err.start:err.end] == b'\xe8'
+
+
+def test_config_unicode_parse_error_regge_una_causa_che_non_li_ha():
+    """Riportati dalla causa, mai fabbricati -- la regola di `problem_mark`.
+
+    Il costruttore e' pubblico e `config_parse_error` non e' l'unica via:
+    con una causa che quei campi non li ha, l'assenza deve restare tale
+    invece di alzare `AttributeError` mentre si costruisce un'eccezione.
+    """
+    import yaml
+    from pge.shared.exceptions import ConfigUnicodeParseError
+
+    err = ConfigUnicodeParseError('configs/x.yml', yaml.YAMLError('boom'))
+
+    assert str(err) == "File di configurazione malformato: 'configs/x.yml'"
+    assert err.reason is None
+
+
 # -----------------------------------------------------------------------------
 # ConfigReadError: il file c'e', il sistema operativo non lo apre
 # -----------------------------------------------------------------------------

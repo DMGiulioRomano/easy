@@ -190,6 +190,16 @@ EngineError                                  (Exception)
   scrive `[Errno 2] No such file or directory: '...'`, cioè butta via la prosa
   proprio nella riga che finisce nel log engine — `ConfigFileNotFoundError`
   override `__str__` per tenersela.
+
+  La regola vale per **ogni** builtin ereditato, quindi anche per il terzo:
+  `ConfigUnicodeParseError` riporta dalla causa i cinque campi di
+  `UnicodeDecodeError` (`encoding`, `object`, `start`, `end`, `reason`), che
+  sono l'idioma con cui si legge quell'errore — `e.object[e.start:e.end]` sono
+  i byte incriminati, `e.reason` il perché. Lì l'assenza è meno leggibile che
+  altrove: `UnicodeDecodeError.__init__` non viene chiamato (vuole cinque
+  argomenti e intercetterebbe il messaggio, vedi sotto), e senza riporto
+  `start` ed `end` non restano assenti ma valgono `0` — non un «non lo so» ma
+  una posizione plausibile e falsa.
 - **Impacchettare non deve togliere: il tipo *concreto* della causa
   sopravvive.** Prima della #257 `load_yaml` lasciava salire l'eccezione
   concreta di `open()` e del parser, quindi a valle funzionavano
