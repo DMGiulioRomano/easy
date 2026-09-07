@@ -8,7 +8,7 @@ sources:
   - src/pge/cli.py
   - src/pge/engine/generator.py
   - src/pge/rendering/csound_renderer.py
-last_synced_commit: 386e6d2
+last_synced_commit: c607958
 entry_for: [error-handling]
 ---
 
@@ -282,6 +282,33 @@ del parser finisce nel log insieme al nostro traceback — è ciò che rende
 accettabile un `user_message()` di tre righe al suo posto. Fino alla #257
 nessuno lo traduceva e l'utente riceveva messaggio più traceback dal ramo
 generico.
+
+### File di configurazione con byte non decodificabili
+```
+[ERRORE] YAML non valido
+  Motivo:       unacceptable character #x00e0: invalid continuation byte
+  Config:       configs/rotto.yml
+  Dettagli:     /tmp/engine.log
+```
+
+Stesso tipo del caso qui sopra, e non per comodità: «il file c'è ma non si
+lascia leggere» è la definizione di `ConfigParseError`, e un byte che non si
+decodifica ci sta dentro. Quello che decide *chi solleva* è **chi decodifica**.
+`Generator.load_yaml` apre il file in **binario** e lascia la decodifica a
+PyYAML, che segue YAML 1.1 — UTF-8 o UTF-16, riconosciute dal BOM — e trasforma
+un byte che non torna in un `ReaderError`, cioè uno `yaml.YAMLError`: la porta
+esiste già, e il guasto ci passa senza allargare nessun `try`.
+
+Con `open(path, 'r')` la decodifica sarebbe avvenuta nel layer di testo, prima
+che PyYAML veda alcunché, e ne sarebbe uscito un `UnicodeDecodeError` grezzo —
+che non è uno `yaml.YAMLError` e non è un `OSError`, quindi non cade né nel
+perimetro tradotto né in quello lasciato fuori di proposito (la directory, i
+permessi): finiva nel ramo generico, messaggio più traceback, cioè l'esito che
+il criterio della #257 vieta. E il guasto era doppio: quel layer decodifica con
+`locale.getpreferredencoding()`, quindi sotto `LC_ALL=C` — un container, un
+cron, una Action senza locale — i dieci config accentati che questo repo
+distribuisce (`configs/PGE_12min.yml` fra loro) non si caricavano affatto. La
+codifica di un file è un fatto del file, non dell'ambiente che lo apre.
 
 ### Renderer sconosciuto
 CLI: `--renderer foo`

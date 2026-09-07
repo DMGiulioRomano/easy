@@ -67,6 +67,22 @@ Versioning semantico: [SemVer](https://semver.org/lang/it/).
   con il messaggio annidato dentro sé stesso e `path`/`filename` uguali al
   messaggio, in silenzio.
 
+  **La lettura è in binario, e la decodifica è di PyYAML.** Chi decodifica
+  decide anche chi solleva: con `open(path, 'r')` la decodifica avviene nel
+  layer di testo, prima che PyYAML veda alcunché, e ne esce un
+  `UnicodeDecodeError` grezzo — che non è uno `yaml.YAMLError` e non è un
+  `OSError`, quindi non cade né nel perimetro tradotto qui né in quello
+  lasciato fuori di proposito (una directory, i permessi): finiva nel ramo
+  generico, messaggio più traceback. Il guasto era doppio, e la seconda metà
+  peggiore della prima: quel layer decodifica con
+  `locale.getpreferredencoding()`, quindi sotto `LC_ALL=C` — un container, un
+  cron, una Action senza locale — i dieci config accentati che questo repo
+  distribuisce (`configs/PGE_12min.yml` fra loro) non si caricavano affatto.
+  Letto in binario, la codifica torna un fatto del file (YAML 1.1: UTF-8 o
+  UTF-16, riconosciute dal BOM) e un byte che non torna diventa un
+  `ReaderError`, cioè uno `yaml.YAMLError` che passa dalla porta che esiste
+  già — senza allargare nessun `try`.
+
   La conversione è stretta sulla sola `open()`, non sul blocco che la contiene:
   allargarla a tutto il caricamento rifarebbe un piano più giù lo stesso
   difetto che questa issue chiude — una garanzia per posizione invece che per
