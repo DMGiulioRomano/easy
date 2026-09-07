@@ -606,22 +606,23 @@ def main():
     )
     configure_engine_logger(yaml_name=yaml_basename, log_dir=log_dir)
 
+    # Nessun handler su un tipo builtin da qui in poi (issue #257). La #241
+    # aveva stretto un `except FileNotFoundError` attorno alle due righe che
+    # caricano lo YAML: funzionava, ma la garanzia era l'estensione fisica del
+    # blocco, non il tipo dell'eccezione -- una riga in piu' li' dentro, o il
+    # passaggio ad `api.load_generator` (che impacchetta anche
+    # `create_elements`), e il messaggio falso tornava in silenzio. Adesso i
+    # due guasti del caricamento hanno un tipo di dominio
+    # (ConfigFileNotFoundError, ConfigParseError) e arrivano da `except
+    # EngineError` come ogni altro errore di configurazione; quello che
+    # nessuno ha ancora tradotto resta nel ramo generico, con il suo
+    # messaggio e il suo traceback, invece di travestirsi da configurazione
+    # mancante. La guardia e' in tests/test_cli_builtin_handlers.py.
     try:
-        try:
-            generator = Generator(yaml_file, samples_dir=samples_dir)
+        generator = Generator(yaml_file, samples_dir=samples_dir)
 
-            print(f"Caricamento {yaml_file}...")
-            generator.load_yaml()
-        except FileNotFoundError:
-            # L'handler sta qui, non in fondo al try (issue #241): questo e'
-            # l'unico punto che puo' sollevare FileNotFoundError per il
-            # motivo che il messaggio annuncia. In fondo intercettava anche
-            # quelli che risalgono dal rendering -- csound assente su una
-            # macchina senza csound -- e l'utente si sentiva dire che il suo
-            # file di configurazione non esiste, mentre era stato letto e
-            # parsato poche righe sopra.
-            print(f" Errore: file '{yaml_file}' non trovato")
-            sys.exit(1)
+        print(f"Caricamento {yaml_file}...")
+        generator.load_yaml()
 
         print("Generazione streams...")
         generator.create_elements()

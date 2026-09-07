@@ -13,7 +13,8 @@ Usa la stessa fixture a sys.modules di test_main.py (tests/main_mocks.py).
 
 Il golden si muove solo quando la CLI acquista superficie di proposito --
 non durante un refactor, che e' il vincolo che questo file difende. Ultimo
-movimento: issue #248, il flag --bw del preset B&W della partitura.
+movimento: issue #257, il messaggio dello YAML mancante, che passa dal
+percorso EngineError invece che da un print scritto a mano nella CLI.
 """
 
 import sys
@@ -273,9 +274,18 @@ class TestEngineErrorPathGolden:
         # Il log path e' quello del mock logger (tests/main_mocks.py)
         assert "  Dettagli:     /tmp/engine.log\n" in out
 
-    def test_file_not_found_message(self, mocks, capsys):
-        mocks['generator_instance'].load_yaml.side_effect = FileNotFoundError()
+    def test_config_file_not_found_message(self, mocks, capsys):
+        """Issue #257: lo YAML mancante non ha piu' un print scritto a mano
+        nella CLI, ha un tipo. Il golden si muove con lui: il messaggio passa
+        dal percorso EngineError, quindi guadagna la riga `Dettagli:` e il
+        formato `[ERRORE]` di casa."""
+        from pge.shared.exceptions import ConfigFileNotFoundError
+        err = ConfigFileNotFoundError('missing.yml')
+        mocks['generator_instance'].load_yaml.side_effect = err
 
         _run_expect_exit(mocks, ['main.py', 'missing.yml', 'out.aif'])
         out = capsys.readouterr().out
-        assert " Errore: file 'missing.yml' non trovato\n" in out
+        assert err.user_message() in out
+        assert "[ERRORE] File di configurazione non trovato\n" in out
+        assert "  Config:       missing.yml\n" in out
+        assert "  Dettagli:     /tmp/engine.log\n" in out

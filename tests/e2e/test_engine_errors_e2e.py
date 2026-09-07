@@ -512,3 +512,52 @@ def test_e2e_multistate_unsorted(tmp_path, cleanup_log):
     assert "[ERRORE]" in result.stdout
     assert "Traceback" not in result.stdout
     _assert_log_contains(yaml_abs, "InvalidStrategyConfigError", ["window_multistate"])
+
+
+# =============================================================================
+# Issue #257 — il file di configurazione: assente, o presente e illeggibile
+# =============================================================================
+
+YAML_MALFORMATO = """\
+composition:
+  title: uno
+   cattiva: due
+streams: []
+"""
+
+
+@pytest.mark.e2e
+def test_e2e_config_file_assente(tmp_path, cleanup_log):
+    """Lo YAML che non c'e' esce dal percorso EngineError come tutti gli altri.
+
+    Fino alla #257 la CLI lo annunciava con un print scritto a mano, dentro un
+    handler su `FileNotFoundError` tenuto stretto attorno a due righe: giusto
+    finche' quelle righe restavano due.
+    """
+    mancante = str(tmp_path / '50_config_assente.yml')
+    cleanup_log.append(_log_path_for(mancante))
+    result = _run(mancante)
+    _assert_clean_user_output(result)
+    assert "File di configurazione non trovato" in result.stdout
+    assert mancante in result.stdout
+    _assert_log_contains(mancante, "ConfigFileNotFoundError",
+                         ['50_config_assente.yml'])
+
+
+@pytest.mark.e2e
+def test_e2e_config_file_malformato(tmp_path, cleanup_log):
+    """Il file c'e' ma non si parsa: prima era messaggio piu' traceback dal
+    ramo generico, adesso e' un `user_message()` con motivo e posizione."""
+    yaml_abs = _write_yaml(tmp_path, '51_config_malformato.yml', YAML_MALFORMATO)
+    cleanup_log.append(_log_path_for(yaml_abs))
+    result = _run(yaml_abs)
+    _assert_clean_user_output(result)
+    assert "YAML non valido" in result.stdout
+    assert "Motivo:" in result.stdout
+    assert "Posizione:" in result.stdout
+    # Il traceback del parser non si perde: `raise ... from err` lo tiene in
+    # catena, e nel log finisce insieme al nostro -- e' quello che rende
+    # accettabile un `user_message()` di due righe al posto dello sproloquio
+    # di PyYAML.
+    _assert_log_contains(yaml_abs, "ConfigParseError",
+                         ["ScannerError", "direct cause"])
